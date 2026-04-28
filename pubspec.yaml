@@ -1,0 +1,122 @@
+name: myapp_new
+description: A new Flutter project
+publish_to: 'none'
+
+version: 1.0.3+5
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.24.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^4.3.0
+  # firebase_app_check: ^0.4.3  # 🔥 УДАЛЕНО
+  algolia: ^1.1.2
+  sign_in_with_apple: ^7.0.0
+  google_sign_in: ^6.1.0
+  firebase_auth: ^6.1.3
+  firebase_analytics: ^12.1.0
+  cloud_firestore: ^6.1.1
+  firebase_storage: ^13.0.5
+  firebase_crashlytics: ^5.0.6
+  firebase_messaging: ^16.1.0
+  firebase_remote_config: ^6.1.3
+  cloud_functions: ^6.0.6
+
+  # UI & Design
+  cupertino_icons: ^1.0.6
+  get: ^4.6.5
+  animations: ^2.0.7
+  google_fonts: ^7.0.2
+  like_button: ^2.0.4
+  flutter_svg: ^2.0.9
+  intl: ^0.18.1
+
+  # Media & Images
+  image_picker: ^1.1.0
+  file_picker: ^8.0.0+1
+  image_cropper: ^11.0.0
+  flutter_image_compress: ^2.0.0
+  cached_network_image: ^3.3.0
+
+  # Networking
+  dio: ^5.3.3
+  connectivity_plus: ^7.0.0
+
+  # Local Storage
+  shared_preferences: ^2.2.2
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  path_provider: ^2.1.0
+
+  # Permissions & Sharing
+  permission_handler: ^12.0.1
+  share_plus: ^12.0.1
+
+  # Utilities
+  timeago: ^3.5.0
+  provider: ^6.1.1
+  shimmer: ^3.0.0
+  pull_to_refresh: ^2.0.0
+
+  # Notifications
+  flutter_local_notifications: ^19.5.0
+  universal_html: ^2.3.0
+
+  # Splash Screen & Deep Linking
+  url_launcher: ^6.3.2
+  app_links: ^7.0.0
+  photo_manager: 3.0.0
+
+  # Toast
+  fluttertoast: ^8.2.5
+
+  # App icon generator
+  flutter_launcher_icons: ^0.14.4
+  
+  # 🔥 ДОБАВЛЕНО - нужно для Apple Sign In nonce
+  crypto: ^3.0.3
+  flutter_native_splash: ^2.4.7
+
+dependency_overrides:
+  http: ^1.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+  webview_flutter: ^4.2.1
+  hive_generator: ^2.0.0
+  build_runner: ^2.4.7
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/splash/
+    - assets/logo/
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/splash/splash.png
+
+  android_12:
+    color: "#FFFFFF"
+    image: assets/splash/splash.png
+    icon_background_color: "#FFFFFF"
+
+  android: true
+  ios: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/logo/icon.png
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/logo/icon.png
+  min_sdk_android: 21

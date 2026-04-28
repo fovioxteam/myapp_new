@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==================== ПОЛЬЗОВАТЕЛИ ====================
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // ==================== ПОДКОЛЛЕКЦИИ ПОЛЬЗОВАТЕЛЯ ====================
+    match /users/{userId}/blockedUsers/{blockedId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/mutedChats/{chatId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/savedPosts/{postId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/userPosts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/following/{followingId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    match /users/{userId}/followers/{followerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // ==================== ПОДПИСКИ (FOLLOW SYSTEM) ====================
+    // 🔥 РАЗРЕШАЕМ УДАЛЕНИЕ ДЛЯ ОЧИСТКИ МЁРТВЫХ ССЫЛОК
+    match /following/{userId}/userFollowing/{targetId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    match /followers/{userId}/userFollowers/{followerId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+    
+    // ==================== CREATIVE POSTS ====================
+    match /creative_posts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null;
+    }
+    
+    // ==================== ОСНОВНЫЕ ПОСТЫ ====================
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // ==================== ЛАЙКИ ====================
+    match /likes/{likeId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // ==================== ЧАТЫ ====================
+    match /chats/{chatId} {
+      allow read, create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    match /chats/{chatId}/messages/{messageId} {
+      allow read, create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+    
+    match /chats/{chatId}/typing/{userId} {
+      allow read: if request.auth != null;
+      allow create, update, delete: if request.auth != null;
+    }
+    
+    // ==================== УВЕДОМЛЕНИЯ ====================
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null;
+    }
+    
+    // ==================== КОММЕНТАРИИ ====================
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+    
+    match /posts/{postId}/comments/{commentId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+      allow update, delete: if request.auth != null;
+    }
+    
+    // ==================== МЕТРИКИ ====================
+    match /interactions/{interactionId} {
+      allow read, create, update, delete: if request.auth != null;
+    }
+    
+    match /metrics/{metricId} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

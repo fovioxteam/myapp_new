@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "370877420307",
+    "project_id": "foviox-2f61b",
+    "storage_bucket": "foviox-2f61b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:370877420307:android:437a0f79ef05a53b1d80e6",
+        "android_client_info": {
+          "package_name": "com.foviox.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "370877420307-14g992j1kn6ojet3fuuc67rsnsm13ek8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.foviox.app",
+            "certificate_hash": "bc02a5749abed856883a5160d9005438ed827bb3"
+          }
+        },
+        {
+          "client_id": "370877420307-o0n1klv0rd9oph60i3cl6afmmih5lo23.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDT4qF6JSOUYIJX4q1-Evchm-B0IFR37zQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "370877420307-o0n1klv0rd9oph60i3cl6afmmih5lo23.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "370877420307-8b52ugj2tuqt008et66u42ss51vfgsau.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.myapp"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

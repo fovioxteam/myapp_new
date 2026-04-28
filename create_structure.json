@@ -1,0 +1,32 @@
+﻿{
+  "users": {
+    "BsGRVIbXKOVRcFRYjvwQkx2TBnQ2": {
+      "followers": {
+        "_initial": {
+          "type": "initial_marker",
+          "createdAt": {".sv": "timestamp"}
+        }
+      },
+      "following": {
+        "_initial": {
+          "type": "initial_marker",
+          "createdAt": {".sv": "timestamp"}
+        }
+      }
+    },
+    "5QtxV5XpzTS6ZYPtoo3Ir22f1vh2": {
+      "followers": {
+        "_initial": {
+          "type": "initial_marker",
+          "createdAt": {".sv": "timestamp"}
+        }
+      },
+      "following": {
+        "_initial": {
+          "type": "initial_marker",
+          "createdAt": {".sv": "timestamp"}
+        }
+      }
+    }
+  }
+}
