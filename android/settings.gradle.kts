@@ -1,10 +1,4 @@
 pluginManagement {
-    repositories {
-        google()
-        mavenCentral()
-        gradlePluginPortal()
-    }
-
     val flutterSdkPath =
         run {
             val properties = java.util.Properties()
@@ -15,18 +9,18 @@ pluginManagement {
         }
 
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
-}
 
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
         google()
         mavenCentral()
+        gradlePluginPortal()
     }
 }
 
 plugins {
-    id("dev.flutter.flutter-plugin-loader")
+    id("dev.flutter.flutter-plugin-loader") version "1.0.5"
+    id("com.android.application") version "8.11.1" apply false
+    id("org.jetbrains.kotlin.android") version "2.2.20" apply false
 }
 
 include(":app")

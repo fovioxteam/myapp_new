@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "370877420307-14g992j1kn6ojet3fuuc67rsnsm13ek8.apps.googleusercontent.com",
+          "client_id": "370877420307-c2vsj4s8mhm2jknvhl2945t16bid3c6c.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.foviox.app",
-            "certificate_hash": "bc02a5749abed856883a5160d9005438ed827bb3"
+            "certificate_hash": "404bbde51e10fdedd9b202a78f0d17ba89d074fc"
           }
         },
         {
