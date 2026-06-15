@@ -164,7 +164,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     _postController = Get.find<PostController>();
     print('✅ Found PostController');
     
-    // 🔥 ТОЛЬКО ДЛЯ ОБНОВЛЕНИЯ СЧЕТЧИКА В ШАПКЕ
     ever(_postController.userPosts, (_) {
       if (mounted) {
         setState(() {});
@@ -623,7 +622,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         crossAxisCount: 3,
         crossAxisSpacing: 1,
         mainAxisSpacing: 1,
-        childAspectRatio: 0.8,
+        childAspectRatio: 0.75,
       ),
       itemCount: 9,
       itemBuilder: (context, index) {
@@ -723,6 +722,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           iconTheme: const IconThemeData(color: Colors.black),
           titleTextStyle: const TextStyle(color: Colors.black),
           actions: [
+            // ТОЛЬКО НУЖНЫЕ КНОПКИ - БЕЗ СИНХРОНИЗАЦИИ
             Theme(
               data: Theme.of(context).copyWith(
                 splashColor: Colors.transparent,
@@ -793,7 +793,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                 controller: _tabController,
                 physics: const BouncingScrollPhysics(),
                 children: [
-                  _buildPostsView(),
+                  ProfilePostsGrid(
+                    userId: _currentUserId,
+                    postController: _postController,
+                    onPostTap: _openPostDetail,
+                  ),
                   _buildLikedView(),
                   _buildSavedView(),
                 ],
@@ -1170,31 +1174,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _buildPostsView() {
-    if (_isRefreshing && (_postController.userPosts[_currentUserId]?.isEmpty ?? true)) {
-      return _buildPostsShimmer();
-    }
-    
-    return ProfilePostsGrid(
-      userId: _currentUserId,
-      postController: _postController,
-      onPostTap: _openPostDetail,
-    );
-  }
-
-  String _formatCount(int count) {
-    if (count < 1000) return count.toString();
-    if (count < 1000000) return '${(count / 1000).toStringAsFixed(1)}K';
-    return '${(count / 1000000).toStringAsFixed(1)}M';
-  }
-
-  String _getPostImageUrl(Map<String, dynamic> post) {
-    return post["thumbnailUrl"]?.toString() 
-        ?? post["imageUrl"]?.toString() 
-        ?? post["url"]?.toString() 
-        ?? "";
-  }
-
   Widget _buildLikedView() {
     if (_loadingLiked) {
       return _buildPostsShimmer();
@@ -1236,44 +1215,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     
-    return GridView.builder(
-      padding: const EdgeInsets.all(1),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 1,
-        mainAxisSpacing: 1,
-        childAspectRatio: 0.8,
-      ),
-      itemCount: _likedPosts.length,
-      itemBuilder: (context, index) {
-        final post = _likedPosts[index];
-        final imageUrl = _getPostImageUrl(post);
-        
-        return GestureDetector(
-          onTap: () => _openPostDetail(post),
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            color: Colors.grey[100],
-            child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
-                ? CachedNetworkImage(
-                    key: ValueKey('${post['id']}_$imageUrl'),
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 300,
-                    memCacheHeight: 300,
-                    placeholder: (context, url) => Container(color: Colors.grey[200]),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
-                    ),
-                  )
-                : Container(
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                  ),
-          ),
-        );
-      },
+    return ProfilePostsGrid(
+      userId: 'liked_temp',
+      postController: _postController,
+      customPosts: _likedPosts,
+      onPostTap: _openPostDetail,
     );
   }
 
@@ -1318,45 +1264,19 @@ class _ProfileScreenState extends State<ProfileScreen>
       );
     }
     
-    return GridView.builder(
-      padding: const EdgeInsets.all(1),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        crossAxisSpacing: 1,
-        mainAxisSpacing: 1,
-        childAspectRatio: 0.8,
-      ),
-      itemCount: _savedPosts.length,
-      itemBuilder: (context, index) {
-        final post = _savedPosts[index];
-        final imageUrl = _getPostImageUrl(post);
-        
-        return GestureDetector(
-          onTap: () => _openPostDetail(post),
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            color: Colors.grey[100],
-            child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
-                ? CachedNetworkImage(
-                    key: ValueKey('${post['id']}_$imageUrl'),
-                    imageUrl: imageUrl,
-                    fit: BoxFit.cover,
-                    memCacheWidth: 300,
-                    memCacheHeight: 300,
-                    placeholder: (context, url) => Container(color: Colors.grey[200]),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.broken_image, color: Colors.grey),
-                    ),
-                  )
-                : Container(
-                    color: Colors.grey[200],
-                    child: const Icon(Icons.image_not_supported, color: Colors.grey),
-                  ),
-          ),
-        );
-      },
+    return ProfilePostsGrid(
+      userId: 'saved_temp',
+      postController: _postController,
+      customPosts: _savedPosts,
+      onPostTap: _openPostDetail,
     );
+  }
+
+  String _getPostImageUrl(Map<String, dynamic> post) {
+    return post["thumbnailUrl"]?.toString() 
+        ?? post["imageUrl"]?.toString() 
+        ?? post["url"]?.toString() 
+        ?? "";
   }
 
   void _showSnackbar(String message) {

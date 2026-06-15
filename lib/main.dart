@@ -29,7 +29,7 @@ import 'screens/security_settings_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/new_message_screen.dart';
 import 'screens/no_internet_screen.dart';
-import 'screens/splash_screen.dart';
+// import 'screens/custom_splash_screen.dart'; // УДАЛЕНО - файл удален
 import 'screens/welcome_screen.dart';
 import 'screens/post_detail_screen.dart';
 
@@ -428,8 +428,16 @@ class AuthWrapper extends StatelessWidget {
     return Obx(() {
       final authController = Get.find<AuthController>();
       
+      // ВРЕМЕННЫЙ SPALSH СКРИН (без картинки) - вместо удаленного CustomSplashScreen
       if (authController.isLoading.value && authController.firebaseUser.value == null) {
-        return const SplashScreen();
+        return const Scaffold(
+          backgroundColor: Colors.white,
+          body: Center(
+            child: CircularProgressIndicator(
+              color: Colors.black,
+            ),
+          ),
+        );
       }
       
       if (authController.isLoggedIn) {
@@ -552,7 +560,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
       clipBehavior: Clip.none,
       children: [
         Transform.scale(
-          scale: _selectedIndex == index ? 1.2 : 1.0,
+          scale: _selectedIndex == index ? 1.1 : 1.0,
           child: Icon(icon, color: _getIconColor(index), size: 24),
         ),
         if (index == 3)
@@ -569,27 +577,9 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
     );
   }
   
-  Widget _buildCenterButton() {
-    return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (context) => const UploadScreen(), fullscreenDialog: true)),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Transform.scale(
-          scale: _selectedIndex == 2 ? 1.2 : 1.0,
-          child: Icon(CupertinoIcons.add, color: _getIconColor(2), size: 30),
-        ),
-      ),
-    );
-  }
-  
   Widget _buildNavItem(dynamic icon, int index) {
     if (index == 2) {
-      return Expanded(
-        child: Center(
-          child: _buildCenterButton(),
-        ),
-      );
+      return _buildCenterButton();
     }
     return Expanded(
       child: GestureDetector(
@@ -597,8 +587,32 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
         behavior: HitTestBehavior.opaque,
         child: Container(
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 8),
           child: _buildNavIcon(icon, index),
+        ),
+      ),
+    );
+  }
+  
+  Widget _buildCenterButton() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const UploadScreen(),
+          fullscreenDialog: true,
+        ),
+      ),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+        child: Transform.scale(
+          scale: _selectedIndex == 2 ? 1.1 : 1.0,
+          child: Icon(
+            CupertinoIcons.add,
+            color: _getIconColor(2),
+            size: 28,
+          ),
         ),
       ),
     );
@@ -612,19 +626,25 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: _backgroundColor,
-          border: Border(top: BorderSide(color: _isDarkTheme ? Colors.grey.shade800 : Colors.grey.shade300, width: 0.5)),
+          border: Border(
+            top: BorderSide(
+              color: _isDarkTheme ? Colors.grey.shade800 : Colors.grey.shade200,
+              width: 0.3,
+            ),
+          ),
         ),
         child: SafeArea(
           top: false,
           child: Padding(
-            padding: const EdgeInsets.only(bottom: 4.0),
+            padding: const EdgeInsets.only(top: 4, bottom: 4),
             child: SizedBox(
-              height: kBottomNavigationBarHeight + 20,
+              height: 48,
               child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
                   _buildNavItem(Icons.home, 0),
                   _buildNavItem(CupertinoIcons.search, 1),
-                  _buildNavItem(CupertinoIcons.add, 2),
+                  _buildCenterButton(),
                   _buildNavItem(CupertinoIcons.chat_bubble_2_fill, 3),
                   _buildNavItem(CupertinoIcons.person_fill, 4),
                 ],

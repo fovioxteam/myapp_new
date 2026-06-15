@@ -58,7 +58,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   
   Map<String, dynamic>? _replyToMessageData;
   String _currentAvatarUrl = '';
-  String? _lastReadMessageId;
+  Timestamp? _lastReadTimestamp;
   
   bool get _isBlocked => _blockService.isBlocked(widget.otherUserId);
   bool _hasBlockedMe = false;
@@ -87,16 +87,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _unreadService.setActiveChat(widget.chatId);
     _unreadService.markChatAsRead(widget.chatId);
     
-    try {
+    // 🔥 ПРОВЕРЯЕМ: ЕСТЬ ЛИ УЖЕ КОНТРОЛЛЕР
+    final controllerExists = Get.isRegistered<ChatController>(tag: widget.chatId);
+    
+    if (controllerExists) {
       _chatController = Get.find<ChatController>(tag: widget.chatId);
       print('✅ Found existing ChatController for ${widget.chatId}');
-    } catch (e) {
+      // 🔥 ЕСЛИ ЕСТЬ - СРАЗУ СТАВИМ ИНИЦИАЛИЗИРОВАННЫМ И НЕ ПОКАЗЫВАЕМ ЛОАДЕР
+      _isInitialized = true;
+    } else {
       print('⚠️ ChatController not found, creating new one for ${widget.chatId}');
       _chatController = Get.put(
         ChatController(), 
         tag: widget.chatId,
         permanent: true,
       );
+      _isInitialized = false;
     }
     
     _chatController.setChatScreenActive(true);
@@ -105,7 +111,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _focusNode.addListener(_onFocusChange);
     }
     
-    _initializeChat();
+    _initializeChat(showLoader: !controllerExists);
     _setupTypingStatus();
     _updateMyOnlineStatus(true);
     _loadUserAvatar();
@@ -126,7 +132,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _unreadService.clearActiveChat();
-    _chatController.setChatScreenActive(false);
+    if (_chatController != null) {
+      _chatController.setChatScreenActive(false);
+    }
     _focusNode.removeListener(_onFocusChange);
     _focusNode.dispose();
     _scrollController.dispose();
@@ -199,10 +207,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         final lastRead = data['lastRead'] as Map<String, dynamic>?;
         
         if (lastRead != null) {
-          final lastReadId = lastRead[widget.currentUserId];
-          if (lastReadId != null && lastReadId != _lastReadMessageId) {
+          final readValue = lastRead[widget.currentUserId];
+          
+          if (readValue is Timestamp) {
             setState(() {
-              _lastReadMessageId = lastReadId;
+              _lastReadTimestamp = readValue;
             });
           }
         }
@@ -250,7 +259,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _initializeChat() async {
+  Future<void> _initializeChat({bool showLoader = true}) async {
     try {
       await _chatController.initializeChat(
         chatId: widget.chatId,
@@ -258,18 +267,32 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         isGroup: widget.isGroup,
       );
       
-      setState(() {
+      // 🔥 ТОЛЬКО ДЛЯ НОВЫХ КОНТРОЛЛЕРОВ ПОКАЗЫВАЕМ ЛОАДЕР
+      if (showLoader) {
+        setState(() {
+          _isInitialized = true;
+        });
+      } else {
+        // Для существующего контроллера - сразу говорим что готово
         _isInitialized = true;
-      });
+        // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСОК, ЕСЛИ ОН ПУСТОЙ
+        if (_chatController.messages.isEmpty) {
+          _chatController.refreshMessages();
+        }
+      }
       
-      await Future.delayed(const Duration(milliseconds: 300));
+      await Future.delayed(const Duration(milliseconds: 100));
       
       _forceScrollToBottom();
       _isFirstLoad = false;
       
+      Timer? _scrollTimer;
       ever(_chatController.messages, (_) {
         if (!_isFirstLoad && mounted) {
-          _scrollToBottom();
+          _scrollTimer?.cancel();
+          _scrollTimer = Timer(const Duration(milliseconds: 100), () {
+            _scrollToBottom();
+          });
         }
       });
       
@@ -292,12 +315,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       final lastMessage = _chatController.messages.last;
       final lastTimestamp = lastMessage['createdAt'];
       
+      Object? startAfter;
+      if (lastTimestamp is Timestamp) {
+        startAfter = lastTimestamp;
+      } else if (lastTimestamp is DateTime) {
+        startAfter = Timestamp.fromDate(lastTimestamp);
+      } else {
+        startAfter = null;
+      }
+      
+      if (startAfter == null) {
+        _hasMoreMessages = false;
+        setState(() => _isLoadingMore = false);
+        return;
+      }
+      
       final snapshot = await _firestore
           .collection('chats')
           .doc(widget.chatId)
           .collection('messages')
           .orderBy('createdAt', descending: true)
-          .startAfter([lastTimestamp])
+          .startAfter([startAfter])
           .limit(_messagesPerPage)
           .get();
       
@@ -310,7 +348,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           };
         }).toList();
         
-        _chatController.messages.addAll(moreMessages);
+        _chatController.addMessages(moreMessages);
         _hasMoreMessages = snapshot.docs.length == _messagesPerPage;
       } else {
         _hasMoreMessages = false;
@@ -333,7 +371,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         .snapshots()
         .listen((snapshot) {
       if (snapshot.exists) {
-        _chatController.setOtherUserTyping(snapshot.data()?['isTyping'] ?? false);
+        final data = snapshot.data();
+        final isTyping = data != null && data['isTyping'] == true;
+        _chatController.setOtherUserTyping(isTyping);
       } else {
         _chatController.setOtherUserTyping(false);
       }
@@ -624,20 +664,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
-  String _getOnlineStatusText() {
-    if (_chatController.otherUserOnline.value) {
-      return 'Online';
-    } else if (_chatController.otherUserLastSeen.value != null) {
-      final lastSeen = _chatController.otherUserLastSeen.value!;
-      final difference = DateTime.now().difference(lastSeen);
-      
-      if (difference.inMinutes < 1) return 'Just now';
-      if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
-      if (difference.inHours < 24) return '${difference.inHours}h ago';
-      if (difference.inDays < 7) return '${difference.inDays}d ago';
-      return 'Last seen ${difference.inDays}d ago';
-    }
-    return 'Offline';
+  bool _isLastReadMessage(String messageId, bool isMe) {
+    if (isMe) return false;
+    return false;
   }
 
   void _showSnackBar(String message) {
@@ -686,9 +715,200 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  bool _isLastReadMessage(String messageId, bool isMe) {
-    if (isMe) return false;
-    return messageId == _lastReadMessageId;
+  // 🔥 БЕЗОПАСНЫЕ ВИДЖЕТЫ С ПРОВЕРКОЙ
+  Widget _buildMessagesCount() {
+    if (!_isInitialized || _chatController == null) {
+      return const SizedBox.shrink();
+    }
+    
+    return Obx(() {
+      try {
+        return Text(
+          '${_chatController.messages.length} messages',
+          style: const TextStyle(fontSize: 12, color: Colors.grey),
+        );
+      } catch (e) {
+        return const SizedBox.shrink();
+      }
+    });
+  }
+
+  Widget _buildTypingIndicator() {
+    if (!_isInitialized || _chatController == null) {
+      return const SizedBox.shrink();
+    }
+    
+    return Obx(() {
+      try {
+        if (_chatController.otherUserTyping.value) {
+          return Text(
+            'typing...',
+            style: TextStyle(fontSize: 12, color: Colors.green[600]),
+          );
+        }
+        return const SizedBox.shrink();
+      } catch (e) {
+        return const SizedBox.shrink();
+      }
+    });
+  }
+
+  Widget _buildOnlineStatus() {
+    if (!_isInitialized || _chatController == null) {
+      return const SizedBox.shrink();
+    }
+    
+    return Obx(() {
+      try {
+        if (_chatController.otherUserOnline.value) {
+          return const Text(
+            'Online',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          );
+        }
+        
+        final lastSeen = _chatController.otherUserLastSeen.value;
+        if (lastSeen != null) {
+          final now = DateTime.now();
+          final difference = now.difference(lastSeen);
+          
+          String text;
+          if (difference.inMinutes < 1) text = 'Just now';
+          else if (difference.inMinutes < 60) text = '${difference.inMinutes}m ago';
+          else if (difference.inHours < 24) text = '${difference.inHours}h ago';
+          else if (difference.inDays < 7) text = '${difference.inDays}d ago';
+          else text = 'Last seen ${difference.inDays}d ago';
+          
+          return Text(
+            text,
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          );
+        }
+        return const Text(
+          'Offline',
+          style: TextStyle(fontSize: 12, color: Colors.grey),
+        );
+      } catch (e) {
+        return const SizedBox.shrink();
+      }
+    });
+  }
+
+  // 🔥 ОСНОВНОЙ СПИСОК СООБЩЕНИЙ - БЕЗ ЛИШНЕГО ЛОАДЕРА
+  Widget _buildMessagesList() {
+    // 🔥 ЕСЛИ КОНТРОЛЛЕР УЖЕ ИНИЦИАЛИЗИРОВАН И ЕСТЬ СООБЩЕНИЯ - ПОКАЗЫВАЕМ СРАЗУ
+    if (_isInitialized && _chatController != null && _chatController.messages.isNotEmpty) {
+      return _buildMessagesListView();
+    }
+    
+    // 🔥 ЕСЛИ КОНТРОЛЛЕР НОВЫЙ И ЕЩЁ НЕТ СООБЩЕНИЙ - ПОКАЗЫВАЕМ ЛОАДЕР
+    if (!_isInitialized || _chatController == null) {
+      return const Center(
+        child: CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+        ),
+      );
+    }
+    
+    return Obx(() {
+      try {
+        if (_chatController.isLoading.value && _chatController.messages.isEmpty) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+            ),
+          );
+        }
+        
+        if (_chatController.messages.isEmpty) {
+          return _buildEmptyChatState();
+        }
+        
+        return _buildMessagesListView();
+      } catch (e) {
+        print('❌ Error building chat messages: $e');
+        return const Center(
+          child: Text(
+            'Error loading messages',
+            style: TextStyle(color: Colors.red),
+          ),
+        );
+      }
+    });
+  }
+
+  Widget _buildMessagesListView() {
+    final messages = _chatController.messages.toList();
+    
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200 &&
+            _hasMoreMessages &&
+            !_isLoadingMore) {
+          _loadMoreMessages();
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: _scrollController,
+        padding: const EdgeInsets.only(left: 16, right: 16, top: 16, bottom: 16),
+        reverse: true,
+        itemCount: messages.length + (_isLoadingMore ? 1 : 0),
+        cacheExtent: _cacheExtent,
+        addAutomaticKeepAlives: true,
+        addRepaintBoundaries: true,
+        itemBuilder: (context, index) {
+          if (index == messages.length && _isLoadingMore) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
+                ),
+              ),
+            );
+          }
+          
+          final message = messages[index];
+          final isMe = message['senderId'] == widget.currentUserId;
+          final messageId = message['id'] as String;
+          final isSelected = _isSelectionMode && _selectedMessageId == messageId;
+          
+          final bool shouldAnimate = _animatingMessageIds.contains(messageId) && index == 0;
+          
+          _messageKeys[messageId] ??= GlobalKey();
+          
+          Widget messageWidget = ChatMessageWidget(
+            message: message,
+            isMe: isMe,
+            isGroup: widget.isGroup,
+            senderName: isMe ? null : widget.otherUserName,
+            onLongPress: (String id) => _onMessageLongPress(messageId),
+            onAvatarTap: (!isMe && !widget.isGroup) ? _viewProfile : null,
+            isSelected: isSelected,
+            onReplyTap: _scrollToMessage,
+          );
+          
+          if (shouldAnimate) {
+            messageWidget = AnimatedOpacity(
+              opacity: 1.0,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              child: messageWidget,
+            );
+          }
+          
+          return RepaintBoundary(
+            key: _messageKeys[messageId],
+            child: Opacity(
+              opacity: _isSelectionMode && !isSelected ? 0.3 : 1.0,
+              child: messageWidget,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   Widget _buildWebInputField() {
@@ -950,88 +1170,41 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           icon: const Icon(Icons.arrow_back, color: Colors.black),
           onPressed: () => Navigator.pop(context),
         ),
-        title: GestureDetector(
-          onTap: _viewProfile,
-          child: Row(
-            children: [
-              _buildAvatar(),
-              const SizedBox(width: 12),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        widget.isGroup ? widget.groupName : widget.otherUserName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black,
-                        ),
+        title: Row(
+          children: [
+            _buildAvatar(),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      widget.isGroup ? widget.groupName : widget.otherUserName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black,
                       ),
-                      if (!widget.isGroup && widget.otherUserIsVerified)
-                        const SizedBox(width: 4),
-                      if (!widget.isGroup && widget.otherUserIsVerified)
-                        const Icon(Icons.verified, color: Colors.blue, size: 16),
-                    ],
-                  ),
-                  Obx(() {
-                    try {
-                      if (widget.isGroup) {
-                        return Text(
-                          '${_chatController.messages.length} messages',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey,
-                          ),
-                        );
-                      } else {
-                        if (_isBlocked) {
-                          return const Text(
-                            'Blocked',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.red,
-                              fontWeight: FontWeight.normal,
-                            ),
-                          );
-                        } else if (_hasBlockedMe) {
-                          return const Text(
-                            'You are blocked',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.red,
-                              fontWeight: FontWeight.normal,
-                            ),
-                          );
-                        } else if (_chatController.otherUserTyping.value) {
-                          return Text(
-                            'typing...',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.green[600],
-                            ),
-                          );
-                        } else {
-                          return Text(
-                            _getOnlineStatusText(),
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.normal,
-                            ),
-                          );
-                        }
-                      }
-                    } catch (e) {
-                      print('❌ Error building chat header: $e');
-                      return const SizedBox.shrink();
-                    }
-                  }),
-                ],
-              ),
-            ],
-          ),
+                    ),
+                    if (!widget.isGroup && widget.otherUserIsVerified)
+                      const SizedBox(width: 4),
+                    if (!widget.isGroup && widget.otherUserIsVerified)
+                      const Icon(Icons.verified, color: Colors.blue, size: 16),
+                  ],
+                ),
+                widget.isGroup
+                    ? _buildMessagesCount()
+                    : (_isBlocked
+                        ? const Text('Blocked', style: TextStyle(fontSize: 12, color: Colors.red))
+                        : (_hasBlockedMe
+                            ? const Text('You are blocked', style: TextStyle(fontSize: 12, color: Colors.red))
+                            : (_chatController.otherUserTyping.value
+                                ? _buildTypingIndicator()
+                                : _buildOnlineStatus()))),
+              ],
+            ),
+          ],
         ),
       ),
       body: (_isBlocked || _hasBlockedMe) 
@@ -1041,111 +1214,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 Expanded(
                   child: GestureDetector(
                     onTap: () => FocusScope.of(context).unfocus(),
-                    child: Obx(() {
-                      try {
-                        // 🔥 ПОКАЗЫВАЕМ ЗАГРУЗКУ ПОКА ЧАТ НЕ ИНИЦИАЛИЗИРОВАН
-                        if (!_isInitialized || _chatController.isLoading.value) {
-                          return const Center(
-                            child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-                            ),
-                          );
-                        }
-                        
-                        // 🔥 ЕСЛИ СООБЩЕНИЙ НЕТ - ПОКАЗЫВАЕМ EMPTY STATE С АВАТАРКОЙ
-                        if (_chatController.messages.isEmpty) {
-                          return _buildEmptyChatState();
-                        }
-                        
-                        final messages = _chatController.messages;
-                        
-                        return NotificationListener<ScrollNotification>(
-                          onNotification: (notification) {
-                            if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200 &&
-                                _hasMoreMessages &&
-                                !_isLoadingMore) {
-                              _loadMoreMessages();
-                            }
-                            return false;
-                          },
-                          child: ListView.builder(
-                            controller: _scrollController,
-                            padding: EdgeInsets.only(
-                              left: 16,
-                              right: 16,
-                              top: 16,
-                              bottom: kIsWeb ? 16 : 16,
-                            ),
-                            reverse: true,
-                            itemCount: messages.length + (_isLoadingMore ? 1 : 0),
-                            cacheExtent: _cacheExtent,
-                            addAutomaticKeepAlives: true,
-                            addRepaintBoundaries: true,
-                            itemBuilder: (context, index) {
-                              if (index == messages.length && _isLoadingMore) {
-                                return const Padding(
-                                  padding: EdgeInsets.all(8),
-                                  child: Center(
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
-                                    ),
-                                  ),
-                                );
-                              }
-                              
-                              final message = messages[index];
-                              final isMe = message['senderId'] == widget.currentUserId;
-                              final messageId = message['id'] as String;
-                              final isSelected = _isSelectionMode && _selectedMessageId == messageId;
-                              
-                              final bool shouldAnimate = _animatingMessageIds.contains(messageId) && index == 0;
-                              
-                              _messageKeys[messageId] ??= GlobalKey();
-                              
-                              Widget messageWidget = ChatMessageWidget(
-                                message: message,
-                                isMe: isMe,
-                                isGroup: widget.isGroup,
-                                senderName: isMe ? null : widget.otherUserName,
-                                onLongPress: (String id) => _onMessageLongPress(messageId),
-                                onAvatarTap: (!isMe && !widget.isGroup) ? _viewProfile : null,
-                                isSelected: isSelected,
-                                onReplyTap: _scrollToMessage,
-                              );
-                              
-                              if (shouldAnimate) {
-                                messageWidget = AnimatedOpacity(
-                                  opacity: 1.0,
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeOut,
-                                  child: messageWidget,
-                                );
-                              }
-                              
-                              return RepaintBoundary(
-                                key: _messageKeys[messageId],
-                                child: Opacity(
-                                  opacity: _isSelectionMode && !isSelected ? 0.3 : 1.0,
-                                  child: messageWidget,
-                                ),
-                              );
-                            },
-                          ),
-                        );
-                      } catch (e) {
-                        print('❌ Error building chat messages: $e');
-                        return const Center(
-                          child: Text(
-                            'Error loading messages',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                        );
-                      }
-                    }),
+                    child: _buildMessagesList(),
                   ),
                 ),
-                
                 kIsWeb ? _buildWebInputField() : _buildNativeInputField(),
               ],
             ),
@@ -1198,7 +1269,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД _buildEmptyChatState
   Widget _buildEmptyChatState() {
     String avatarUrl = _currentAvatarUrl.isNotEmpty 
         ? _currentAvatarUrl 

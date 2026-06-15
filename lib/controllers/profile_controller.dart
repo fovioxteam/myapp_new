@@ -1,11 +1,14 @@
-﻿import 'dart:async';
+﻿// lib/controllers/profile_controller.dart
+
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:http/http.dart' as http;
 import 'dart:io';
 import 'profile_base_controller.dart';
 import '../services/follow_service.dart';
@@ -19,6 +22,10 @@ class ProfileController extends ProfileBaseController {
   final ImagePicker _picker = ImagePicker();
   final FollowService _followService = Get.find<FollowService>();
   final PostController _postController = Get.find<PostController>();
+  
+  // 🔥 ALGOLIA ADMIN API KEY (ВСТАВЬ СВОЙ ИЗ КОНСОЛИ)
+  static const String _algoliaAppId = "NRFCQ941L8";
+  static const String _algoliaAdminKey = "YOUR_ADMIN_API_KEY_HERE"; // ⚠️ ЗАМЕНИ НА СВОЙ!
   
   // Pagination variables
   final int _postsPerPage = 12;
@@ -104,7 +111,7 @@ class ProfileController extends ProfileBaseController {
         await _createUserProfile(userId);
       }
     } catch (e) {
-      print('? Error loading user data: $e');
+      print('❌ Error loading user data: $e');
       username.value = 'User';
       bio.value = '';
       avatarUrl.value = 'https://via.placeholder.com/150';
@@ -136,7 +143,7 @@ class ProfileController extends ProfileBaseController {
       
       _loadingMorePosts.value = true;
       
-      print('?? Loading posts for user: $userId via PostController');
+      print('📡 Loading posts for user: $userId via PostController');
       
       Query query = _firestore
           .collection('posts')
@@ -150,7 +157,7 @@ class ProfileController extends ProfileBaseController {
       
       final postsQuery = await query.get();
       
-      print('?? Found ${postsQuery.docs.length} posts');
+      print('📡 Found ${postsQuery.docs.length} posts');
       
       if (postsQuery.docs.isNotEmpty) {
         final newPosts = <Map<String, dynamic>>[];
@@ -189,7 +196,7 @@ class ProfileController extends ProfileBaseController {
           newPosts.add(post);
           _postController.addPostsToStorage([post]);
           
-          print('? Added post: ${doc.id}');
+          print('✅ Added post: ${doc.id}');
         }
         
         if (isInitial) {
@@ -208,16 +215,16 @@ class ProfileController extends ProfileBaseController {
           _hasMorePosts = false;
         }
         
-        print('? Total posts loaded: ${userPosts.length}');
+        print('📊 Total posts loaded: ${userPosts.length}');
       } else {
         _hasMorePosts = false;
         if (isInitial) {
           userPosts.value = [];
         }
-        print('?? No posts found for user $userId');
+        print('📭 No posts found for user $userId');
       }
     } catch (e) {
-      print('? Error loading user posts: $e');
+      print('❌ Error loading user posts: $e');
       if (isInitial) {
         userPosts.value = [];
       }
@@ -229,7 +236,7 @@ class ProfileController extends ProfileBaseController {
   void _refreshPostsFromPostController() {
     if (_currentUserId == null) return;
     
-    print('?? Refreshing posts from PostController for user: $_currentUserId');
+    print('🔄 Refreshing posts from PostController for user: $_currentUserId');
     
     final allPosts = _postController.posts.values.toList();
     
@@ -251,16 +258,16 @@ class ProfileController extends ProfileBaseController {
     userPosts.value = myPosts;
     postsCount.value = myPosts.length;
     
-    print('? Refreshed posts: ${myPosts.length} posts from PostController');
+    print('✅ Refreshed posts: ${myPosts.length} posts from PostController');
   }
   
   Future<void> refreshPosts(String userId) async {
-    print('?? Refreshing posts for user: $userId');
+    print('🔄 Refreshing posts for user: $userId');
     _hasMorePosts = true;
     _lastPostDocument = null;
     await _loadUserPostsViaPostController(userId, isInitial: true);
     _refreshPostsFromPostController();
-    print('? Refresh complete, found ${userPosts.length} posts');
+    print('✅ Refresh complete, found ${userPosts.length} posts');
     update();
   }
   
@@ -271,11 +278,11 @@ class ProfileController extends ProfileBaseController {
   
   Future<void> refreshCounters(String userId) async {
     try {
-      print('?? Refreshing profile for user: $userId');
+      print('🔄 Refreshing profile for user: $userId');
       await refreshPosts(userId);
-      print('? Profile refreshed');
+      print('✅ Profile refreshed');
     } catch (e) {
-      print('? Error refreshing profile: $e');
+      print('❌ Error refreshing profile: $e');
     }
   }
   
@@ -297,7 +304,7 @@ class ProfileController extends ProfileBaseController {
     if (userId == null) return;
     
     try {
-      print('?? Updating profile data...');
+      print('🔄 Updating profile data...');
       
       final userDoc = await _firestore.collection('users').doc(userId).get();
       if (userDoc.exists) {
@@ -317,10 +324,10 @@ class ProfileController extends ProfileBaseController {
           avatarUrl.value = userAvatar;
         }
         
-        print('? Profile data refreshed');
+        print('✅ Profile data refreshed');
       }
     } catch (e) {
-      print('? Error refreshing profile: $e');
+      print('❌ Error refreshing profile: $e');
     }
   }
   
@@ -329,14 +336,14 @@ class ProfileController extends ProfileBaseController {
         .getFollowersCountStream(userId)
         .listen((count) {
           followersCount.value = count;
-          print('?? Followers count updated: $count');
+          print('👥 Followers count updated: $count');
         });
     
     _followingSubscription = _followService
         .getFollowingCountStream(userId)
         .listen((count) {
           followingCount.value = count;
-          print('?? Following count updated: $count');
+          print('👥 Following count updated: $count');
         });
   }
   
@@ -376,7 +383,7 @@ class ProfileController extends ProfileBaseController {
       final snapshot = await uploadTask;
       final downloadUrl = await snapshot.ref.getDownloadURL();
       
-      print('? Avatar uploaded: $downloadUrl');
+      print('✅ Avatar uploaded: $downloadUrl');
       
       await _firestore.collection('users').doc(currentUserId).update({
         'avatarUrl': downloadUrl,
@@ -386,7 +393,7 @@ class ProfileController extends ProfileBaseController {
       });
 
       _postController.clearUserPostsCache(currentUserId);
-      print('?? Cleared post cache for user: $currentUserId');
+      print('🗑️ Cleared post cache for user: $currentUserId');
 
       await _updateAllUserPosts(
         userId: currentUserId,
@@ -394,7 +401,8 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: downloadUrl,
       );
       
-      await _updateUserInAlgolia(
+      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
+      await _directUpdateAlgolia(
         userId: currentUserId,
         username: username.value,
         avatarUrl: downloadUrl,
@@ -412,7 +420,7 @@ class ProfileController extends ProfileBaseController {
       );
       
     } catch (e) {
-      print('? Error changing avatar: $e');
+      print('❌ Error changing avatar: $e');
       Get.snackbar(
         'Error',
         'Failed to update profile picture: ${e.toString()}',
@@ -445,9 +453,9 @@ class ProfileController extends ProfileBaseController {
             'updatedAt': FieldValue.serverTimestamp(),
           });
       
-      print('? Created user profile for $userId');
+      print('✅ Created user profile for $userId');
     } catch (e) {
-      print('? Error creating user profile: $e');
+      print('❌ Error creating user profile: $e');
     }
   }
   
@@ -480,8 +488,26 @@ class ProfileController extends ProfileBaseController {
 
       bio.value = newBio;
       update();
+      
+      Get.snackbar(
+        'Success',
+        'Bio updated successfully',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+      
+      Get.back();
+      
     } catch (e) {
-      print('? Error updating bio: $e');
+      print('❌ Error updating bio: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to update bio',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
       rethrow;
     }
   }
@@ -502,7 +528,7 @@ class ProfileController extends ProfileBaseController {
           });
 
       _postController.clearUserPostsCache(currentUser.uid);
-      print('?? Cleared post cache for user: ${currentUser.uid}');
+      print('🗑️ Cleared post cache for user: ${currentUser.uid}');
 
       await _updateAllUserPosts(
         userId: currentUser.uid,
@@ -510,7 +536,8 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: newAvatarUrl,
       );
 
-      await _updateUserInAlgolia(
+      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
+      await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: username.value,
         avatarUrl: newAvatarUrl,
@@ -519,9 +546,106 @@ class ProfileController extends ProfileBaseController {
       avatarUrl.value = newAvatarUrl;
       update();
       
+      Get.snackbar(
+        'Success',
+        'Avatar updated successfully',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+      
+      Get.back();
+      
     } catch (e) {
-      print('? Error updating avatar: $e');
+      print('❌ Error updating avatar: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to update avatar',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
       rethrow;
+    }
+  }
+  
+  // ========== 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA ЧЕРЕЗ HTTP ==========
+  
+  Future<void> _directUpdateAlgolia({
+    required String userId,
+    required String username,
+    required String avatarUrl,
+  }) async {
+    print('🔄 [ALGOLIA DIRECT] Updating user: $userId -> $username');
+    
+    try {
+      // 1. Обновляем пользователя в Algolia
+      final userUrl = Uri.parse("https://$_algoliaAppId.algolia.net/1/indexes/users/$userId");
+      final userResponse = await http.put(
+        userUrl,
+        headers: {
+          'X-Algolia-Application-Id': _algoliaAppId,
+          'X-Algolia-API-Key': _algoliaAdminKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'objectID': userId,
+          'username': username,
+          'avatarUrl': avatarUrl,
+          'updatedAt': DateTime.now().millisecondsSinceEpoch,
+        }),
+      );
+      
+      if (userResponse.statusCode == 200 || userResponse.statusCode == 201) {
+        print('✅ [ALGOLIA DIRECT] User updated successfully: $username');
+      } else {
+        print('❌ [ALGOLIA DIRECT] Failed to update user: ${userResponse.body}');
+      }
+      
+      // 2. Обновляем посты пользователя в Algolia
+      final searchUrl = Uri.parse("https://$_algoliaAppId.algolia.net/1/indexes/posts/query");
+      final searchResponse = await http.post(
+        searchUrl,
+        headers: {
+          'X-Algolia-Application-Id': _algoliaAppId,
+          'X-Algolia-API-Key': _algoliaAdminKey,
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'params': 'filters=userId:"$userId"&hitsPerPage=1000',
+        }),
+      );
+      
+      if (searchResponse.statusCode == 200) {
+        final data = jsonDecode(searchResponse.body);
+        final hits = data['hits'] as List;
+        
+        print('📡 [ALGOLIA DIRECT] Found ${hits.length} posts to update');
+        
+        for (final hit in hits) {
+          final postId = hit['objectID'];
+          final postUrl = Uri.parse("https://$_algoliaAppId.algolia.net/1/indexes/posts/$postId");
+          await http.put(
+            postUrl,
+            headers: {
+              'X-Algolia-Application-Id': _algoliaAppId,
+              'X-Algolia-API-Key': _algoliaAdminKey,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'userName': username,
+              'userAvatar': avatarUrl,
+            }),
+          );
+        }
+        
+        print('✅ [ALGOLIA DIRECT] Updated ${hits.length} posts');
+      } else {
+        print('❌ [ALGOLIA DIRECT] Failed to search posts: ${searchResponse.body}');
+      }
+      
+    } catch (e) {
+      print('❌ [ALGOLIA DIRECT] Error: $e');
     }
   }
   
@@ -530,6 +654,9 @@ class ProfileController extends ProfileBaseController {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return;
 
+      print('🔄 Updating username from "${username.value}" to "$newUsername"');
+
+      // 1. Обновляем в Firestore
       await _firestore
           .collection('users')
           .doc(currentUser.uid)
@@ -537,27 +664,54 @@ class ProfileController extends ProfileBaseController {
             'username': newUsername,
             'updatedAt': FieldValue.serverTimestamp(),
           });
+      print('✅ Firestore updated');
 
+      // 2. Очищаем кэш
       _postController.clearUserPostsCache(currentUser.uid);
-      print('?? Cleared post cache for user: ${currentUser.uid}');
+      print('🗑️ Cleared post cache');
 
+      // 3. Обновляем все посты пользователя в Firestore
       await _updateAllUserPosts(
         userId: currentUser.uid,
         newUsername: newUsername,
         newAvatarUrl: avatarUrl.value,
       );
+      print('✅ Posts in Firestore updated');
 
-      await _updateUserInAlgolia(
+      // 4. 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
+      await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: newUsername,
         avatarUrl: avatarUrl.value,
       );
 
+      // 5. Обновляем локально
       username.value = newUsername;
       update();
       
+      print('✅ Username updated successfully to: $newUsername');
+      
+      Get.snackbar(
+        'Success',
+        'Username updated to "$newUsername"',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+      
+      Get.back();
+      await refreshPosts(currentUser.uid);
+      await updateProfileData();
+      
     } catch (e) {
-      print('? Error updating username: $e');
+      print('❌ Error updating username: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to update username: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
       rethrow;
     }
   }
@@ -570,6 +724,8 @@ class ProfileController extends ProfileBaseController {
     try {
       final currentUser = _auth.currentUser;
       if (currentUser == null) return;
+
+      print('🔄 Updating profile: username="$newUsername", bio="$newBio"');
 
       await _firestore
           .collection('users')
@@ -584,7 +740,7 @@ class ProfileController extends ProfileBaseController {
           });
 
       _postController.clearUserPostsCache(currentUser.uid);
-      print('?? Cleared post cache for user: ${currentUser.uid}');
+      print('🗑️ Cleared post cache');
 
       await _updateAllUserPosts(
         userId: currentUser.uid,
@@ -592,7 +748,8 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: newAvatarUrl,
       );
 
-      await _updateUserInAlgolia(
+      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
+      await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: newUsername,
         avatarUrl: newAvatarUrl,
@@ -603,10 +760,29 @@ class ProfileController extends ProfileBaseController {
       avatarUrl.value = newAvatarUrl;
       update();
       
-      print('? Profile and all posts updated successfully');
+      print('✅ Profile updated successfully');
+      
+      Get.snackbar(
+        'Success',
+        'Profile updated successfully',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+      
+      Get.back();
+      await refreshPosts(currentUser.uid);
+      await updateProfileData();
       
     } catch (e) {
-      print('? Error updating profile: $e');
+      print('❌ Error updating profile: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to update profile: $e',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
       rethrow;
     }
   }
@@ -623,11 +799,11 @@ class ProfileController extends ProfileBaseController {
           .get();
 
       if (postsSnapshot.docs.isEmpty) {
-        print('?? No posts to update');
+        print('📭 No posts to update');
         return;
       }
 
-      print('?? Updating ${postsSnapshot.docs.length} posts with new profile data...');
+      print('🔄 Updating ${postsSnapshot.docs.length} posts with new profile data...');
 
       final batch = _firestore.batch();
       
@@ -640,29 +816,10 @@ class ProfileController extends ProfileBaseController {
       }
 
       await batch.commit();
-      print('? All ${postsSnapshot.docs.length} posts updated successfully');
+      print('✅ All ${postsSnapshot.docs.length} posts updated successfully');
       
     } catch (e) {
-      print('? Error updating posts: $e');
-    }
-  }
-
-  Future<void> _updateUserInAlgolia({
-    required String userId,
-    required String username,
-    required String avatarUrl,
-  }) async {
-    try {
-      final functions = FirebaseFunctions.instance;
-      final callable = functions.httpsCallable('updateUserInAlgolia');
-      await callable.call({
-        'userId': userId,
-        'username': username,
-        'avatarUrl': avatarUrl,
-      });
-      print('? User updated in Algolia');
-    } catch (e) {
-      print('? Failed to update Algolia: $e');
+      print('❌ Error updating posts: $e');
     }
   }
   
@@ -674,7 +831,7 @@ class ProfileController extends ProfileBaseController {
           .get();
       return userDoc.exists;
     } catch (e) {
-      print('? Error checking user existence: $e');
+      print('❌ Error checking user existence: $e');
       return false;
     }
   }
@@ -687,7 +844,7 @@ class ProfileController extends ProfileBaseController {
           .get();
       return postsQuery.docs.length;
     } catch (e) {
-      print('? Error getting posts count: $e');
+      print('❌ Error getting posts count: $e');
       return 0;
     }
   }
@@ -699,10 +856,8 @@ class ProfileController extends ProfileBaseController {
 
       return await _followService.checkFollowStatus(targetUserId);
     } catch (e) {
-      print('? Error checking follow status: $e');
+      print('❌ Error checking follow status: $e');
       return false;
     }
   }
-  
-  // 🔥 УДАЛЁН МЕТОД fixCounters, так как его нет в FollowService
 }

@@ -113,13 +113,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       final String userName = userData['username'] ?? user.displayName ?? 'User';
       final String userAvatar = userData['avatarUrl'] ?? user.photoURL ?? '';
 
+      // 🔥 СОХРАНЯЕМ ОРИГИНАЛЬНЫЕ fitModes (НЕ ОБРЕЗАЕМ)
       final List<String> fitModesToSave = widget.fitModes ?? 
-          List.filled(widget.selectedFiles.length, 'cover');
+          List.filled(widget.selectedFiles.length, 'contain');
 
-      print('📝 Post will be created with:');
-      print('   - Username: $userName');
-      print('   - Total images: ${widget.selectedFiles.length}');
-      print('   - FitModes: $fitModesToSave');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      print('🔥 [CAPTION] ========== CREATING NEW POST ==========');
+      print('🔥 [CAPTION] Username: $userName');
+      print('🔥 [CAPTION] Total images: ${widget.selectedFiles.length}');
+      print('🔥 [CAPTION] fitModesToSave: $fitModesToSave');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       List<String> imageUrls = [];
       List<int> failedUploads = [];
@@ -204,13 +207,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           ),
         );
         
+        // Удаляем fitModes для failed изображений
         final List<String> filteredFitModes = [];
         for (int i = 0; i < widget.selectedFiles.length; i++) {
           if (!failedUploads.contains(i)) {
             filteredFitModes.add(fitModesToSave[i]);
           }
         }
-        
         fitModesToSave.clear();
         fitModesToSave.addAll(filteredFitModes);
       }
@@ -225,19 +228,21 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       
       print('✅ Successfully uploaded ${imageUrls.length} images');
       print('   - URLs: $imageUrls');
-      print('   - FitModes to save: $fitModesToSave');
+      print('   - fitModesToSave: $fitModesToSave');
 
       setState(() {
         _uploadStatus = 'Saving post...';
         _uploadProgress = 0.95;
       });
 
+      // 🔥 СОХРАНЯЕМ fitModes КАК ЕСТЬ (разные для каждого фото)
       final postData = {
         'userId': user.uid,
         'userName': userName,
         'userAvatar': userAvatar,
         'imageUrls': imageUrls,
-        'fitModes': fitModesToSave,
+        'fitModes': fitModesToSave,  // 🔥 ОРИГИНАЛЬНЫЕ
+        'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',  // для совместимости
         'caption': fullCaption,
         'hashtags': _selectedHashtags,
         'likes': 0,
@@ -254,7 +259,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
       print('📦 Saving post to Firestore...');
       print('   - imageUrls count: ${imageUrls.length}');
-      print('   - fitModes count: ${fitModesToSave.length}');
+      print('   - fitModes: $fitModesToSave');
       
       if (imageUrls.isEmpty) {
         throw Exception('Cannot save post: no image URLs');
@@ -268,7 +273,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       await docRef.update({'id': docRef.id});
       
       print('✅ Post created with ID: ${docRef.id}');
-      print('✅ Saved imageUrls: ${postData['imageUrls']}');
       print('✅ Saved fitModes: ${postData['fitModes']}');
       
       final verifyDoc = await _firestore.collection('posts').doc(docRef.id).get();
@@ -286,6 +290,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       }
       
       print('✅ Verified: post has ${savedImageUrls.length} image URLs');
+      print('✅ Verified fitModes in Firestore: ${verifyData['fitModes']}');
+      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       await _firestore
           .collection('users')
@@ -314,14 +320,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (mounted) {
-        try {
-          final profileController = Get.find<ProfileController>();
-          await profileController.refreshPosts(user.uid);
-          await profileController.updateProfileData();
-        } catch (e) {
-          print('⚠️ Could not refresh profile: $e');
-        }
-        
+        // 🔥 НЕ ВЫЗЫВАЕМ refreshUserPosts - просто показываем успех
         Navigator.popUntil(context, (route) {
           return route.settings.name == '/feed' || route.isFirst;
         });

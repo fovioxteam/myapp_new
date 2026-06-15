@@ -1,3 +1,5 @@
+// functions/index.js
+
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 const algoliasearch = require('algoliasearch');
@@ -39,7 +41,7 @@ function initAlgolia(adminKey) {
 }
 
 // ============================================
-// 🔥 HELPER: ПАКЕТНОЕ УДАЛЕНИЕ (максимум 400 за раз)
+// 🔥 HELPER: ПАКЕТНОЕ УДАЛЕНИЕ
 // ============================================
 async function deleteCollectionInBatches(collectionRef, batchSize = 400) {
   let totalDeleted = 0;
@@ -136,334 +138,400 @@ async function sendPushNotificationHelper(token, title, body, route, entityId, s
 }
 
 // ============================================
-// 🔥 TEST DELETE FUNCTION
+// 🔥 MARK CHAT AS READ
 // ============================================
-exports.testDelete = functions
+exports.markChatAsRead = functions
   .runWith({ enforceAppCheck: false })
   .https.onCall(async (data, context) => {
-    const userId = data.userId;
-    
-    console.log(`🧪 TEST DELETE for user: ${userId}`);
-    
-    if (!userId) {
-      throw new functions.https.HttpsError('invalid-argument', 'User ID required');
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
     }
+
+    const userId = context.auth.uid;
+    const { chatId } = data;
     
+    if (!chatId) {
+      throw new functions.https.HttpsError('invalid-argument', 'chatId is required');
+    }
+
+    console.log(`📖 [CF] markChatAsRead: chatId=${chatId}, userId=${userId}`);
+
     try {
-      const userDoc = await db.collection('users').doc(userId).get();
+      const chatRef = db.collection('chats').doc(chatId);
+      const chatDoc = await chatRef.get();
       
-      if (!userDoc.exists) {
-        console.log(`⚠️ User ${userId} not found`);
-        return { success: true, message: 'User not found' };
+      if (!chatDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Chat not found');
       }
       
-      console.log(`✅ User ${userId} exists: ${userDoc.data()?.username}`);
+      const chatData = chatDoc.data();
+      const participants = chatData.participants || [];
       
-      return { success: true, user: userDoc.data()?.username };
+      if (!participants.includes(userId)) {
+        throw new functions.https.HttpsError('permission-denied', 'User is not a participant');
+      }
+      
+      await chatRef.update({
+        [`unreadCount.${userId}`]: 0,
+        [`lastRead.${userId}`]: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      const messagesSnapshot = await chatRef
+        .collection('messages')
+        .where('senderId', '!=', userId)
+        .get();
+      
+      const batch = db.batch();
+      
+      for (const doc of messagesSnapshot.docs) {
+        const messageData = doc.data();
+        if (messageData.read !== true) {
+          batch.update(doc.ref, {
+            'read': true,
+            'readAt': admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      
+      const notificationsSnapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('chatId', '==', chatId)
+        .where('isRead', '==', false)
+        .get();
+      
+      for (const doc of notificationsSnapshot.docs) {
+        batch.update(doc.ref, { isRead: true });
+      }
+      
+      await batch.commit();
+      
+      console.log(`✅ [CF] Chat ${chatId} marked as read for user ${userId}`);
+      
+      return { 
+        success: true, 
+        message: 'Chat marked as read',
+      };
       
     } catch (error) {
-      console.error('❌ Error:', error);
-      throw error;
+      console.error(`❌ [CF] Error marking chat as read: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
     }
   });
 
 // ============================================
-// 🔥 DELETE USER ACCOUNT (С ПРАВИЛЬНЫМ ОБНОВЛЕНИЕМ СЧЕТЧИКОВ)
+// 🔥 MARK MESSAGE AS READ
 // ============================================
-exports.deleteUserAccount = functions
-  .runWith({ 
-    enforceAppCheck: false, 
-    timeoutSeconds: 540,
-    memory: '1GB',
-    secrets: [ALGOLIA_ADMIN_KEY_SECRET]
-  })
+exports.markMessageAsRead = functions
+  .runWith({ enforceAppCheck: false })
   .https.onCall(async (data, context) => {
-    const userId = data.userId;
-    
-    console.log(`\n🗑️ ========== STARTING COMPLETE DELETE for user: ${userId} ==========\n`);
-    
-    if (!userId) {
-      throw new functions.https.HttpsError('invalid-argument', 'User ID required');
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
     }
     
-    // Получаем Algolia ключ из секрета
-    const algoliaKey = ALGOLIA_ADMIN_KEY_SECRET.value();
-    console.log(`🔑 Algolia key present: ${!!algoliaKey}`);
+    const userId = context.auth.uid;
+    const { chatId, messageId } = data;
     
-    const results = {
-      likes: 0,
-      following: 0,
-      followers: 0,
-      followsCleaned: 0,
-      subcollections: 0,
-      posts: 0,
-      postComments: 0,
-      chats: 0,
-      messages: 0,
-      notifications: 0,
-      algolia: false,
-      userDoc: false
-    };
-    
-    // ============================================
-    // 1. УДАЛЯЕМ ЛАЙКИ ПОЛЬЗОВАТЕЛЯ
-    // ============================================
-    try {
-      const likesQuery = db.collection('likes').where('userId', '==', userId);
-      results.likes = await deleteQueryInBatches(likesQuery, 400);
-      console.log(`✅ Deleted ${results.likes} likes`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting likes: ${e.message}`);
+    if (!chatId || !messageId) {
+      throw new functions.https.HttpsError('invalid-argument', 'chatId and messageId are required');
     }
     
-    // ============================================
-    // 1.5 СОХРАНЯЕМ СПИСКИ ПОДПИСОК ДО УДАЛЕНИЯ (ВАЖНО!)
-    // ============================================
-    let userFollowingList = [];
-    let userFollowersList = [];
+    console.log(`📖 [CF] markMessageAsRead: chatId=${chatId}, messageId=${messageId}, userId=${userId}`);
     
     try {
-      const followingSnapshot = await db.collection('following').doc(userId).collection('userFollowing').get();
-      userFollowingList = followingSnapshot.docs.map(doc => doc.id);
-      console.log(`📊 User is following ${userFollowingList.length} users`);
+      const chatRef = db.collection('chats').doc(chatId);
+      const messageRef = chatRef.collection('messages').doc(messageId);
       
-      const followersSnapshot = await db.collection('followers').doc(userId).collection('userFollowers').get();
-      userFollowersList = followersSnapshot.docs.map(doc => doc.id);
-      console.log(`📊 User has ${userFollowersList.length} followers`);
-    } catch (e) {
-      console.log(`⚠️ Error saving follow lists: ${e.message}`);
-    }
-    
-    // ============================================
-    // 2. УДАЛЯЕМ ПОДПИСКИ ПОЛЬЗОВАТЕЛЯ (following)
-    // ============================================
-    try {
-      const followingRef = db.collection('following').doc(userId).collection('userFollowing');
-      results.following = await deleteCollectionInBatches(followingRef, 400);
-      console.log(`✅ Deleted ${results.following} following entries`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting following: ${e.message}`);
-    }
-    
-    // ============================================
-    // 3. УДАЛЯЕМ ПОДПИСЧИКОВ ПОЛЬЗОВАТЕЛЯ (followers)
-    // ============================================
-    try {
-      const followersRef = db.collection('followers').doc(userId).collection('userFollowers');
-      results.followers = await deleteCollectionInBatches(followersRef, 400);
-      console.log(`✅ Deleted ${results.followers} follower entries`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting followers: ${e.message}`);
-    }
-    
-    // ============================================
-    // 4. ОБНОВЛЯЕМ СЧЕТЧИКИ (используя сохраненные списки)
-    // ============================================
-    try {
-      let cleanedCount = 0;
+      const messageDoc = await messageRef.get();
+      if (!messageDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Message not found');
+      }
       
-      for (const followingId of userFollowingList) {
-        try {
-          await db.collection('users').doc(followingId).update({
-            followersCount: admin.firestore.FieldValue.increment(-1)
-          });
-          cleanedCount++;
-          console.log(`   ✅ Decreased followersCount for ${followingId}`);
-        } catch (e) {
-          console.log(`   ⚠️ Could not update followersCount for ${followingId}: ${e.message}`);
+      const messageData = messageDoc.data();
+      if (messageData.senderId === userId) {
+        console.log(`⏭️ [CF] User marked own message as read, skipping`);
+        return { success: true, message: 'Own message' };
+      }
+      
+      await messageRef.update({
+        'read': true,
+        'readAt': admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      const allMessagesSnapshot = await chatRef
+        .collection('messages')
+        .where('senderId', '!=', userId)
+        .get();
+      
+      let remainingUnread = 0;
+      for (const doc of allMessagesSnapshot.docs) {
+        if (doc.data().read !== true) {
+          remainingUnread++;
         }
       }
       
-      for (const followerId of userFollowersList) {
-        try {
-          await db.collection('users').doc(followerId).update({
-            followingCount: admin.firestore.FieldValue.increment(-1)
-          });
-          cleanedCount++;
-          console.log(`   ✅ Decreased followingCount for ${followerId}`);
-        } catch (e) {
-          console.log(`   ⚠️ Could not update followingCount for ${followerId}: ${e.message}`);
-        }
-      }
-      
-      results.followsCleaned = cleanedCount;
-      console.log(`✅ Cleaned ${results.followsCleaned} follow relationships and updated counters`);
-    } catch (e) {
-      console.log(`⚠️ Error cleaning follow relationships: ${e.message}`);
-    }
-    
-    // ============================================
-    // 5. УДАЛЯЕМ ПОДКОЛЛЕКЦИИ ПОЛЬЗОВАТЕЛЯ
-    // ============================================
-    const subcollections = ['savedPosts', 'blockedUsers', 'mutedChats', 'userPosts'];
-    for (const sub of subcollections) {
-      try {
-        const subRef = db.collection('users').doc(userId).collection(sub);
-        const deletedCount = await deleteCollectionInBatches(subRef, 400);
-        results.subcollections += deletedCount;
-        console.log(`✅ Deleted ${deletedCount} from ${sub}`);
-      } catch (e) {
-        console.log(`⚠️ Error deleting ${sub}: ${e.message}`);
-      }
-    }
-    console.log(`✅ Total subcollections deleted: ${results.subcollections}`);
-    
-    // ============================================
-    // 6. УДАЛЯЕМ ПОСТЫ ПОЛЬЗОВАТЕЛЯ И КОММЕНТАРИИ К НИМ
-    // ============================================
-    try {
-      const postsQuery = db.collection('posts').where('userId', '==', userId);
-      let postsDeleted = 0;
-      let commentsDeleted = 0;
-      
-      while (true) {
-        const posts = await postsQuery.limit(400).get();
-        if (posts.empty) break;
-        
-        const batch = db.batch();
-        
-        for (const postDoc of posts.docs) {
-          const comments = await postDoc.ref.collection('comments').get();
-          for (const commentDoc of comments.docs) {
-            batch.delete(commentDoc.ref);
-            commentsDeleted++;
-          }
-          
-          const likes = await db.collection('likes').where('postId', '==', postDoc.id).get();
-          for (const likeDoc of likes.docs) {
-            batch.delete(likeDoc.ref);
-          }
-          
-          const metrics = await postDoc.ref.collection('watch_metrics').get();
-          for (const metricDoc of metrics.docs) {
-            batch.delete(metricDoc.ref);
-          }
-          
-          batch.delete(postDoc.ref);
-          postsDeleted++;
-        }
-        
-        await batch.commit();
-        console.log(`   Deleted ${postsDeleted} posts and ${commentsDeleted} comments so far...`);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      results.posts = postsDeleted;
-      results.postComments = commentsDeleted;
-      console.log(`✅ Deleted ${results.posts} posts and ${results.postComments} comments on those posts`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting posts: ${e.message}`);
-    }
-    
-    // ============================================
-    // 7. УДАЛЯЕМ ЧАТЫ С УЧАСТИЕМ ПОЛЬЗОВАТЕЛЯ
-    // ============================================
-    try {
-      const chatsQuery = db.collection('chats').where('participants', 'array-contains', userId);
-      let chatsDeleted = 0;
-      let messagesDeleted = 0;
-      
-      while (true) {
-        const chats = await chatsQuery.limit(400).get();
-        if (chats.empty) break;
-        
-        const batch = db.batch();
-        
-        for (const chatDoc of chats.docs) {
-          const messages = await chatDoc.ref.collection('messages').get();
-          for (const msgDoc of messages.docs) {
-            batch.delete(msgDoc.ref);
-            messagesDeleted++;
-          }
-          batch.delete(chatDoc.ref);
-          chatsDeleted++;
-        }
-        
-        await batch.commit();
-        console.log(`   Deleted ${chatsDeleted} chats and ${messagesDeleted} messages so far...`);
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-      
-      results.chats = chatsDeleted;
-      results.messages = messagesDeleted;
-      console.log(`✅ Deleted ${results.chats} chats and ${results.messages} messages`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting chats: ${e.message}`);
-    }
-    
-    // ============================================
-    // 8. УДАЛЯЕМ УВЕДОМЛЕНИЯ ПОЛЬЗОВАТЕЛЯ
-    // ============================================
-    try {
-      let notificationsDeleted = 0;
-      
-      const receivedQuery = db.collection('notifications').where('userId', '==', userId);
-      const deleted1 = await deleteQueryInBatches(receivedQuery, 400);
-      notificationsDeleted += deleted1;
-      
-      const sentQuery = db.collection('notifications').where('senderId', '==', userId);
-      const deleted2 = await deleteQueryInBatches(sentQuery, 400);
-      notificationsDeleted += deleted2;
-      
-      results.notifications = notificationsDeleted;
-      console.log(`✅ Deleted ${results.notifications} notifications`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting notifications: ${e.message}`);
-    }
-    
-    // ============================================
-    // 9. УДАЛЯЕМ ИЗ ALGOLIA
-    // ============================================
-    try {
-      if (algoliaKey) {
-        const algoliaClient = algoliasearch(ALGOLIA_APP_ID, algoliaKey);
-        const usersIndex = algoliaClient.initIndex("users");
-        await usersIndex.deleteObject(userId);
-        results.algolia = true;
-        console.log(`✅ User ${userId} deleted from Algolia`);
+      if (remainingUnread === 0) {
+        await chatRef.update({
+          [`unreadCount.${userId}`]: 0,
+          [`lastRead.${userId}`]: admin.firestore.FieldValue.serverTimestamp(),
+        });
       } else {
-        console.log(`⚠️ Skipping Algolia - no API key available`);
+        const currentUnread = (await chatRef.get()).data()?.unreadCount?.[userId] || 0;
+        await chatRef.update({
+          [`unreadCount.${userId}`]: Math.max(0, currentUnread - 1),
+        });
       }
-    } catch (e) {
-      console.log(`⚠️ Algolia error: ${e.message}`);
+      
+      console.log(`✅ [CF] Message ${messageId} marked as read`);
+      
+      return { success: true };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error marking message as read: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
     }
-    
-    // ============================================
-    // 10. УДАЛЯЕМ ДОКУМЕНТ ПОЛЬЗОВАТЕЛЯ
-    // ============================================
-    try {
-      await db.collection('users').doc(userId).delete();
-      results.userDoc = true;
-      console.log(`✅ User document deleted`);
-    } catch (e) {
-      console.log(`⚠️ Error deleting user doc: ${e.message}`);
-    }
-    
-    console.log(`\n✅ ========== DELETE COMPLETED FOR ${userId} ==========`);
-    console.log(`📊 DELETE SUMMARY:`);
-    console.log(`   - Likes deleted: ${results.likes}`);
-    console.log(`   - Following entries deleted: ${results.following}`);
-    console.log(`   - Follower entries deleted: ${results.followers}`);
-    console.log(`   - Follow relationships cleaned: ${results.followsCleaned}`);
-    console.log(`   - Subcollections deleted: ${results.subcollections}`);
-    console.log(`   - Posts deleted: ${results.posts}`);
-    console.log(`   - Comments on posts deleted: ${results.postComments}`);
-    console.log(`   - Chats deleted: ${results.chats}`);
-    console.log(`   - Messages deleted: ${results.messages}`);
-    console.log(`   - Notifications deleted: ${results.notifications}`);
-    console.log(`   - Algolia cleaned: ${results.algolia}`);
-    console.log(`   - User document deleted: ${results.userDoc}`);
-    console.log(`✅ ========== END ==========\n`);
-    
-    return { 
-      success: true, 
-      message: 'Account fully deleted',
-      stats: results
-    };
   });
 
 // ============================================
-// 🔥 SEND PUSH NOTIFICATION (CALLLABLE ДЛЯ ЧАТОВ)
+// 🔥 CLEAR ALL UNREAD FOR CHAT
+// ============================================
+exports.clearAllUnreadForChat = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+    }
+    
+    const userId = context.auth.uid;
+    const { chatId } = data;
+    
+    if (!chatId) {
+      throw new functions.https.HttpsError('invalid-argument', 'chatId is required');
+    }
+    
+    console.log(`🧹 [CF] clearAllUnreadForChat: chatId=${chatId}, userId=${userId}`);
+    
+    try {
+      const chatRef = db.collection('chats').doc(chatId);
+      
+      const messagesSnapshot = await chatRef
+        .collection('messages')
+        .where('senderId', '!=', userId)
+        .get();
+      
+      const batch = db.batch();
+      
+      for (const doc of messagesSnapshot.docs) {
+        if (doc.data().read !== true) {
+          batch.update(doc.ref, {
+            'read': true,
+            'readAt': admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      }
+      
+      batch.update(chatRef, {
+        [`unreadCount.${userId}`]: 0,
+        [`lastRead.${userId}`]: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      
+      const notificationsSnapshot = await db.collection('notifications')
+        .where('userId', '==', userId)
+        .where('chatId', '==', chatId)
+        .where('isRead', '==', false)
+        .get();
+      
+      for (const doc of notificationsSnapshot.docs) {
+        batch.update(doc.ref, { isRead: true });
+      }
+      
+      await batch.commit();
+      
+      console.log(`✅ [CF] Cleared unread messages for chat ${chatId}`);
+      
+      return {
+        success: true,
+      };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error clearing unread: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// 🔥 SYNC UNREAD COUNT
+// ============================================
+exports.syncUnreadCount = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+    }
+    
+    const userId = context.auth.uid;
+    const { chatId } = data;
+    
+    if (!chatId) {
+      throw new functions.https.HttpsError('invalid-argument', 'chatId is required');
+    }
+    
+    console.log(`🔄 [CF] syncUnreadCount: chatId=${chatId}, userId=${userId}`);
+    
+    try {
+      const chatRef = db.collection('chats').doc(chatId);
+      const chatDoc = await chatRef.get();
+      
+      if (!chatDoc.exists) {
+        throw new functions.https.HttpsError('not-found', 'Chat not found');
+      }
+      
+      const chatData = chatDoc.data();
+      const firestoreUnread = chatData.unreadCount?.[userId] || 0;
+      
+      const messagesSnapshot = await chatRef
+        .collection('messages')
+        .where('senderId', '!=', userId)
+        .get();
+      
+      let actualUnread = 0;
+      for (const doc of messagesSnapshot.docs) {
+        if (doc.data().read !== true) {
+          actualUnread++;
+        }
+      }
+      
+      let fixed = false;
+      if (firestoreUnread !== actualUnread) {
+        console.log(`⚠️ [CF] Unread count mismatch: Firestore=${firestoreUnread}, Actual=${actualUnread}. Fixing...`);
+        await chatRef.update({
+          [`unreadCount.${userId}`]: actualUnread,
+        });
+        fixed = true;
+      }
+      
+      return {
+        success: true,
+        firestoreUnread: firestoreUnread,
+        actualUnread: actualUnread,
+        fixed: fixed,
+      };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error syncing unread count: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// 🔥 GET UNREAD COUNTS
+// ============================================
+exports.getUnreadCounts = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+    }
+    
+    const userId = context.auth.uid;
+    
+    console.log(`📊 [CF] getUnreadCounts called for user: ${userId}`);
+    
+    try {
+      const chatsSnapshot = await db.collection('chats')
+        .where('participants', 'array-contains', userId)
+        .get();
+      
+      const unreadCounts = {};
+      let total = 0;
+      
+      for (const doc of chatsSnapshot.docs) {
+        const chatData = doc.data();
+        const unreadMap = chatData.unreadCount || {};
+        const unread = unreadMap[userId] || 0;
+        
+        if (unread > 0) {
+          unreadCounts[doc.id] = unread;
+          total += unread;
+        }
+      }
+      
+      console.log(`📊 [CF] Found ${Object.keys(unreadCounts).length} chats with unread, total=${total}`);
+      
+      return {
+        success: true,
+        unreadCounts: unreadCounts,
+        total: total,
+      };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error getting unread counts: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// 🔥 GET ALL UNREAD CHATS
+// ============================================
+exports.getAllUnreadChats = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be logged in');
+    }
+    
+    const userId = context.auth.uid;
+    
+    console.log(`📊 [CF] getAllUnreadChats for user: ${userId}`);
+    
+    try {
+      const chatsSnapshot = await db.collection('chats')
+        .where('participants', 'array-contains', userId)
+        .get();
+      
+      const unreadChats = [];
+      
+      for (const doc of chatsSnapshot.docs) {
+        const chatData = doc.data();
+        const unreadMap = chatData.unreadCount || {};
+        const unread = unreadMap[userId] || 0;
+        
+        if (unread > 0) {
+          const otherUserId = chatData.participants.find(p => p !== userId);
+          let otherUserData = {};
+          
+          if (otherUserId) {
+            const userDoc = await db.collection('users').doc(otherUserId).get();
+            otherUserData = userDoc.data() || {};
+          }
+          
+          unreadChats.push({
+            chatId: doc.id,
+            unreadCount: unread,
+            otherUserId: otherUserId,
+            otherUserName: otherUserData.username || 'Unknown',
+            otherUserAvatar: otherUserData.avatarUrl || '',
+            lastMessage: chatData.lastMessage || '',
+            lastMessageTime: chatData.lastMessageTime,
+          });
+        }
+      }
+      
+      console.log(`📊 [CF] Found ${unreadChats.length} chats with unread messages`);
+      
+      return {
+        success: true,
+        unreadChats: unreadChats,
+        totalUnread: unreadChats.reduce((sum, chat) => sum + chat.unreadCount, 0),
+      };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error getting unread chats: ${error}`);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// 🔥 SEND PUSH NOTIFICATION
 // ============================================
 exports.sendPushNotification = functions
   .runWith({ enforceAppCheck: false })
@@ -526,6 +594,27 @@ exports.sendPushNotification = functions
       console.error(`❌ Error sending push:`, error);
       throw new functions.https.HttpsError('internal', error.message);
     }
+  });
+
+// ============================================
+// 🔥 UPDATE FCM TOKEN
+// ============================================
+exports.updateFCMToken = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Not authenticated');
+
+    const userId = context.auth.uid;
+    const { token, platform } = data;
+    if (!token) throw new functions.https.HttpsError('invalid-argument', 'token required');
+
+    await db.collection('users').doc(userId).update({
+      fcmToken: token,
+      fcmTokenUpdated: admin.firestore.FieldValue.serverTimestamp(),
+      fcmTokenPlatform: platform || 'unknown',
+    });
+
+    return { success: true };
   });
 
 // ============================================
@@ -874,218 +963,272 @@ exports.onNewMessage = functions.firestore
   });
 
 // ============================================
-// 🔥 UPDATE FCM TOKEN
+// 🔥 DELETE USER ACCOUNT
 // ============================================
-exports.updateFCMToken = functions
-  .runWith({ enforceAppCheck: false })
+exports.deleteUserAccount = functions
+  .runWith({ 
+    enforceAppCheck: false, 
+    timeoutSeconds: 540,
+    memory: '1GB',
+    secrets: [ALGOLIA_ADMIN_KEY_SECRET]
+  })
   .https.onCall(async (data, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Not authenticated');
-
-    const userId = context.auth.uid;
-    const { token, platform } = data;
-    if (!token) throw new functions.https.HttpsError('invalid-argument', 'token required');
-
-    await db.collection('users').doc(userId).update({
-      fcmToken: token,
-      fcmTokenUpdated: admin.firestore.FieldValue.serverTimestamp(),
-      fcmTokenPlatform: platform || 'unknown',
-    });
-
-    return { success: true };
-  });
-
-// ============================================
-// 🔥 MARK CHAT AS READ
-// ============================================
-exports.markChatAsRead = functions
-  .runWith({ enforceAppCheck: false })
-  .https.onCall(async (data, context) => {
-    if (!context.auth) throw new functions.https.HttpsError('unauthenticated', 'Not authenticated');
-
-    const userId = context.auth.uid;
-    const { chatId } = data;
-    if (!chatId) throw new functions.https.HttpsError('invalid-argument', 'chatId required');
-
-    await db.collection('chats').doc(chatId).update({ [`unreadCount.${userId}`]: 0 });
-
-    const notificationsSnapshot = await db.collection('notifications')
-      .where('userId', '==', userId)
-      .where('chatId', '==', chatId)
-      .where('isRead', '==', false)
-      .get();
-
-    const batch = db.batch();
-    notificationsSnapshot.docs.forEach(doc => batch.update(doc.ref, { isRead: true }));
-    await batch.commit();
-
-    return { success: true };
-  });
-
-// ============================================
-// 🔥 FIX COUNTERS
-// ============================================
-exports.fixCounters = functions.https.onRequest(async (req, res) => {
-  try {
-    console.log('🔄 Fixing counters...');
-    const postsSnapshot = await db.collection('posts').get();
-    const batch = db.batch();
-
-    for (const postDoc of postsSnapshot.docs) {
-      const likesSnapshot = await db
-        .collection('likes')
-        .where('postId', '==', postDoc.id)
-        .count()
-        .get();
-
-      const commentsSnapshot = await db
-        .collection('posts')
-        .doc(postDoc.id)
-        .collection('comments')
-        .count()
-        .get();
-
-      batch.update(postDoc.ref, {
-        likes: likesSnapshot.data().count,
-        comments: commentsSnapshot.data().count,
-      });
+    const userId = data.userId;
+    
+    console.log(`\n🗑️ ========== STARTING COMPLETE DELETE for user: ${userId} ==========\n`);
+    
+    if (!userId) {
+      throw new functions.https.HttpsError('invalid-argument', 'User ID required');
     }
-
-    await batch.commit();
-    console.log('✅ Counters fixed successfully');
-    res.status(200).json({ success: true, message: 'Counters updated' });
-  } catch (error) {
-    console.error('❌ Error fixing counters:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// ============================================
-// 🔥 RECALCULATE SCORES
-// ============================================
-const ER_WEIGHT = 0.4;
-const DWELL_WEIGHT = 0.4;
-const GROWTH_WEIGHT = 0.2;
-const NEWBIE_BONUS = 1.3;
-const EXPANDING_THRESHOLD = 0.5;
-const MAIN_THRESHOLD = 0.7;
-const TEST_POOL_SIZE = 200;
-
-exports.recalculateScores = functions.pubsub
-  .schedule('*/15 * * * *')
-  .onRun(async () => {
-    console.log('🔄 Starting score recalculation...');
-    const posts = await db.collection('posts')
-      .where('status', 'in', ['testing', 'expanding'])
-      .get();
-
-    let updatedCount = 0;
-    const batch = db.batch();
-
-    for (const post of posts.docs) {
+    
+    const algoliaKey = ALGOLIA_ADMIN_KEY_SECRET.value();
+    console.log(`🔑 Algolia key present: ${!!algoliaKey}`);
+    
+    const results = {
+      likes: 0,
+      following: 0,
+      followers: 0,
+      followsCleaned: 0,
+      subcollections: 0,
+      posts: 0,
+      postComments: 0,
+      chats: 0,
+      messages: 0,
+      notifications: 0,
+      algolia: false,
+      userDoc: false
+    };
+    
+    // 1. Удаляем лайки
+    try {
+      const likesQuery = db.collection('likes').where('userId', '==', userId);
+      results.likes = await deleteQueryInBatches(likesQuery, 400);
+      console.log(`✅ Deleted ${results.likes} likes`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting likes: ${e.message}`);
+    }
+    
+    // 2. Сохраняем списки подписок
+    let userFollowingList = [];
+    let userFollowersList = [];
+    
+    try {
+      const followingSnapshot = await db.collection('following').doc(userId).collection('userFollowing').get();
+      userFollowingList = followingSnapshot.docs.map(doc => doc.id);
+      console.log(`📊 User is following ${userFollowingList.length} users`);
+      
+      const followersSnapshot = await db.collection('followers').doc(userId).collection('userFollowers').get();
+      userFollowersList = followersSnapshot.docs.map(doc => doc.id);
+      console.log(`📊 User has ${userFollowersList.length} followers`);
+    } catch (e) {
+      console.log(`⚠️ Error saving follow lists: ${e.message}`);
+    }
+    
+    // 3. Удаляем подписки
+    try {
+      const followingRef = db.collection('following').doc(userId).collection('userFollowing');
+      results.following = await deleteCollectionInBatches(followingRef, 400);
+      console.log(`✅ Deleted ${results.following} following entries`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting following: ${e.message}`);
+    }
+    
+    // 4. Удаляем подписчиков
+    try {
+      const followersRef = db.collection('followers').doc(userId).collection('userFollowers');
+      results.followers = await deleteCollectionInBatches(followersRef, 400);
+      console.log(`✅ Deleted ${results.followers} follower entries`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting followers: ${e.message}`);
+    }
+    
+    // 5. Обновляем счетчики
+    try {
+      let cleanedCount = 0;
+      
+      for (const followingId of userFollowingList) {
+        try {
+          await db.collection('users').doc(followingId).update({
+            followersCount: admin.firestore.FieldValue.increment(-1)
+          });
+          cleanedCount++;
+        } catch (e) {
+          console.log(`   ⚠️ Could not update followersCount for ${followingId}: ${e.message}`);
+        }
+      }
+      
+      for (const followerId of userFollowersList) {
+        try {
+          await db.collection('users').doc(followerId).update({
+            followingCount: admin.firestore.FieldValue.increment(-1)
+          });
+          cleanedCount++;
+        } catch (e) {
+          console.log(`   ⚠️ Could not update followingCount for ${followerId}: ${e.message}`);
+        }
+      }
+      
+      results.followsCleaned = cleanedCount;
+      console.log(`✅ Cleaned ${results.followsCleaned} follow relationships`);
+    } catch (e) {
+      console.log(`⚠️ Error cleaning follow relationships: ${e.message}`);
+    }
+    
+    // 6. Удаляем подколлекции пользователя
+    const subcollections = ['savedPosts', 'blockedUsers', 'mutedChats', 'userPosts'];
+    for (const sub of subcollections) {
       try {
-        const data = post.data();
-        const impressions = data.impressions || 1;
-        const likes = data.likes || 0;
-        const comments = data.comments || 0;
-        const saves = data.saves || 0;
-        const er = (likes + comments * 2 + saves * 3) / impressions;
-
-        const watchMetrics = await post.ref
-          .collection('watch_metrics')
-          .where('isFinal', '==', true)
-          .get();
-
-        let avgWatchTime = 0;
-        if (!watchMetrics.empty) {
-          const total = watchMetrics.docs.reduce(
-            (sum, doc) => sum + (doc.data().duration || 0),
-            0
-          );
-          avgWatchTime = total / watchMetrics.size;
-        }
-        const dwellTime = Math.min(avgWatchTime / 60, 1);
-        const newFollowers = data.newFollowers || 0;
-        const growth = Math.min(newFollowers / 50, 1);
-
-        let score = (ER_WEIGHT * er) +
-                    (DWELL_WEIGHT * dwellTime) +
-                    (GROWTH_WEIGHT * growth);
-
-        const author = await db.collection('users').doc(data.userId).get();
-        const authorData = author.data() || {};
-        const postsCount = authorData.postsCount || 0;
-        const followersCount = authorData.followersCount || 0;
-
-        if (postsCount < 10 && followersCount < 100) {
-          score *= NEWBIE_BONUS;
-        }
-
-        let newStatus = data.status;
-        if (score >= MAIN_THRESHOLD && data.status !== 'main') {
-          newStatus = 'main';
-        } else if (score >= EXPANDING_THRESHOLD && data.status === 'testing') {
-          newStatus = 'expanding';
-        }
-
-        batch.update(post.ref, {
-          score,
-          status: newStatus,
-          lastCalculated: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        updatedCount++;
-      } catch (error) {
-        console.error(`❌ Error processing post ${post.id}:`, error);
+        const subRef = db.collection('users').doc(userId).collection(sub);
+        const deletedCount = await deleteCollectionInBatches(subRef, 400);
+        results.subcollections += deletedCount;
+        console.log(`✅ Deleted ${deletedCount} from ${sub}`);
+      } catch (e) {
+        console.log(`⚠️ Error deleting ${sub}: ${e.message}`);
       }
     }
-
-    await batch.commit();
-    console.log(`✅ Updated ${updatedCount} posts`);
-    return null;
+    
+    // 7. Удаляем посты и комментарии
+    try {
+      const postsQuery = db.collection('posts').where('userId', '==', userId);
+      let postsDeleted = 0;
+      let commentsDeleted = 0;
+      
+      while (true) {
+        const posts = await postsQuery.limit(400).get();
+        if (posts.empty) break;
+        
+        const batch = db.batch();
+        
+        for (const postDoc of posts.docs) {
+          const comments = await postDoc.ref.collection('comments').get();
+          for (const commentDoc of comments.docs) {
+            batch.delete(commentDoc.ref);
+            commentsDeleted++;
+          }
+          
+          const likes = await db.collection('likes').where('postId', '==', postDoc.id).get();
+          for (const likeDoc of likes.docs) {
+            batch.delete(likeDoc.ref);
+          }
+          
+          const metrics = await postDoc.ref.collection('watch_metrics').get();
+          for (const metricDoc of metrics.docs) {
+            batch.delete(metricDoc.ref);
+          }
+          
+          batch.delete(postDoc.ref);
+          postsDeleted++;
+        }
+        
+        await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      results.posts = postsDeleted;
+      results.postComments = commentsDeleted;
+      console.log(`✅ Deleted ${results.posts} posts and ${results.postComments} comments`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting posts: ${e.message}`);
+    }
+    
+    // 8. Удаляем чаты и сообщения
+    try {
+      const chatsQuery = db.collection('chats').where('participants', 'array-contains', userId);
+      let chatsDeleted = 0;
+      let messagesDeleted = 0;
+      
+      while (true) {
+        const chats = await chatsQuery.limit(400).get();
+        if (chats.empty) break;
+        
+        const batch = db.batch();
+        
+        for (const chatDoc of chats.docs) {
+          const messages = await chatDoc.ref.collection('messages').get();
+          for (const msgDoc of messages.docs) {
+            batch.delete(msgDoc.ref);
+            messagesDeleted++;
+          }
+          batch.delete(chatDoc.ref);
+          chatsDeleted++;
+        }
+        
+        await batch.commit();
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      
+      results.chats = chatsDeleted;
+      results.messages = messagesDeleted;
+      console.log(`✅ Deleted ${results.chats} chats and ${results.messages} messages`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting chats: ${e.message}`);
+    }
+    
+    // 9. Удаляем уведомления
+    try {
+      let notificationsDeleted = 0;
+      
+      const receivedQuery = db.collection('notifications').where('userId', '==', userId);
+      const deleted1 = await deleteQueryInBatches(receivedQuery, 400);
+      notificationsDeleted += deleted1;
+      
+      const sentQuery = db.collection('notifications').where('senderId', '==', userId);
+      const deleted2 = await deleteQueryInBatches(sentQuery, 400);
+      notificationsDeleted += deleted2;
+      
+      results.notifications = notificationsDeleted;
+      console.log(`✅ Deleted ${results.notifications} notifications`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting notifications: ${e.message}`);
+    }
+    
+    // 10. Удаляем из Algolia
+    try {
+      if (algoliaKey) {
+        const algoliaClient = algoliasearch(ALGOLIA_APP_ID, algoliaKey);
+        const usersIndex = algoliaClient.initIndex("users");
+        await usersIndex.deleteObject(userId);
+        results.algolia = true;
+        console.log(`✅ User ${userId} deleted from Algolia`);
+      }
+    } catch (e) {
+      console.log(`⚠️ Algolia error: ${e.message}`);
+    }
+    
+    // 11. Удаляем документ пользователя
+    try {
+      await db.collection('users').doc(userId).delete();
+      results.userDoc = true;
+      console.log(`✅ User document deleted`);
+    } catch (e) {
+      console.log(`⚠️ Error deleting user doc: ${e.message}`);
+    }
+    
+    console.log(`\n✅ ========== DELETE COMPLETED FOR ${userId} ==========`);
+    console.log(`📊 DELETE SUMMARY:`, results);
+    
+    return { success: true, stats: results };
   });
 
 // ============================================
-// 🔥 POST CREATED
+// 🔥 TEST DELETE FUNCTION
 // ============================================
-exports.onPostCreated = functions.firestore
-  .document('posts/{postId}')
-  .onCreate(async (snap, context) => {
-    const users = await db.collection('users')
-      .where('isActive', '==', true)
-      .limit(TEST_POOL_SIZE)
-      .get();
-
-    const testPool = users.docs.map(doc => doc.id);
-    await snap.ref.update({
-      testPool,
-      status: 'testing',
-      score: 0,
-      impressions: 0,
-      avgWatchTime: 0,
-      newFollowers: 0,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  });
-
-// ============================================
-// 🔥 WATCH METRICS
-// ============================================
-exports.onWatchMetric = functions.firestore
-  .document('posts/{postId}/watch_metrics/{metricId}')
-  .onCreate(async (snap, context) => {
-    const postId = context.params.postId;
-    const postRef = db.collection('posts').doc(postId);
-    const watchMetrics = await postRef
-      .collection('watch_metrics')
-      .where('isFinal', '==', true)
-      .get();
-
-    if (!watchMetrics.empty) {
-      const total = watchMetrics.docs.reduce(
-        (sum, doc) => sum + (doc.data().duration || 0),
-        0
-      );
-      const avgTime = total / watchMetrics.size;
-      await postRef.update({ avgWatchTime: avgTime });
+exports.testDelete = functions
+  .runWith({ enforceAppCheck: false })
+  .https.onCall(async (data, context) => {
+    const userId = data.userId;
+    console.log(`🧪 TEST DELETE for user: ${userId}`);
+    
+    if (!userId) {
+      throw new functions.https.HttpsError('invalid-argument', 'User ID required');
+    }
+    
+    try {
+      const userDoc = await db.collection('users').doc(userId).get();
+      return { success: true, user: userDoc.data()?.username };
+    } catch (error) {
+      console.error('❌ Error:', error);
+      throw error;
     }
   });
 
@@ -1229,6 +1372,129 @@ exports.onUserUpdatedForAlgolia = functions
     }
   });
 
+// ============================================
+// 🔥 НОВАЯ ФУНКЦИЯ: ОБНОВЛЕНИЕ ПОСТОВ ПРИ СМЕНЕ ИМЕНИ ПОЛЬЗОВАТЕЛЯ
+// ============================================
+exports.onUserUpdateUpdatePosts = functions
+  .region('europe-west1')
+  .runWith({ secrets: [ALGOLIA_ADMIN_KEY_SECRET], timeoutSeconds: 120 })
+  .firestore.document('users/{userId}')
+  .onUpdate(async (change, context) => {
+    const beforeData = change.before.data();
+    const afterData = change.after.data();
+    const userId = context.params.userId;
+    
+    const oldUsername = beforeData.username;
+    const newUsername = afterData.username;
+    
+    // Проверяем, изменилось ли имя
+    if (oldUsername === newUsername) {
+      console.log(`⏭️ [Algolia] Username not changed for user ${userId}`);
+      return null;
+    }
+    
+    console.log(`🔄 [Algolia] Username changed for user ${userId}: "${oldUsername}" -> "${newUsername}"`);
+    
+    const algoliaKey = ALGOLIA_ADMIN_KEY_SECRET.value();
+    const { postsIndex } = initAlgolia(algoliaKey);
+    
+    if (!postsIndex) {
+      console.log(`⚠️ [Algolia] Algolia not initialized, skipping`);
+      return null;
+    }
+    
+    try {
+      // Находим все посты пользователя в Algolia
+      const searchResult = await postsIndex.search('', {
+        filters: `userId:"${userId}"`,
+        hitsPerPage: 1000,
+      });
+      
+      const hits = searchResult.hits;
+      console.log(`📡 [Algolia] Found ${hits.length} posts to update for user ${userId}`);
+      
+      if (hits.length === 0) {
+        console.log(`📭 [Algolia] No posts found for user ${userId}`);
+        return null;
+      }
+      
+      // Обновляем каждый пост
+      for (const hit of hits) {
+        await postsIndex.partialUpdateObject({
+          objectID: hit.objectID,
+          userName: newUsername,
+        });
+      }
+      
+      console.log(`✅ [Algolia] Updated ${hits.length} posts with new username: ${newUsername}`);
+      
+    } catch (error) {
+      console.error(`❌ [Algolia] Error updating posts:`, error);
+    }
+    
+    return null;
+  });
+
+// ============================================
+// 🔥 НОВАЯ ФУНКЦИЯ: ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ВСЕХ ПОСТОВ ПОЛЬЗОВАТЕЛЯ (CALLABLE)
+// ============================================
+exports.updateAllUserPostsInAlgolia = functions
+  .runWith({ enforceAppCheck: false, secrets: [ALGOLIA_ADMIN_KEY_SECRET] })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Not authenticated');
+    }
+    
+    const { userId, username, avatarUrl } = data;
+    
+    if (!userId) {
+      throw new functions.https.HttpsError('invalid-argument', 'userId required');
+    }
+    
+    console.log(`🔄 [CF] Force updating all user posts for ${userId} with username: ${username}`);
+    
+    const algoliaKey = ALGOLIA_ADMIN_KEY_SECRET.value();
+    const { usersIndex, postsIndex } = initAlgolia(algoliaKey);
+    
+    if (!postsIndex || !usersIndex) {
+      throw new functions.https.HttpsError('failed-precondition', 'Algolia not initialized');
+    }
+    
+    try {
+      // 1. Обновляем пользователя
+      await usersIndex.partialUpdateObject({
+        objectID: userId,
+        username: username || '',
+        avatarUrl: avatarUrl || '',
+      });
+      
+      // 2. Обновляем все посты
+      const searchResult = await postsIndex.search('', {
+        filters: `userId:"${userId}"`,
+        hitsPerPage: 1000,
+      });
+      
+      const hits = searchResult.hits;
+      console.log(`📡 [CF] Found ${hits.length} posts to update`);
+      
+      for (const hit of hits) {
+        await postsIndex.partialUpdateObject({
+          objectID: hit.objectID,
+          userName: username,
+          userAvatar: avatarUrl,
+        });
+      }
+      
+      console.log(`✅ [CF] Updated ${hits.length} posts for user ${userId}`);
+      
+      return { success: true, postsUpdated: hits.length };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error:`, error);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
 exports.indexExistingUsers = functions
   .runWith({ enforceAppCheck: false, secrets: [ALGOLIA_ADMIN_KEY_SECRET] })
   .https.onCall(async (data, context) => {
@@ -1278,9 +1544,6 @@ exports.indexExistingUsers = functions
     }
   });
 
-// ============================================
-// 🔥 UPDATE USER IN ALGOLIA
-// ============================================
 exports.updateUserInAlgolia = functions
   .runWith({ enforceAppCheck: false, secrets: [ALGOLIA_ADMIN_KEY_SECRET] })
   .https.onCall(async (data, context) => {

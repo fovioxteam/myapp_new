@@ -44,7 +44,7 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
     _pageController = PageController();
     
     for (int i = 0; i < widget.selectedFiles.length; i++) {
-      _fitModeForIndex[i] = BoxFit.cover;
+      _fitModeForIndex[i] = BoxFit.contain;
       _transformations[i] = Matrix4.identity();
     }
   }
@@ -58,16 +58,16 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
 
   void _toggleFitMode() {
     setState(() {
-      final currentFit = _fitModeForIndex[_currentIndex] ?? BoxFit.cover;
+      final currentFit = _fitModeForIndex[_currentIndex] ?? BoxFit.contain;
       
-      if (currentFit == BoxFit.cover) {
-        _fitModeForIndex[_currentIndex] = BoxFit.contain;
-        print('🔄 [PREVIEW] Mode changed to: AUTO (contain) for index $_currentIndex');
-      } else {
+      if (currentFit == BoxFit.contain) {
         _fitModeForIndex[_currentIndex] = BoxFit.cover;
+        print('🔄 [PREVIEW] Mode changed to: FULL (cover) for index $_currentIndex');
+      } else {
+        _fitModeForIndex[_currentIndex] = BoxFit.contain;
         _transformations[_currentIndex] = Matrix4.identity();
         _transformationController.value = Matrix4.identity();
-        print('🔄 [PREVIEW] Mode changed to: FULL (cover) for index $_currentIndex');
+        print('🔄 [PREVIEW] Mode changed to: AUTO (contain) for index $_currentIndex');
       }
     });
   }
@@ -80,17 +80,16 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
     setState(() {
       _transformations[_currentIndex] = Matrix4.identity();
       _transformationController.value = Matrix4.identity();
-      _fitModeForIndex[_currentIndex] = BoxFit.cover;
+      _fitModeForIndex[_currentIndex] = BoxFit.contain;
       _isZoomed = false;
       print('🔄 [PREVIEW] Reset transformations for index $_currentIndex');
     });
   }
 
   void _navigateToCaption() {
-    // Собираем массив режимов для ВСЕХ фото
     final List<String> fitModes = [];
     for (int i = 0; i < widget.selectedFiles.length; i++) {
-      final fit = _fitModeForIndex[i] ?? BoxFit.cover;
+      final fit = _fitModeForIndex[i] ?? BoxFit.contain;
       fitModes.add(fit == BoxFit.contain ? 'contain' : 'cover');
     }
     
@@ -119,6 +118,49 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
     });
   }
 
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД - ТОЧНО КАК В FEED
+  Widget _buildImageItem(File file, BoxFit fitMode) {
+    final isFullScreen = fitMode == BoxFit.cover;
+    
+    // 🔥 ДЛЯ PREVIEW ИСПОЛЬЗУЕМ ТУ ЖЕ ЛОГИКУ, ЧТО И В FEED
+    if (isFullScreen) {
+      // FULL режим - с зумом
+      return InteractiveViewer(
+        transformationController: _transformationController,
+        minScale: 0.5,
+        maxScale: 4.0,
+        boundaryMargin: const EdgeInsets.all(0),
+        panEnabled: true,
+        scaleEnabled: true,
+        onInteractionStart: (details) {
+          setState(() => _isZoomed = true);
+        },
+        onInteractionEnd: (details) {
+          setState(() => _isZoomed = false);
+          _saveTransformation();
+        },
+        child: Image.file(
+          file,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+      );
+    } else {
+      // 🔥 AUTO режим - БЕЗ InteractiveViewer, ТОЧНО КАК В FEED
+      // Просто показываем фото внутри рамки 9:16, как в ленте
+      return Center(
+        child: AspectRatio(
+          aspectRatio: 9 / 16,
+          child: Image.file(
+            file,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -144,37 +186,11 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
               },
               itemBuilder: (context, index) {
                 final file = widget.selectedFiles[index];
-                final currentFit = _fitModeForIndex[index] ?? BoxFit.cover;
+                final currentFit = _fitModeForIndex[index] ?? BoxFit.contain;
                 
                 return Container(
                   color: Colors.black,
-                  child: InteractiveViewer(
-                    transformationController: _transformationController,
-                    minScale: 0.5,
-                    maxScale: 4.0,
-                    boundaryMargin: const EdgeInsets.all(0),
-                    panEnabled: true,
-                    scaleEnabled: true,
-                    onInteractionStart: (details) {
-                      setState(() {
-                        _isZoomed = true;
-                      });
-                    },
-                    onInteractionEnd: (details) {
-                      setState(() {
-                        _isZoomed = false;
-                      });
-                      _saveTransformation();
-                    },
-                    child: Center(
-                      child: Image.file(
-                        file,
-                        fit: currentFit,
-                        width: double.infinity,
-                        height: double.infinity,
-                      ),
-                    ),
-                  ),
+                  child: _buildImageItem(file, currentFit),
                 );
               },
             ),
@@ -239,13 +255,13 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
                     _buildModeButton(
                       icon: Icons.aspect_ratio,
                       label: 'Auto',
-                      isActive: (_fitModeForIndex[_currentIndex] ?? BoxFit.cover) == BoxFit.contain,
+                      isActive: (_fitModeForIndex[_currentIndex] ?? BoxFit.contain) == BoxFit.contain,
                       onTap: _toggleFitMode,
                     ),
                     _buildModeButton(
                       icon: Icons.fullscreen,
                       label: 'Full',
-                      isActive: (_fitModeForIndex[_currentIndex] ?? BoxFit.cover) == BoxFit.cover,
+                      isActive: (_fitModeForIndex[_currentIndex] ?? BoxFit.contain) == BoxFit.cover,
                       onTap: _toggleFitMode,
                     ),
                   ],
@@ -325,7 +341,7 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
                                 margin: const EdgeInsets.symmetric(horizontal: 4),
                                 decoration: BoxDecoration(
                                   border: Border.all(
-                                    color: isSelected ? Colors.blue : Colors.transparent,
+                                    color: isSelected ? Colors.white : Colors.transparent,
                                     width: 2,
                                   ),
                                   borderRadius: BorderRadius.circular(8),

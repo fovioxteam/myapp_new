@@ -1,6 +1,8 @@
 // lib/widgets/post_item.dart
 
 import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
@@ -86,6 +88,7 @@ class PostItem extends StatefulWidget {
 
 class _PostItemState extends State<PostItem>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, SafeActionMixin {
+  
   @override
   bool get wantKeepAlive => true;
 
@@ -126,6 +129,8 @@ class _PostItemState extends State<PostItem>
   bool _didCallPostVisible = false;
 
   static const String _fallbackImageUrl = 'https://via.placeholder.com/500?text=Image+error';
+  
+  static final Map<String, Widget> _previewWidgetCache = {};
 
   @override
   void initState() {
@@ -135,9 +140,25 @@ class _PostItemState extends State<PostItem>
     _loadFollowStatus();
     _initAnimations();
     
+    // Предзагружаем все изображения карусели
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _preloadMultipleImages();
+      for (int i = 0; i < _imageUrls.length; i++) {
+        final url = _imageUrls[i];
+        if (url.isNotEmpty && url != _fallbackImageUrl) {
+          precacheImage(CachedNetworkImageProvider(url), context);
+        }
+      }
     });
+  }
+
+  void _preloadAllCarouselImages() {
+    if (!mounted) return;
+    for (int i = 0; i < _imageUrls.length; i++) {
+      final url = _imageUrls[i];
+      if (url.isNotEmpty && url != _fallbackImageUrl) {
+        precacheImage(CachedNetworkImageProvider(url), context);
+      }
+    }
   }
 
   void _preloadMultipleImages() {
@@ -145,7 +166,7 @@ class _PostItemState extends State<PostItem>
       if (i < _imageUrls.length) {
         final url = _imageUrls[i];
         if (url.isNotEmpty && url != _fallbackImageUrl) {
-          _postController.preloadImage(url);
+          precacheImage(CachedNetworkImageProvider(url), context);
         }
       }
     }
@@ -216,6 +237,8 @@ class _PostItemState extends State<PostItem>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _preloadAllCarouselImages();
+    
     if (!_didCallPostVisible && widget.onPostVisible != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
@@ -412,22 +435,18 @@ class _PostItemState extends State<PostItem>
     _actionCompleted('follow');
   }
 
-  // 🔥 ОТПРАВКА УВЕДОМЛЕНИЯ О ЛАЙКЕ
   Future<void> _sendLikeNotification(String postId, String postOwnerId) async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
     
-    // Не отправляем уведомление самому себе
     if (postOwnerId == currentUser.uid) return;
     
     try {
-      // Получаем данные текущего пользователя
       final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
       final userData = userDoc.data() ?? {};
       final userName = userData['username'] ?? currentUser.displayName ?? 'User';
       final userAvatar = userData['avatarUrl'] ?? currentUser.photoURL ?? '';
       
-      // Создаем уведомление
       await _firestore.collection('notifications').add({
         'userId': postOwnerId,
         'type': 'like',
@@ -447,7 +466,6 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД _toggleLike С УВЕДОМЛЕНИЕМ
   Future<void> _toggleLike() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('like')) return;
@@ -466,16 +484,13 @@ class _PostItemState extends State<PostItem>
       return;
     }
 
-    // Сохраняем состояние до изменения
     final wasLiked = _postController.isPostLiked(postId);
     
     HapticFeedback.lightImpact();
     _likeIconController.forward().then((_) => _likeIconController.reverse());
 
-    // Выполняем like/unlike
     await _postController.toggleLike(postId);
     
-    // Отправляем уведомление о лайке (только если поставили лайк, а не убрали)
     if (!wasLiked) {
       await _sendLikeNotification(postId, widget.post['userId']?.toString() ?? '');
     }
@@ -671,21 +686,17 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ИСПРАВЛЕНАЯ КАРУСЕЛЬ - С КЭШИРОВАНИЕМ СТРАНИЦ
   Widget _buildCarousel() {
-    List<String>? fitModes;
-    if (widget.post['fitModes'] != null) {
-      final raw = widget.post['fitModes'];
-      if (raw is List) {
-        fitModes = raw.map((e) => e.toString()).toList();
-      }
-    }
-    final String? singleFitMode = widget.post['fitMode']?.toString();
+    final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
+    final fitModes = freshPost['fitModes'] as List? ?? [];
     
     return PageView.builder(
       controller: _carouselController,
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       itemCount: _imageUrls.length,
+      allowImplicitScrolling: true, // 🔥 СОХРАНЯЕТ СТРАНИЦЫ В ПАМЯТИ
       onPageChanged: (index) {
         if (!mounted) return;
         setState(() {
@@ -696,42 +707,36 @@ class _PostItemState extends State<PostItem>
       itemBuilder: (context, index) {
         final url = _imageUrls[index];
         
-        BoxFit fitMode;
-        if (fitModes != null && index < fitModes.length) {
-          fitMode = fitModes[index] == 'contain' ? BoxFit.contain : BoxFit.cover;
-        } else if (singleFitMode != null) {
-          fitMode = singleFitMode == 'contain' ? BoxFit.contain : BoxFit.cover;
-        } else {
-          fitMode = BoxFit.cover;
+        String mode = 'cover';
+        if (index < fitModes.length) {
+          mode = fitModes[index]?.toString() ?? 'cover';
         }
+        final isFullScreenMode = mode == 'cover';
         
-        return Image(
-          image: _postController.getImageProvider(url),
-          fit: fitMode,
-          frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-            if (wasSynchronouslyLoaded) return child;
-            return AnimatedSwitcher(
-              duration: const Duration(milliseconds: 150),
-              child: frame == null ? Container(color: Colors.black) : child,
-            );
-          },
+        // Оборачиваем в RepaintBoundary с ключом
+        return RepaintBoundary(
+          key: ValueKey('carousel_page_$index'),
+          child: Container(
+            color: Colors.black,
+            child: Center(
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: isFullScreenMode ? BoxFit.cover : BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
+                fadeInDuration: Duration.zero,
+                fadeOutDuration: Duration.zero,
+                placeholderFadeInDuration: Duration.zero,
+                placeholder: (context, url) => Container(color: Colors.black),
+                errorWidget: (context, url, error) => Container(
+                  color: Colors.black,
+                  child: const Icon(Icons.broken_image, color: Colors.white),
+                ),
+              ),
+            ),
+          ),
         );
       },
-    );
-  }
-
-  Widget _buildProgressiveImage(String imageUrl, BoxFit fit) {
-    final thumbnailUrl = imageUrl.replaceFirst(RegExp(r'\.jpg$'), '_thumb.jpg');
-    
-    return ProgressiveImage(
-      thumbnailUrl: thumbnailUrl,
-      fullUrl: imageUrl,
-      fit: fit,
-      width: null,
-      height: null,
-      enableBlur: true,
-      isVisible: widget.isVisible,
-      priority: widget.priority,
     );
   }
 
@@ -1047,47 +1052,65 @@ class _PostItemState extends State<PostItem>
   }
 
   Widget _buildPreviewPost() {
+    final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
     
-    return GestureDetector(
-      onLongPress: () {
-        HapticFeedback.heavyImpact();
-        _showPostOptions();
-      },
-      onTap: widget.onTap,
-      child: Container(
-        color: Colors.grey[100],
-        child: _hasImageError
-            ? _buildErrorWidget()
-            : _buildProgressiveImage(imageUrl, BoxFit.cover),
+    if (_previewWidgetCache.containsKey(postId)) {
+      return _previewWidgetCache[postId]!;
+    }
+    
+    final cachedWidget = RepaintBoundary(
+      key: ValueKey('preview_${postId}_fixed'),
+      child: GestureDetector(
+        onLongPress: () {
+          HapticFeedback.heavyImpact();
+          _showPostOptions();
+        },
+        onTap: widget.onTap,
+        child: Container(
+          color: Colors.grey[100],
+          child: _hasImageError
+              ? _buildErrorWidget()
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholderFadeInDuration: Duration.zero,
+                  memCacheWidth: 300,
+                  memCacheHeight: 300,
+                  placeholder: (context, url) => Container(color: Colors.grey[300]),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.grey[300],
+                    child: const Icon(Icons.broken_image, color: Colors.grey),
+                  ),
+                ),
+        ),
       ),
     );
+    
+    _previewWidgetCache[postId] = cachedWidget;
+    return cachedWidget;
   }
 
   Widget _buildFullScreenPost() {
     final imageUrl = _getCurrentImageUrl();
     final postId = widget.post['id']?.toString() ?? '';
+    
     final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
     final hasCaption = freshPost['caption'] != null && 
                       freshPost['caption'].toString().isNotEmpty;
     
-    List<String>? fitModes;
-    if (freshPost['fitModes'] != null) {
-      final raw = freshPost['fitModes'];
-      if (raw is List) {
-        fitModes = raw.map((e) => e.toString()).toList();
-      }
+    final fitModes = freshPost['fitModes'] as List? ?? [];
+    String mode = 'contain';
+    if (_currentCarouselIndex < fitModes.length) {
+      mode = fitModes[_currentCarouselIndex]?.toString() ?? 'contain';
+    } else if (fitModes.isNotEmpty) {
+      mode = fitModes.first?.toString() ?? 'contain';
     }
-    final String? singleFitMode = freshPost['fitMode']?.toString();
-    
-    BoxFit fitMode;
-    if (fitModes != null && _currentCarouselIndex < fitModes.length) {
-      fitMode = fitModes[_currentCarouselIndex] == 'contain' ? BoxFit.contain : BoxFit.cover;
-    } else if (singleFitMode != null) {
-      fitMode = singleFitMode == 'contain' ? BoxFit.contain : BoxFit.cover;
-    } else {
-      fitMode = BoxFit.cover;
-    }
+    final isFullScreenMode = mode == 'cover';
     
     return GestureDetector(
       onLongPress: () {
@@ -1121,11 +1144,29 @@ class _PostItemState extends State<PostItem>
         child: Stack(
           children: [
             Positioned.fill(
-              child: _hasImageError
-                  ? _buildErrorWidget()
-                  : (_isCarousel && _imageUrls.length > 1
-                      ? _buildCarousel()
-                      : _buildProgressiveImage(imageUrl, fitMode)),
+              child: (_isCarousel && _imageUrls.length > 1)
+                  ? _buildCarousel()
+                  : Container(
+                      color: Colors.black,
+                      child: Center(
+                        child: _hasImageError
+                            ? _buildErrorWidget()
+                            : CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                fit: isFullScreenMode ? BoxFit.cover : BoxFit.contain,
+                                width: double.infinity,
+                                height: double.infinity,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                placeholderFadeInDuration: Duration.zero,
+                                placeholder: (context, url) => Container(color: Colors.black),
+                                errorWidget: (context, url, error) => Container(
+                                  color: Colors.black,
+                                  child: const Icon(Icons.broken_image, color: Colors.white),
+                                ),
+                              ),
+                      ),
+                    ),
             ),
             
             Positioned(

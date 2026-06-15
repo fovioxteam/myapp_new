@@ -116,7 +116,7 @@ class UnreadService extends GetxService {
     _activeChatId = null;
   }
 
-  /// 🔥 ОТМЕТИТЬ ПРОЧИТАННЫМ
+  /// 🔥 ОТМЕТИТЬ ПРОЧИТАННЫМ (через Cloud Function)
   Future<void> markChatAsRead(String chatId) async {
     if (_uid == null) return;
 
@@ -125,9 +125,11 @@ class UnreadService extends GetxService {
 
       // 🔥 Вызываем Cloud Function для отметки прочитанных
       final callable = _functions.httpsCallable('markChatAsRead');
-      await callable.call(<String, dynamic>{
+      final result = await callable.call(<String, dynamic>{
         'chatId': chatId,
       });
+
+      print('✅ [UnreadService] Cloud Function response: ${result.data}');
 
       // 🔥 LOCAL UPDATE (optimistic)
       final prev = _chatUnread[chatId];
@@ -141,25 +143,35 @@ class UnreadService extends GetxService {
       print('✅ [UnreadService] Chat $chatId marked as read');
     } catch (e) {
       print('❌ [UnreadService] Error calling Cloud Function: $e');
+    }
+  }
+
+  /// 🔥 ПРИНУДИТЕЛЬНО ОБНОВИТЬ ВСЕ СЧЁТЧИКИ
+  Future<void> refreshAllUnread() async {
+    if (_uid == null) return;
+    
+    try {
+      final callable = _functions.httpsCallable('getUnreadCounts');
+      final result = await callable.call(<String, dynamic>{
+        'userId': _uid,
+      });
       
-      // 🔥 FALLBACK: если Cloud Function не работает, обновляем напрямую
-      try {
-        await _firestore.collection('chats').doc(chatId).update({
-          'unreadCount.$_uid': 0,
-        });
-        
-        final prev = _chatUnread[chatId];
-        if (prev != null && prev > 0) {
-          _chatUnread[chatId] = 0;
-          int newTotal = totalUnread.value - prev;
-          if (newTotal < 0) newTotal = 0;
-          totalUnread.value = newTotal;
+      final data = result.data as Map<String, dynamic>;
+      final counts = data['unreadCounts'] as Map<String, dynamic>?;
+      
+      if (counts != null) {
+        int total = 0;
+        for (var entry in counts.entries) {
+          final chatId = entry.key;
+          final unread = entry.value as int;
+          _chatUnread[chatId] = unread;
+          total += unread;
         }
-        
-        print('✅ [UnreadService] Chat $chatId marked as read (fallback)');
-      } catch (e2) {
-        print('❌ [UnreadService] Fallback error: $e2');
+        totalUnread.value = total;
+        print('📊 [UnreadService] Refreshed all unread counts: total=$total');
       }
+    } catch (e) {
+      print('❌ [UnreadService] Error refreshing all unread: $e');
     }
   }
 

@@ -57,7 +57,6 @@ class EventSubscription<T> {
   
   EventSubscription(this.id) : _controller = StreamController<EventData<T>>.broadcast();
   
-  /// 🔥 ВАЖНО: это stream, а не метод listen()
   Stream<EventData<T>> get stream => _controller.stream;
   
   bool get isActive => _isActive;
@@ -81,9 +80,9 @@ class EventBus extends GetxService {
   // Хранилище всех подписок
   final Map<AppEvent, Map<String, EventSubscription>> _subscriptions = {};
   
-  // Кэш последних событий (для новых подписчиков)
+  // Кэш последних событий
   final Map<AppEvent, EventData> _lastEventCache = {};
-  static const int _cacheSize = 10; // храним последние 10 событий каждого типа
+  static const int _cacheSize = 10;
   
   @override
   void onInit() {
@@ -93,7 +92,6 @@ class EventBus extends GetxService {
   
   @override
   void onClose() {
-    // Закрываем все подписки при уничтожении
     for (final subs in _subscriptions.values) {
       for (final sub in subs.values) {
         sub.cancel();
@@ -114,7 +112,6 @@ class EventBus extends GetxService {
     
     print('🚌 [EventBus] New subscription: $eventType [$id]');
     
-    // Если есть кэшированное событие - сразу отправляем
     if (_lastEventCache.containsKey(eventType)) {
       final cached = _lastEventCache[eventType];
       if (cached != null && cached.data is T) {
@@ -126,13 +123,12 @@ class EventBus extends GetxService {
     return subscription;
   }
   
-  /// Одноразовая подписка (получить событие один раз)
+  /// Одноразовая подписка
   Future<EventData<T>> once<T>(AppEvent eventType, {Duration? timeout}) {
     final completer = Completer<EventData<T>>();
     
     final subscription = on<T>(eventType);
     
-    // 🔥 ИСПРАВЛЕНО: используем subscription.stream.listen
     final subRef = subscription.stream.listen((data) {
       if (!completer.isCompleted) {
         completer.complete(data);
@@ -152,20 +148,25 @@ class EventBus extends GetxService {
     return completer.future;
   }
   
-  /// Испустить событие
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД emit
   void emit<T>(AppEvent eventType, T data) {
     print('🚌 [EventBus] Emitting: $eventType');
     
-    // Кэшируем событие
     _cacheEvent(eventType, data);
     
-    // Отправляем всем подписчикам
     if (_subscriptions.containsKey(eventType)) {
-      final subs = _subscriptions[eventType]!;
-      for (final sub in subs.values) {
+      final subs = Map<String, EventSubscription>.from(_subscriptions[eventType]!);
+      
+      for (final entry in subs.entries) {
+        final sub = entry.value;
         if (sub.isActive) {
           try {
-            (sub as EventSubscription<T>).emit(data);
+            // 🔥 БЕЗОПАСНАЯ ПРОВЕРКА ТИПА
+            if (sub is EventSubscription<T>) {
+              sub.emit(data);
+            } else {
+              print('🚌 [EventBus] Type mismatch for $eventType, skipping');
+            }
           } catch (e) {
             print('🚌 [EventBus] Error emitting to subscriber: $e');
           }
@@ -190,8 +191,7 @@ class EventBus extends GetxService {
       final results = <bool>[];
       
       for (final sub in _subscriptions[eventType]!.values) {
-        if (sub.isActive) {
-          // 🔥 ИСПРАВЛЕНО: используем subscription.stream.listen
+        if (sub.isActive && sub is EventSubscription<T>) {
           final listener = sub.stream.listen((_) {
             results.add(true);
             if (results.length == pendingCount) {
@@ -204,7 +204,6 @@ class EventBus extends GetxService {
             }
           });
           
-          // Автоотписка после получения
           Future.delayed(timeout, () {
             listener.cancel();
             if (!completer.isCompleted) {
@@ -214,7 +213,14 @@ class EventBus extends GetxService {
               }
             }
           });
+        } else {
+          pendingCount--;
         }
+      }
+      
+      if (pendingCount <= 0) {
+        emit(eventType, data);
+        return;
       }
       
       emit(eventType, data);
@@ -262,12 +268,9 @@ class EventBus extends GetxService {
     return _subscriptions[eventType]?.length ?? 0;
   }
   
-  // ========== 🔥 ИСПРАВЛЕННЫЙ МЕТОД _cacheEvent ==========
-  /// Кэширование события
   void _cacheEvent<T>(AppEvent eventType, T data) {
     _lastEventCache[eventType] = EventData<T>(data);
     
-    // ✅ ИСПРАВЛЕНО: безопасное удаление из кэша
     if (_lastEventCache.length > _cacheSize) {
       final oldestKey = _lastEventCache.keys.safeFirst;
       if (oldestKey != null) {
@@ -276,7 +279,6 @@ class EventBus extends GetxService {
     }
   }
   
-  /// Генерация уникального ID для подписки
   String _generateSubscriptionId() {
     return 'sub_${DateTime.now().millisecondsSinceEpoch}_${_subscriptions.length}';
   }

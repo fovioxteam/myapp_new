@@ -1,3 +1,5 @@
+// lib/screens/search_screen.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -22,7 +24,12 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderStateMixin {
+class _SearchScreenState extends State<SearchScreen> 
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  
+  @override
+  bool get wantKeepAlive => true;
+
   String _searchQuery = '';
   String _debouncedSearchQuery = '';
   
@@ -51,16 +58,20 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   final Duration _debounceDuration = const Duration(milliseconds: 500);
   
   final ScrollController _scrollController = ScrollController();
+  
+  final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey = GlobalKey<RefreshIndicatorState>();
 
   @override
   void initState() {
     super.initState();
+    print('🔍 [SEARCH] SearchScreen initState');
     _tabController = TabController(length: 2, vsync: this);
     _loadSearchHistory();
   }
 
   @override
   void dispose() {
+    print('🔍 [SEARCH] SearchScreen dispose');
     _debounceTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
@@ -91,9 +102,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Future<void> _loadSearchHistory() async {
+    print('🔍 [SEARCH] Loading search history...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final localHistory = prefs.getStringList('search_history') ?? [];
+      print('🔍 [SEARCH] Local history: ${localHistory.length} items');
       
       final user = _auth.currentUser;
       List<String> firebaseHistory = [];
@@ -107,6 +120,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
           firebaseHistory = List<String>.from(data['searchHistory'] ?? []);
+          print('🔍 [SEARCH] Firebase history: ${firebaseHistory.length} items');
         }
       }
       
@@ -123,9 +137,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       });
       
       await prefs.setStringList('search_history', limitedHistory);
+      print('🔍 [SEARCH] Search history loaded: ${_searchHistory.length} items');
       
     } catch (e) {
-      print('Error loading search history: $e');
+      print('❌ [SEARCH] Error loading search history: $e');
       final prefs = await SharedPreferences.getInstance();
       final localHistory = prefs.getStringList('search_history') ?? [];
       setState(() {
@@ -136,6 +151,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Future<void> _saveSearchHistory() async {
+    print('🔍 [SEARCH] Saving search history: ${_searchHistory.length} items');
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('search_history', _searchHistory);
@@ -150,8 +166,9 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
               'lastSearchUpdate': FieldValue.serverTimestamp(),
             });
       }
+      print('✅ [SEARCH] Search history saved');
     } catch (e) {
-      print('Error saving search history: $e');
+      print('❌ [SEARCH] Error saving search history: $e');
     }
   }
 
@@ -160,6 +177,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     
     final sanitizedQuery = query.trim();
     if (sanitizedQuery.length > 100) return;
+    
+    print('🔍 [SEARCH] Adding to history: "$sanitizedQuery"');
     
     setState(() {
       final newHistory = List<String>.from(_searchHistory);
@@ -178,6 +197,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   void _removeFromSearchHistory(String query) async {
+    print('🔍 [SEARCH] Removing from history: "$query"');
     setState(() {
       _searchHistory.remove(query);
     });
@@ -185,14 +205,61 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   void _clearSearchHistory() async {
+    print('🔍 [SEARCH] Clearing all search history');
     setState(() {
       _searchHistory = [];
     });
     await _saveSearchHistory();
   }
 
+  // Обновляет имена пользователей в постах из Firestore
+  Future<void> _refreshUserNamesInPosts() async {
+    print('🔄 [SEARCH] Refreshing user names from Firestore...');
+    
+    for (int i = 0; i < _posts.length; i++) {
+      final post = _posts[i];
+      final userId = post['userId'] as String?;
+      
+      if (userId != null) {
+        try {
+          final userDoc = await FirebaseFirestore.instance
+              .collection('users')
+              .doc(userId)
+              .get();
+          
+          if (userDoc.exists) {
+            final freshName = userDoc.data()?['username'] as String?;
+            final freshAvatar = userDoc.data()?['avatarUrl'] as String?;
+            
+            if (freshName != null && freshName != post['userName']) {
+              print('🔄 [SEARCH] Updating post ${post['id']}: "${post['userName']}" -> "$freshName"');
+              if (mounted) {
+                setState(() {
+                  _posts[i]['userName'] = freshName;
+                  if (freshAvatar != null) {
+                    _posts[i]['userAvatar'] = freshAvatar;
+                  }
+                });
+              }
+            }
+          }
+        } catch (e) {
+          print('❌ [SEARCH] Error refreshing user name for $userId: $e');
+        }
+      }
+    }
+    
+    print('✅ [SEARCH] User names refreshed');
+  }
+
   Future<void> _performSearch(String query) async {
+    print('\n🔍 [SEARCH] ========== PERFORM SEARCH ==========');
+    print('🔍 [SEARCH] Query: "$query"');
+    print('🔍 [SEARCH] Query length: ${query.length}');
+    print('🔍 [SEARCH] Current user: ${_auth.currentUser?.uid}');
+    
     if (query.isEmpty) {
+      print('🔍 [SEARCH] Query empty, clearing results');
       setState(() {
         _debouncedSearchQuery = '';
         _showHistory = true;
@@ -222,30 +289,73 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     });
 
     try {
+      print('🔍 [SEARCH] Calling Algolia searchUsers and searchPosts...');
+      
+      final stopwatch = Stopwatch()..start();
+      
       final results = await Future.wait([
         AlgoliaService.searchUsers(sanitizedQuery),
         AlgoliaService.searchPosts(sanitizedQuery),
       ]);
       
+      stopwatch.stop();
+      print('🔍 [SEARCH] Algolia search completed in ${stopwatch.elapsedMilliseconds}ms');
+      
       final users = results.isNotEmpty ? results[0] : [];
       final posts = results.length > 1 ? results[1] : [];
       
+      print('🔍 [SEARCH] Raw Algolia results:');
+      print('   👤 Users found: ${users.length}');
+      print('   📷 Posts found: ${posts.length}');
+      
+      if (users.isNotEmpty) {
+        print('🔍 [SEARCH] First user sample:');
+        print('   - id: ${users.first['id']}');
+        print('   - username: ${users.first['username']}');
+        print('   - avatarUrl: ${users.first['avatarUrl']}');
+      }
+      
+      if (posts.isNotEmpty) {
+        print('🔍 [SEARCH] First post sample:');
+        print('   - id: ${posts.first['id']}');
+        print('   - userName: ${posts.first['userName']}');
+        print('   - imageUrl: ${posts.first['imageUrl']}');
+        print('   - userId: ${posts.first['userId']}');
+      }
+      
       final currentUserId = _auth.currentUser?.uid;
+      
+      // 🔥 ФИЛЬТРУЕМ СЕБЯ ИЗ ПОЛЬЗОВАТЕЛЕЙ
       final filteredUsers = users.where((user) => user['id'] != currentUserId).toList();
+      
+      // 🔥 ФИЛЬТРУЕМ СВОИ ПОСТЫ
+      final filteredPosts = posts.where((post) => post['userId'] != currentUserId).toList();
+      
+      print('🔍 [SEARCH] After filtering:');
+      print('   👤 Users: ${filteredUsers.length}');
+      print('   📷 Posts: ${filteredPosts.length}');
       
       setState(() {
         _users = List<Map<String, dynamic>>.from(filteredUsers);
-        _posts = List<Map<String, dynamic>>.from(posts);
+        _posts = List<Map<String, dynamic>>.from(filteredPosts);
         _isSearching = false;
       });
       
-      _postController.addPostsToStorage(List<Map<String, dynamic>>.from(posts));
+      // Обновляем имена из Firestore для чужих постов
+      await _refreshUserNamesInPosts();
+      
+      print('🔍 [SEARCH] State updated:');
+      print('   👤 Users in state: ${_users.length}');
+      print('   📷 Posts in state: ${_posts.length}');
+      
+      _postController.addPostsToStorage(List<Map<String, dynamic>>.from(filteredPosts));
       _setupRealTimeListenersForUsers();
       
-      print('✅ Algolia found ${_users.length} users, ${_posts.length} posts');
+      print('🔍 [SEARCH] ========== SEARCH COMPLETED ==========\n');
       
     } catch (e) {
-      print('❌ Algolia search error: $e');
+      print('❌ [SEARCH] Algolia search error: $e');
+      print('❌ [SEARCH] Stack trace: ${StackTrace.current}');
       setState(() {
         _errorMessage = 'Search failed: ${e.toString()}';
         _isSearching = false;
@@ -254,6 +364,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   void _setupRealTimeListenersForUsers() {
+    print('🔍 [SEARCH] Setting up real-time listeners for ${_users.length} users');
     _cleanupUserSubscriptions();
     
     for (final user in _users) {
@@ -263,16 +374,19 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       if (currentUserId == null || currentUserId == userId) continue;
       if (_followStatusSubscriptions.containsKey(userId)) continue;
       
+      print('🔍 [SEARCH] Adding follow listener for user: $userId');
+      
       final subscription = _followService
           .getFollowStatusStream(userId)
           .listen((newStatus) {
             if (mounted) {
+              print('🔍 [SEARCH] Follow status changed for $userId: $newStatus');
               setState(() {
                 _realTimeFollowStatus[userId] = newStatus;
               });
             }
           }, onError: (e) {
-            print('❌ Error in follow stream for $userId: $e');
+            print('❌ [SEARCH] Error in follow stream for $userId: $e');
           });
       
       _followStatusSubscriptions[userId] = subscription;
@@ -292,11 +406,13 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   Future<void> _refreshSearch() async {
+    print('🔍 [SEARCH] Manual refresh triggered');
     if (_debouncedSearchQuery.isEmpty) return;
     await _performSearch(_debouncedSearchQuery);
   }
 
   Future<void> _handleFollowTap(String userId, int index) async {
+    print('🔍 [SEARCH] Follow tap: userId=$userId, index=$index');
     try {
       final user = _users[index];
       final currentUserId = _auth.currentUser?.uid;
@@ -305,6 +421,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       
       final currentStatus = _getCurrentFollowStatus(userId, index);
       final newStatus = !currentStatus;
+      
+      print('🔍 [SEARCH] Toggling follow: $currentStatus -> $newStatus');
       
       setState(() {
         _users[index]['isFollowing'] = newStatus;
@@ -319,9 +437,10 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       });
       
       await _followService.toggleFollow(userId);
+      print('✅ [SEARCH] Follow toggled successfully');
       
     } catch (e) {
-      print('❌ Error in follow operation: $e');
+      print('❌ [SEARCH] Error in follow operation: $e');
       if (mounted) {
         final user = _users[index];
         final currentStatus = user['isFollowing'] ?? false;
@@ -334,6 +453,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
   }
 
   void _onSearchChanged(String value) {
+    print('🔍 [SEARCH] Search text changed: "$value"');
     setState(() {
       _searchQuery = value;
     });
@@ -341,12 +461,14 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     _debounceTimer?.cancel();
     _debounceTimer = Timer(_debounceDuration, () {
       if (mounted) {
+        print('🔍 [SEARCH] Debounce finished, executing search');
         _performSearch(value);
       }
     });
   }
 
   void _clearSearch() {
+    print('🔍 [SEARCH] Clear search button pressed');
     if (!mounted) return;
     
     setState(() {
@@ -363,8 +485,89 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     _searchFocusNode.requestFocus();
   }
 
+  Map<String, bool> _getLikedPostsMap() {
+    final map = <String, bool>{};
+    for (final p in _posts) {
+      final pid = p['id']?.toString() ?? '';
+      if (pid.isNotEmpty) {
+        map[pid] = _postController.isPostLiked(pid);
+      }
+    }
+    return map;
+  }
+
+  Map<String, bool> _getSavedPostsMap() {
+    final map = <String, bool>{};
+    for (final p in _posts) {
+      final pid = p['id']?.toString() ?? '';
+      if (pid.isNotEmpty) {
+        map[pid] = _postController.isPostSaved(pid);
+      }
+    }
+    return map;
+  }
+
+  void _updatePostLikeLocally(String postId, bool isLiked) {
+    final postIndex = _posts.indexWhere((p) => p['id'] == postId);
+    if (postIndex != -1 && mounted) {
+      setState(() {
+        if (isLiked) {
+          _posts[postIndex]['likes'] = (_posts[postIndex]['likes'] ?? 0) + 1;
+        } else {
+          _posts[postIndex]['likes'] = (_posts[postIndex]['likes'] ?? 1) - 1;
+          if (_posts[postIndex]['likes'] < 0) _posts[postIndex]['likes'] = 0;
+        }
+      });
+    }
+  }
+
+  void _updatePostSaveLocally(String postId, bool isSaved) {
+    final postIndex = _posts.indexWhere((p) => p['id'] == postId);
+    if (postIndex != -1 && mounted) {
+      setState(() {
+        if (isSaved) {
+          _posts[postIndex]['saves'] = (_posts[postIndex]['saves'] ?? 0) + 1;
+        } else {
+          _posts[postIndex]['saves'] = (_posts[postIndex]['saves'] ?? 1) - 1;
+          if (_posts[postIndex]['saves'] < 0) _posts[postIndex]['saves'] = 0;
+        }
+      });
+    }
+  }
+
+  Future<void> _openPostDetail(int index) async {
+    print('🔍 [SEARCH] Opening post detail at index: $index');
+    final scrollPosition = _scrollController.position.pixels;
+    
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(
+          posts: _posts,
+          initialIndex: index,
+          likedPosts: _getLikedPostsMap(),
+          savedPosts: _getSavedPostsMap(),
+          followingUsers: const [],
+          onLikeChanged: _updatePostLikeLocally,
+          onSaveChanged: _updatePostSaveLocally,
+        ),
+      ),
+    );
+    
+    if (mounted && _scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollController.hasClients) {
+          _scrollController.jumpTo(scrollPosition);
+          print('🔍 [SEARCH] Restored scroll position: $scrollPosition');
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(
@@ -402,6 +605,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                 ),
                 onChanged: _onSearchChanged,
                 onSubmitted: (value) {
+                  print('🔍 [SEARCH] Search submitted: "$value"');
                   if (value.trim().isNotEmpty) {
                     _addToSearchHistory(value.trim());
                   }
@@ -526,6 +730,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                       constraints: const BoxConstraints(),
                     ),
                     onTap: () {
+                      print('🔍 [SEARCH] History item tapped: "$query"');
                       setState(() {
                         _searchQuery = query;
                         _debouncedSearchQuery = query;
@@ -588,6 +793,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildSearchResults() {
     if (_isSearching) {
+      print('🔍 [SEARCH] Showing loading indicator');
       return const Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
@@ -596,9 +802,11 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
     }
 
     if (_errorMessage != null) {
+      print('❌ [SEARCH] Showing error state: $_errorMessage');
       return _buildErrorState();
     }
 
+    print('🔍 [SEARCH] Showing search results: ${_users.length} users, ${_posts.length} posts');
     return TabBarView(
       controller: _tabController,
       children: [
@@ -610,6 +818,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildUserSearchResults() {
     if (_users.isEmpty) {
+      print('🔍 [SEARCH] No users found, showing empty state');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -641,6 +850,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       );
     }
 
+    print('🔍 [SEARCH] Building user list with ${_users.length} users');
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
@@ -667,6 +877,8 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                               fit: BoxFit.cover,
                               width: 44,
                               height: 44,
+                              fadeInDuration: Duration.zero,
+                              fadeOutDuration: Duration.zero,
                               errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey, size: 20),
                             ),
                           )
@@ -707,6 +919,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
                     ),
                   ),
                   onTap: () {
+                    print('🔍 [SEARCH] User tapped: ${user['username']} (${user['id']})');
                     _addToSearchHistory(user['username']);
                     _followService.checkFollowStatus(userId);
                     Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
@@ -723,6 +936,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
 
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
+      print('🔍 [SEARCH] No posts found, showing empty state');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -756,80 +970,49 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
       );
     }
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        CupertinoSliverRefreshControl(onRefresh: _refreshSearch),
-        SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            crossAxisSpacing: 2,
-            mainAxisSpacing: 2,
-            childAspectRatio: 0.8,
-          ),
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final post = _posts[index];
-              return GestureDetector(
-                onTap: () {
-                  final Map<String, bool> likedPostsMap = {};
-                  final Map<String, bool> savedPostsMap = {};
-                  
-                  for (final p in _posts) {
-                    final postId = p['id']?.toString() ?? '';
-                    if (postId.isNotEmpty) {
-                      likedPostsMap[postId] = _postController.isPostLiked(postId);
-                      savedPostsMap[postId] = _postController.isPostSaved(postId);
-                    }
-                  }
-                  
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PostDetailScreen(
-                        posts: _posts,
-                        initialIndex: index,
-                        likedPosts: likedPostsMap,
-                        savedPosts: savedPostsMap,
-                        followingUsers: const [],
-                        onLikeChanged: (postId, isLiked) {
-                          final postIndex = _posts.indexWhere((p) => p['id'] == postId);
-                          if (postIndex != -1 && mounted) {
-                            setState(() {
-                              if (isLiked) {
-                                _posts[postIndex]['likes'] = (_posts[postIndex]['likes'] ?? 0) + 1;
-                              } else {
-                                _posts[postIndex]['likes'] = (_posts[postIndex]['likes'] ?? 1) - 1;
-                              }
-                            });
-                          }
-                        },
-                        onSaveChanged: (postId, isSaved) {
-                          final postIndex = _posts.indexWhere((p) => p['id'] == postId);
-                          if (postIndex != -1 && mounted) {
-                            setState(() {
-                              if (isSaved) {
-                                _posts[postIndex]['saves'] = (_posts[postIndex]['saves'] ?? 0) + 1;
-                              } else {
-                                _posts[postIndex]['saves'] = (_posts[postIndex]['saves'] ?? 1) - 1;
-                              }
-                            });
-                          }
-                        },
+    print('🔍 [SEARCH] Building posts grid with ${_posts.length} posts');
+    return GridView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.all(1),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 1,
+        mainAxisSpacing: 1,
+        childAspectRatio: 0.75,
+      ),
+      itemCount: _posts.length,
+      itemBuilder: (context, index) {
+        final post = _posts[index];
+        final imageUrl = post['imageUrl'] as String? ?? '';
+        
+        return GestureDetector(
+          onTap: () => _openPostDetail(index),
+          child: Container(
+            color: Colors.grey[200],
+            child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
+                ? CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fadeInDuration: Duration.zero,
+                    placeholder: (context, url) => Container(color: Colors.grey[300]),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined, color: Colors.grey),
                       ),
                     ),
-                  );
-                },
-                child: PostItem(
-                  post: post,
-                  isFullScreen: false,
-                ),
-              );
-            },
-            childCount: _posts.length,
+                  )
+                : Container(
+                    color: Colors.grey[300],
+                    child: const Center(
+                      child: Icon(Icons.image_not_supported_outlined, color: Colors.grey),
+                    ),
+                  ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -851,6 +1034,7 @@ class _SearchScreenState extends State<SearchScreen> with SingleTickerProviderSt
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
+              print('🔍 [SEARCH] Retry button pressed');
               if (_debouncedSearchQuery.isNotEmpty) {
                 _performSearch(_debouncedSearchQuery);
               }

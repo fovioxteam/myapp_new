@@ -5,14 +5,16 @@ import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../services/cache_service.dart';
 import '../services/unread_service.dart';
-import '../services/push_notifications_service.dart';  // 🔥 ДОБАВИТЬ
+import '../services/push_notifications_service.dart';
 import '../extensions/safe_extensions.dart';
 
 class ChatController extends GetxController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFunctions _functions = FirebaseFunctions.instance;
   final CacheService _cacheService = Get.find<CacheService>();
   late final UnreadService _unreadService;
   
@@ -23,7 +25,7 @@ class ChatController extends GetxController {
   final otherUserTyping = false.obs;
   final otherUserLastSeen = Rx<DateTime?>(null);
   
-  // ДЛЯ АНИМАЦИИ НОВЫХ СООБЩЕНИЙ
+  // Для анимации новых сообщений
   final newMessageIds = <String>[].obs;
   
   // Selected message for options
@@ -51,12 +53,7 @@ class ChatController extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    
     _unreadService = Get.find<UnreadService>();
-    
-    ever(messages, (_) {
-      print('Messages updated, length: ${messages.length}');
-    });
   }
 
   @override
@@ -65,7 +62,7 @@ class ChatController extends GetxController {
     _userStatusSubscription?.cancel();
     _typingSubscription?.cancel();
     messageTextController.dispose();
-    super.onClose();
+    super.dispose();
   }
   
   void setChatScreenActive(bool isActive) {
@@ -73,7 +70,42 @@ class ChatController extends GetxController {
     print('📱 Chat screen active: $_isChatScreenActive');
     
     if (_isChatScreenActive && chatId.value.isNotEmpty) {
-      _unreadService.markChatAsRead(chatId.value);
+      _clearAllUnreadMessagesViaCF();
+      _unreadService.setActiveChat(chatId.value);
+    } else if (!_isChatScreenActive && chatId.value.isNotEmpty) {
+      _unreadService.clearActiveChat();
+    }
+  }
+  
+  Future<void> _clearAllUnreadMessagesViaCF() async {
+    try {
+      final callable = _functions.httpsCallable('clearAllUnreadForChat');
+      await callable.call(<String, dynamic>{
+        'chatId': chatId.value,
+      });
+      print('✅ Cleared all unread messages via Cloud Function');
+    } catch (e) {
+      print('❌ Error clearing unread via CF: $e');
+      _clearAllUnreadMessages();
+    }
+  }
+  
+  Future<void> syncUnreadCount() async {
+    if (chatId.value.isEmpty) return;
+    
+    try {
+      final callable = _functions.httpsCallable('syncUnreadCount');
+      final result = await callable.call(<String, dynamic>{
+        'chatId': chatId.value,
+      });
+      
+      final data = result.data as Map<String, dynamic>;
+      if (data['fixed'] == true) {
+        print('✅ Unread count synced via Cloud Function');
+        await _unreadService.markChatAsRead(chatId.value);
+      }
+    } catch (e) {
+      print('❌ Error syncing unread count: $e');
     }
   }
   
@@ -85,6 +117,7 @@ class ChatController extends GetxController {
     if (_isFullyInitialized && this.chatId.value == chatId) {
       print('📦 Chat already initialized, checking for new messages');
       _checkForNewMessages();
+      await syncUnreadCount();
       return;
     }
     
@@ -188,6 +221,127 @@ class ChatController extends GetxController {
     }
   }
   
+  Future<void> _markMessageAsRead(String messageId) async {
+    try {
+      final callable = _functions.httpsCallable('markMessageAsRead');
+      await callable.call(<String, dynamic>{
+        'chatId': chatId.value,
+        'messageId': messageId,
+      });
+      
+      final index = messages.indexWhere((msg) => msg['id'] == messageId);
+      if (index != -1) {
+        messages[index]['read'] = true;
+        messages.refresh();
+      }
+      
+      print('✅ Message $messageId marked as read via Cloud Function');
+    } catch (e) {
+      print('❌ Error marking message as read via CF: $e');
+      await _markMessageAsReadFallback(messageId);
+    }
+  }
+  
+  Future<void> _markMessageAsReadFallback(String messageId) async {
+    try {
+      final batch = _firestore.batch();
+      final chatRef = _firestore.collection('chats').doc(chatId.value);
+      
+      final msgRef = chatRef.collection('messages').doc(messageId);
+      batch.update(msgRef, {
+        'read': true,
+        'readAt': FieldValue.serverTimestamp(),
+      });
+      
+      final currentUser = _auth.currentUser;
+      if (currentUser != null) {
+        batch.update(chatRef, {
+          'unreadCount.${currentUser.uid}': 0,
+          'lastRead.${currentUser.uid}': FieldValue.serverTimestamp(),
+        });
+      }
+      
+      await batch.commit();
+      
+      final index = messages.indexWhere((msg) => msg['id'] == messageId);
+      if (index != -1) {
+        messages[index]['read'] = true;
+        messages.refresh();
+      }
+      
+      print('✅ Message $messageId marked as read (fallback)');
+    } catch (e) {
+      print('❌ Error marking message as read (fallback): $e');
+    }
+  }
+  
+  Future<void> _clearAllUnreadMessages() async {
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return;
+      
+      final unreadMessages = messages.where((msg) {
+        return msg['senderId'] != currentUser.uid && msg['read'] != true;
+      }).toList();
+      
+      if (unreadMessages.isEmpty) return;
+      
+      final batch = _firestore.batch();
+      final chatRef = _firestore.collection('chats').doc(chatId.value);
+      
+      for (var msg in unreadMessages) {
+        final msgRef = chatRef.collection('messages').doc(msg['id']);
+        batch.update(msgRef, {
+          'read': true,
+          'readAt': FieldValue.serverTimestamp(),
+        });
+      }
+      
+      batch.update(chatRef, {
+        'unreadCount.${currentUser.uid}': 0,
+        'lastRead.${currentUser.uid}': FieldValue.serverTimestamp(),
+      });
+      
+      await batch.commit();
+      
+      for (var msg in unreadMessages) {
+        final index = messages.indexWhere((m) => m['id'] == msg['id']);
+        if (index != -1) {
+          messages[index]['read'] = true;
+        }
+      }
+      messages.refresh();
+      
+      await _unreadService.markChatAsRead(chatId.value);
+      
+      print('✅ Cleared ${unreadMessages.length} unread messages (fallback)');
+    } catch (e) {
+      print('❌ Error clearing unread messages: $e');
+    }
+  }
+  
+  Future<void> refreshUnreadCount() async {
+    if (chatId.value.isEmpty) return;
+    
+    try {
+      final currentUser = _auth.currentUser;
+      if (currentUser == null) return;
+      
+      final chatDoc = await _firestore.collection('chats').doc(chatId.value).get();
+      if (chatDoc.exists) {
+        final data = chatDoc.data() as Map<String, dynamic>;
+        final unreadCount = data['unreadCount'] as Map<String, dynamic>?;
+        final count = unreadCount?[currentUser.uid] as int? ?? 0;
+        
+        if (count == 0) {
+          await _unreadService.markChatAsRead(chatId.value);
+        }
+      }
+    } catch (e) {
+      print('❌ Error refreshing unread count: $e');
+    }
+  }
+  
   void _listenToMessages() {
     _messagesSubscription?.cancel();
     
@@ -212,6 +366,15 @@ class ChatController extends GetxController {
       
       if (newMessages.isNotEmpty) {
         print('✨ New messages from stream: ${newMessages.length}');
+        
+        final currentUser = _auth.currentUser;
+        for (var msg in newMessages) {
+          if (msg['senderId'] != currentUser?.uid && _isChatScreenActive) {
+            _markMessageAsRead(msg['id']);
+            msg['read'] = true;
+          }
+        }
+        
         messages.value = [...newMessages, ...messages];
         
         for (var msg in newMessages) {
@@ -224,6 +387,22 @@ class ChatController extends GetxController {
               }
             });
           }
+        }
+      } else {
+        bool needUpdate = false;
+        for (int i = 0; i < messages.length; i++) {
+          final oldMsg = messages[i];
+          final newMsg = updatedMessages.firstWhere(
+            (m) => m['id'] == oldMsg['id'],
+            orElse: () => {},
+          );
+          if (newMsg.isNotEmpty && newMsg['read'] != oldMsg['read']) {
+            messages[i]['read'] = newMsg['read'];
+            needUpdate = true;
+          }
+        }
+        if (needUpdate) {
+          messages.refresh();
         }
       }
       
@@ -278,7 +457,6 @@ class ChatController extends GetxController {
     await _unreadService.markChatAsRead(chatId.value);
   }
   
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД sendMessage (с отправкой push-уведомления и chatId)
   Future<void> sendMessage(String text, {Map<String, dynamic>? messageData}) async {
     if (text.trim().isEmpty) return;
     
@@ -308,7 +486,7 @@ class ChatController extends GetxController {
         'senderAvatar': currentUser.photoURL ?? '',
         'createdAt': FieldValue.serverTimestamp(),
         '_localCreatedAt': now.toIso8601String(),
-        'read': false,
+        'read': true,
         'delivered': false,
         'edited': false,
       };
@@ -334,7 +512,6 @@ class ChatController extends GetxController {
       
       print('✅ Message sent: $messageId');
       
-      // 🔥 ОТПРАВКА PUSH-УВЕДОМЛЕНИЯ С chatId
       final otherUserDoc = await _firestore.collection('users').doc(otherUserId.value).get();
       final otherUserData = otherUserDoc.data() ?? {};
       final otherUserFcmToken = otherUserData['fcmToken'];
@@ -347,7 +524,7 @@ class ChatController extends GetxController {
           type: 'message',
           senderId: currentUser.uid,
           senderName: currentUser.displayName ?? 'User',
-          chatId: chatId.value,  // 🔥 ПЕРЕДАЁМ chatId ДЛЯ ПРОВЕРКИ МЬЮТА
+          chatId: chatId.value,
         );
         print('📤 Push notification sent to ${otherUserId.value}');
       }
@@ -409,7 +586,44 @@ class ChatController extends GetxController {
     selectedMessageIsMine.value = false;
   }
   
+  void addMessages(List<Map<String, dynamic>> newMessages) {
+    messages.addAll(newMessages);
+  }
+  
   void setOtherUserTyping(bool isTyping) {
     otherUserTyping.value = isTyping;
+  }
+  
+  // 🔥 НОВЫЙ МЕТОД ДЛЯ ПРИНУДИТЕЛЬНОГО ОБНОВЛЕНИЯ СООБЩЕНИЙ
+  Future<void> refreshMessages() async {
+    if (chatId.value.isEmpty) return;
+    
+    try {
+      final snapshot = await _firestore
+          .collection('chats')
+          .doc(chatId.value)
+          .collection('messages')
+          .orderBy('createdAt', descending: true)
+          .limit(50)
+          .get();
+      
+      final freshMessages = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return {
+          'id': doc.id,
+          ...data,
+        };
+      }).toList();
+      
+      if (freshMessages.isNotEmpty) {
+        messages.value = freshMessages;
+        _cacheService.cacheMessages(chatId.value, messages);
+        print('✅ Messages refreshed: ${messages.length} messages');
+      } else if (messages.isEmpty) {
+        messages.value = [];
+      }
+    } catch (e) {
+      print('❌ Error refreshing messages: $e');
+    }
   }
 }

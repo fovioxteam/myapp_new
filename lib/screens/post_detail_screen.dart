@@ -37,7 +37,12 @@ class PostDetailScreen extends StatefulWidget {
   State<PostDetailScreen> createState() => _PostDetailScreenState();
 }
 
-class _PostDetailScreenState extends State<PostDetailScreen> {
+class _PostDetailScreenState extends State<PostDetailScreen> 
+    with AutomaticKeepAliveClientMixin {
+  
+  @override
+  bool get wantKeepAlive => true;
+
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final PostController _postController = Get.find<PostController>();
@@ -66,6 +71,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     } else if (widget.postId != null) {
       _loadPostById(widget.postId!);
     }
+  }
+
+  @override
+  void dispose() {
+    if (_carouselPosts.isNotEmpty) {
+      _pageController.dispose();
+    }
+    super.dispose();
   }
 
   Future<void> _loadPostById(String postId) async {
@@ -106,15 +119,6 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    if (_carouselPosts.isNotEmpty) {
-      _pageController.dispose();
-    }
-    super.dispose();
-  }
-
-  // ========== 🔥 ПРОСТО ЗАКРЫВАЕМ, НЕ УБИВАЕМ ПРОФИЛЬ ==========
   void _onPostDeleted() {
     if (_isClosing) return;
     _isClosing = true;
@@ -145,6 +149,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       body: PageView.builder(
+        key: const PageStorageKey('post_detail_carousel'),
         controller: _pageController,
         scrollDirection: Axis.vertical,
         itemCount: _carouselPosts.length,
@@ -160,13 +165,14 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
           final post = _carouselPosts[index];
           final isCurrentPost = index == _currentIndex;
-          final freshPost = _postController.getPostFromStorage(post['id']) ?? post;
-
+          
+          // НЕ ДЕЛАЕМ freshPost - используем тот же пост
           return Column(
             children: [
               Expanded(
                 child: PostItem(
-                  post: freshPost,
+                  key: ValueKey('post_${post['id']}_${isCurrentPost ? 'current' : 'other'}'),
+                  post: post,
                   isFullScreen: true,
                   useMockData: false,
                   likedPosts: widget.likedPosts,
@@ -199,6 +205,7 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
         children: [
           Expanded(
             child: PostItem(
+              key: ValueKey('post_${_post!['id']}'),
               post: _post!,
               isFullScreen: true,
               useMockData: false,
@@ -218,6 +225,8 @@ class _PostDetailScreenState extends State<PostDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: Colors.black,

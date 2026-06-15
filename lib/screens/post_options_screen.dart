@@ -10,6 +10,7 @@ import 'package:dio/dio.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
@@ -32,15 +33,32 @@ class PostOptionsScreen extends StatefulWidget {
 
 class _PostOptionsScreenState extends State<PostOptionsScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final PostController _postController = Get.find<PostController>();
 
   bool _isDeleting = false;
   bool _isSharing = false;
   bool _isSaving = false;
+  bool _isReporting = false;
+  String? _selectedReportReason;
+  String? _customReportReason;
 
   String? get _currentUserId => _auth.currentUser?.uid;
   String? get _postUserId => widget.post['userId']?.toString();
   bool get _isOwnPost => _currentUserId != null && _currentUserId == _postUserId;
+
+  final List<String> _reportReasons = [
+    'Spam',
+    'Harassment or bullying',
+    'Child safety concerns',
+    'Hate speech',
+    'Inappropriate content',
+    'False information',
+    'Impersonation',
+    'Violence or dangerous content',
+    'Intellectual property violation',
+    'Other',
+  ];
 
   void _showToast(String message, {bool isError = false}) {
     Fluttertoast.showToast(
@@ -50,6 +68,170 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
       backgroundColor: isError ? Colors.red : Colors.black,
       textColor: Colors.white,
     );
+  }
+
+  Future<void> _reportPost() async {
+    if (_isReporting) return;
+
+    final postId = widget.post['id']?.toString();
+    if (postId == null) return;
+
+    _selectedReportReason = null;
+    _customReportReason = null;
+
+    final result = await showDialog<Map<String, String>>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: Colors.grey[900],
+            title: const Text(
+              'Report Post',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'Why are you reporting this post?',
+                    style: TextStyle(color: Colors.white70),
+                  ),
+                  const SizedBox(height: 16),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 350),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: _reportReasons.map((reason) {
+                          final isSelected = _selectedReportReason == reason;
+                          return RadioListTile<String>(
+                            title: Text(
+                              reason,
+                              style: TextStyle(
+                                color: isSelected ? Colors.white : Colors.white70,
+                              ),
+                            ),
+                            value: reason,
+                            groupValue: _selectedReportReason,
+                            activeColor: Colors.white,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                _selectedReportReason = value;
+                                if (value != 'Other') {
+                                  _customReportReason = null;
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                  if (_selectedReportReason == 'Other') ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Please specify...',
+                        hintStyle: TextStyle(color: Colors.grey[500]),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.grey[700]!),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: const BorderSide(color: Colors.white),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                      onChanged: (value) {
+                        setDialogState(() {
+                          _customReportReason = value;
+                        });
+                      },
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, null),
+                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+              ),
+              TextButton(
+                onPressed: () {
+                  if (_selectedReportReason == null) {
+                    _showToast('Please select a reason', isError: true);
+                    return;
+                  }
+                  if (_selectedReportReason == 'Other' && 
+                      (_customReportReason == null || _customReportReason!.trim().isEmpty)) {
+                    _showToast('Please specify the reason', isError: true);
+                    return;
+                  }
+                  Navigator.pop(context, {
+                    'reason': _selectedReportReason!,
+                    'details': _selectedReportReason == 'Other' 
+                        ? _customReportReason!.trim() 
+                        : '',
+                  });
+                },
+                child: const Text('Submit', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (result == null) return;
+
+    setState(() => _isReporting = true);
+
+    try {
+      // Сохраняем жалобу в основную коллекцию
+      await _firestore.collection('reports').add({
+        'postId': postId,
+        'postOwnerId': _postUserId,
+        'reporterId': _currentUserId,
+        'reason': result['reason'],
+        'details': result['details'] ?? '',
+        'status': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // Сохраняем в историю жалоб пользователя
+      if (_currentUserId != null) {
+        await _firestore
+            .collection('users')
+            .doc(_currentUserId)
+            .collection('reports')
+            .add({
+          'postId': postId,
+          'postOwnerId': _postUserId,
+          'reason': result['reason'],
+          'details': result['details'] ?? '',
+          'status': 'pending',
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      _showToast('Post reported successfully');
+
+    } catch (e) {
+      print('❌ Report error: $e');
+      _showToast('Failed to report', isError: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isReporting = false);
+        Get.back();
+      }
+    }
   }
 
   @override
@@ -93,6 +275,16 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
             onTap: _isSaving ? null : _saveImage,
           ),
 
+          // Кнопка жалобы (только для чужих постов)
+          if (!_isOwnPost) ...[
+            const Divider(),
+            _buildOption(
+              icon: CupertinoIcons.flag,
+              label: _isReporting ? 'Reporting...' : 'Report',
+              onTap: _isReporting ? null : _reportPost,
+            ),
+          ],
+
           const SizedBox(height: 8),
 
           Padding(
@@ -133,7 +325,7 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     );
   }
 
-  // ========== 🔥 ПРАВИЛЬНОЕ УДАЛЕНИЕ (БЕЗ REFRESH) ==========
+  // ========== УДАЛЕНИЕ ПОСТА ==========
   Future<void> _deletePost() async {
     if (_isDeleting) return;
 
@@ -172,14 +364,10 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
 
     setState(() => _isDeleting = true);
 
-    // 🔥 1. МГНОВЕННО УДАЛЯЕМ ИЗ UI (оптимистично)
     _postController.removePostFromAllLists(postId);
+    Get.back();
+    widget.onPostDeleted?.call();
 
-    // 🔥 2. ЗАКРЫВАЕМ ЭКРАНЫ
-    Get.back(); // закрываем options screen
-    widget.onPostDeleted?.call(); // закрываем detail screen
-
-    // 🔥 3. УДАЛЯЕМ В ФОНЕ (не ждем, не обновляем UI)
     _postController.deletePost(postId).catchError((e) {
       print('❌ Delete error: $e');
       _showToast('Delete failed', isError: true);
@@ -189,6 +377,7 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     setState(() => _isDeleting = false);
   }
 
+  // ========== СОХРАНЕНИЕ ИЗОБРАЖЕНИЯ ==========
   Future<void> _saveImage() async {
     String? imageUrl = widget.post['imageUrl']?.toString();
     
@@ -287,6 +476,7 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     if (mounted) setState(() => _isSaving = false);
   }
 
+  // ========== ПОДЕЛИТЬСЯ ==========
   Future<void> _sharePost() async {
     setState(() => _isSharing = true);
 
