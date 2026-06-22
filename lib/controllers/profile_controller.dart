@@ -23,11 +23,9 @@ class ProfileController extends ProfileBaseController {
   final FollowService _followService = Get.find<FollowService>();
   final PostController _postController = Get.find<PostController>();
   
-  // 🔥 ALGOLIA ADMIN API KEY (ВСТАВЬ СВОЙ ИЗ КОНСОЛИ)
   static const String _algoliaAppId = "NRFCQ941L8";
-  static const String _algoliaAdminKey = "YOUR_ADMIN_API_KEY_HERE"; // ⚠️ ЗАМЕНИ НА СВОЙ!
+  static const String _algoliaAdminKey = "YOUR_ADMIN_API_KEY_HERE";
   
-  // Pagination variables
   final int _postsPerPage = 12;
   DocumentSnapshot? _lastPostDocument;
   bool _hasMorePosts = true;
@@ -35,9 +33,10 @@ class ProfileController extends ProfileBaseController {
   
   StreamSubscription<int>? _followersSubscription;
   StreamSubscription<int>? _followingSubscription;
-  Worker? _postsWorker;
   
   String? _currentUserId;
+  
+  bool _isChangingAvatar = false;
   
   bool get loadingMorePosts => _loadingMorePosts.value;
   
@@ -46,18 +45,13 @@ class ProfileController extends ProfileBaseController {
   @override
   void onInit() {
     super.onInit();
-    _postsWorker = ever(_postController.posts, (_) {
-      if (_currentUserId != null) {
-        _refreshPostsFromPostController();
-      }
-    });
+    // 🔥 ПОДПИСКА УДАЛЕНА!
   }
   
   @override
   void onClose() {
     _followersSubscription?.cancel();
     _followingSubscription?.cancel();
-    _postsWorker?.dispose();
     super.onClose();
   }
 
@@ -348,9 +342,16 @@ class ProfileController extends ProfileBaseController {
   }
   
   Future<void> changeAvatar() async {
+    if (_isChangingAvatar) {
+      print('⚠️ Avatar change already in progress, ignoring duplicate call');
+      return;
+    }
+    
     try {
       final currentUserId = _auth.currentUser?.uid;
       if (currentUserId == null) return;
+      
+      _isChangingAvatar = true;
       
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
@@ -359,7 +360,10 @@ class ProfileController extends ProfileBaseController {
         maxHeight: 800,
       );
       
-      if (image == null) return;
+      if (image == null) {
+        _isChangingAvatar = false;
+        return;
+      }
       
       isLoading.value = true;
       
@@ -401,7 +405,6 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: downloadUrl,
       );
       
-      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
       await _directUpdateAlgolia(
         userId: currentUserId,
         username: username.value,
@@ -429,6 +432,7 @@ class ProfileController extends ProfileBaseController {
         duration: const Duration(seconds: 3),
       );
     } finally {
+      _isChangingAvatar = false;
       isLoading.value = false;
     }
   }
@@ -536,7 +540,6 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: newAvatarUrl,
       );
 
-      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
       await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: username.value,
@@ -569,8 +572,6 @@ class ProfileController extends ProfileBaseController {
     }
   }
   
-  // ========== 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA ЧЕРЕЗ HTTP ==========
-  
   Future<void> _directUpdateAlgolia({
     required String userId,
     required String username,
@@ -579,7 +580,6 @@ class ProfileController extends ProfileBaseController {
     print('🔄 [ALGOLIA DIRECT] Updating user: $userId -> $username');
     
     try {
-      // 1. Обновляем пользователя в Algolia
       final userUrl = Uri.parse("https://$_algoliaAppId.algolia.net/1/indexes/users/$userId");
       final userResponse = await http.put(
         userUrl,
@@ -602,7 +602,6 @@ class ProfileController extends ProfileBaseController {
         print('❌ [ALGOLIA DIRECT] Failed to update user: ${userResponse.body}');
       }
       
-      // 2. Обновляем посты пользователя в Algolia
       final searchUrl = Uri.parse("https://$_algoliaAppId.algolia.net/1/indexes/posts/query");
       final searchResponse = await http.post(
         searchUrl,
@@ -656,7 +655,6 @@ class ProfileController extends ProfileBaseController {
 
       print('🔄 Updating username from "${username.value}" to "$newUsername"');
 
-      // 1. Обновляем в Firestore
       await _firestore
           .collection('users')
           .doc(currentUser.uid)
@@ -666,11 +664,9 @@ class ProfileController extends ProfileBaseController {
           });
       print('✅ Firestore updated');
 
-      // 2. Очищаем кэш
       _postController.clearUserPostsCache(currentUser.uid);
       print('🗑️ Cleared post cache');
 
-      // 3. Обновляем все посты пользователя в Firestore
       await _updateAllUserPosts(
         userId: currentUser.uid,
         newUsername: newUsername,
@@ -678,14 +674,12 @@ class ProfileController extends ProfileBaseController {
       );
       print('✅ Posts in Firestore updated');
 
-      // 4. 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
       await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: newUsername,
         avatarUrl: avatarUrl.value,
       );
 
-      // 5. Обновляем локально
       username.value = newUsername;
       update();
       
@@ -748,7 +742,6 @@ class ProfileController extends ProfileBaseController {
         newAvatarUrl: newAvatarUrl,
       );
 
-      // 🔥 ПРЯМОЕ ОБНОВЛЕНИЕ ALGOLIA
       await _directUpdateAlgolia(
         userId: currentUser.uid,
         username: newUsername,

@@ -1,5 +1,3 @@
-// lib/screens/profile_screen.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -33,6 +31,138 @@ import '../widgets/profile_posts_grid.dart';
 import 'user_profile_screen.dart';
 import 'post_detail_screen.dart';
 
+// ========== ВКЛАДКА ПОСТОВ ==========
+class _PostsTabWidget extends StatefulWidget {
+  final String userId;
+  final PostController postController;
+  final Function(String) onPostTap;
+
+  const _PostsTabWidget({
+    required this.userId,
+    required this.postController,
+    required this.onPostTap,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<_PostsTabWidget> createState() => _PostsTabWidgetState();
+}
+
+class _PostsTabWidgetState extends State<_PostsTabWidget> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return ProfilePostsGrid(
+      userId: widget.userId,
+      postController: widget.postController,
+      onPostTap: widget.onPostTap,
+    );
+  }
+}
+
+// ========== ВКЛАДКА ЛАЙКНУТЫХ ==========
+class _LikedTabWidget extends StatefulWidget {
+  final List<Map<String, dynamic>> likedPosts;
+  final Function(String) onPostTap;
+
+  const _LikedTabWidget({
+    required this.likedPosts,
+    required this.onPostTap,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<_LikedTabWidget> createState() => _LikedTabWidgetState();
+}
+
+class _LikedTabWidgetState extends State<_LikedTabWidget> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    
+    if (widget.likedPosts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.favorite_border, size: 80, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text("No liked posts yet", style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              const Text("Posts you like will appear here", style: TextStyle(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return ProfilePostsGrid(
+      userId: 'liked_temp',
+      postController: Get.find<PostController>(),
+      customPosts: widget.likedPosts,
+      onPostTap: widget.onPostTap,
+    );
+  }
+}
+
+// ========== ВКЛАДКА СОХРАНЕННЫХ ==========
+class _SavedTabWidget extends StatefulWidget {
+  final List<Map<String, dynamic>> savedPosts;
+  final Function(String) onPostTap;
+
+  const _SavedTabWidget({
+    required this.savedPosts,
+    required this.onPostTap,
+    Key? key,
+  }) : super(key: key);
+
+  @override
+  State<_SavedTabWidget> createState() => _SavedTabWidgetState();
+}
+
+class _SavedTabWidgetState extends State<_SavedTabWidget> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    
+    if (widget.savedPosts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.bookmark_border, size: 80, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text("No saved posts yet", style: TextStyle(fontSize: 16, color: Colors.grey, fontWeight: FontWeight.w500)),
+              const SizedBox(height: 8),
+              const Text("Save posts to view them later", style: TextStyle(fontSize: 14, color: Colors.grey), textAlign: TextAlign.center),
+            ],
+          ),
+        ),
+      );
+    }
+    
+    return ProfilePostsGrid(
+      userId: 'saved_temp',
+      postController: Get.find<PostController>(),
+      customPosts: widget.savedPosts,
+      onPostTap: widget.onPostTap,
+    );
+  }
+}
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -59,7 +189,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   String get _currentUserId => _auth.currentUser?.uid ?? '';
 
-  bool _isRefreshing = false;
   Map<String, dynamic> _userDetails = {};
   
   List<Map<String, dynamic>> _savedPosts = [];
@@ -85,59 +214,169 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   final ScrollController _scrollController = ScrollController();
 
-  void _updateLikedPosts(String postId, bool isLiked) {
-    print('🔄 [ProfileScreen] ========== UPDATE LIKED POSTS ==========');
-    print('🔄 Post ID: $postId');
-    print('🔄 isLiked: $isLiked');
-    print('🔄 Current liked posts count before: ${_likedPosts.length}');
+  // 🔥 ПОДПИСКИ НА ГЛОБАЛЬНЫЕ ИЗМЕНЕНИЯ
+  Worker? _likedPostsWorker;
+  Worker? _savedPostsWorker;
+
+  // ========== МЕТОДЫ ОБНОВЛЕНИЯ ИЗ ГЛОБАЛЬНОГО КОНТРОЛЛЕРА ==========
+  
+  void _refreshLikedPostsFromController() {
+    if (_currentUserId.isEmpty) return;
     
-    setState(() {
-      if (isLiked) {
-        final post = _postController.getPostFromStorage(postId);
-        if (post != null && !_likedPosts.any((p) => p['id'] == postId)) {
-          _likedPosts.insert(0, post);
-          _likedPostsMap[postId] = true;
-          _likedPostsDates[postId] = DateTime.now();
-          print('✅ Added post to liked posts at the top: $postId');
-        } else {
-          print('⚠️ Post not found in storage or already in list');
-        }
+    print('🔄 [ProfileScreen] Refreshing liked posts from PostController');
+    
+    final likedPostIds = _postController.likedPosts.entries
+        .where((entry) => entry.value == true)
+        .map((entry) => entry.key)
+        .toList();
+    
+    print('📊 [ProfileScreen] likedPostIds (filtered true): $likedPostIds');
+    
+    final updatedLikedPosts = <Map<String, dynamic>>[];
+    final updatedLikedPostsMap = <String, bool>{};
+    
+    for (final postId in likedPostIds) {
+      final post = _postController.getPostFromStorage(postId);
+      if (post != null) {
+        updatedLikedPosts.add(post);
+        updatedLikedPostsMap[postId] = true;
       } else {
-        _likedPosts.removeWhere((p) => p['id'] == postId);
-        _likedPostsMap.remove(postId);
-        _likedPostsDates.remove(postId);
-        print('✅ Removed post from liked posts: $postId');
+        print('⚠️ [ProfileScreen] Post not found in storage: $postId');
       }
-      print('🔄 Current liked posts count after: ${_likedPosts.length}');
+    }
+    
+    updatedLikedPosts.sort((a, b) {
+      final dateA = a['createdAt'] is Timestamp 
+          ? (a['createdAt'] as Timestamp).toDate() 
+          : DateTime.now();
+      final dateB = b['createdAt'] is Timestamp 
+          ? (b['createdAt'] as Timestamp).toDate() 
+          : DateTime.now();
+      return dateB.compareTo(dateA);
     });
+    
+    if (mounted) {
+      setState(() {
+        _likedPosts = updatedLikedPosts;
+        _likedPostsMap.clear();
+        _likedPostsMap.addAll(updatedLikedPostsMap);
+        _likedPostsLoaded = true;
+      });
+    }
+    
+    print('✅ [ProfileScreen] Liked posts updated: ${_likedPosts.length} posts');
   }
 
-  void _updateSavedPosts(String postId, bool isSaved) {
-    print('🔄 [ProfileScreen] ========== UPDATE SAVED POSTS ==========');
-    print('🔄 Post ID: $postId');
-    print('🔄 isSaved: $isSaved');
-    print('🔄 Current saved posts count before: ${_savedPosts.length}');
+  void _refreshSavedPostsFromController() {
+    if (_currentUserId.isEmpty) return;
     
-    setState(() {
-      if (isSaved) {
-        final post = _postController.getPostFromStorage(postId);
-        if (post != null && !_savedPosts.any((p) => p['id'] == postId)) {
-          _savedPosts.insert(0, post);
-          _savedPostsMap[postId] = true;
-          _savedPostsDates[postId] = DateTime.now();
-          print('✅ Added post to saved posts at the top: $postId');
-        } else {
-          print('⚠️ Post not found in storage or already in list');
-        }
+    print('🔄 [ProfileScreen] Refreshing saved posts from PostController');
+    print('📊 [ProfileScreen] savedPosts keys: ${_postController.savedPosts.keys.toList()}');
+    print('📊 [ProfileScreen] savedPosts entries: ${_postController.savedPosts.entries.toList()}');
+    
+    final savedPostIds = _postController.savedPosts.entries
+        .where((entry) => entry.value == true)
+        .map((entry) => entry.key)
+        .toList();
+    
+    print('📊 [ProfileScreen] savedPostIds (filtered true): $savedPostIds');
+    
+    final updatedSavedPosts = <Map<String, dynamic>>[];
+    final updatedSavedPostsMap = <String, bool>{};
+    
+    for (final postId in savedPostIds) {
+      final post = _postController.getPostFromStorage(postId);
+      if (post != null) {
+        updatedSavedPosts.add(post);
+        updatedSavedPostsMap[postId] = true;
       } else {
-        _savedPosts.removeWhere((p) => p['id'] == postId);
-        _savedPostsMap.remove(postId);
-        _savedPostsDates.remove(postId);
-        print('✅ Removed post from saved posts: $postId');
+        print('⚠️ [ProfileScreen] Post not found in storage: $postId');
       }
-      print('🔄 Current saved posts count after: ${_savedPosts.length}');
+    }
+    
+    updatedSavedPosts.sort((a, b) {
+      final dateA = a['createdAt'] is Timestamp 
+          ? (a['createdAt'] as Timestamp).toDate() 
+          : DateTime.now();
+      final dateB = b['createdAt'] is Timestamp 
+          ? (b['createdAt'] as Timestamp).toDate() 
+          : DateTime.now();
+      return dateB.compareTo(dateA);
     });
+    
+    if (mounted) {
+      setState(() {
+        _savedPosts = updatedSavedPosts;
+        _savedPostsMap.clear();
+        _savedPostsMap.addAll(updatedSavedPostsMap);
+        _savedPostsLoaded = true;
+      });
+    }
+    
+    print('✅ [ProfileScreen] Saved posts updated: ${_savedPosts.length} posts');
   }
+
+  // 🔥 ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА СОХРАНЕНИЙ ИЗ FIRESTORE
+  Future<void> _loadSavedPostsFromFirestore() async {
+    if (_currentUserId.isEmpty) return;
+    
+    print('🔄 [ProfileScreen] Loading saved posts from Firestore directly');
+    
+    try {
+      final savedSnapshot = await _firestore
+          .collection('users')
+          .doc(_currentUserId)
+          .collection('savedPosts')
+          .get();
+      
+      // Очищаем и обновляем глобальный контроллер
+      _postController.savedPosts.clear();
+      for (final doc in savedSnapshot.docs) {
+        _postController.savedPosts[doc.id] = true;
+      }
+      
+      print('✅ [ProfileScreen] Loaded ${_postController.savedPosts.length} saved posts from Firestore');
+      
+      // Обновляем локальный список
+      _refreshSavedPostsFromController();
+      
+    } catch (e) {
+      print('❌ [ProfileScreen] Error loading saved posts: $e');
+    }
+  }
+
+  // 🔥 ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ЛАЙКНУТЫХ ИЗ FIRESTORE
+  Future<void> _loadLikedPostsFromFirestore() async {
+    if (_currentUserId.isEmpty) return;
+    
+    print('🔄 [ProfileScreen] Loading liked posts from Firestore directly');
+    
+    try {
+      final likesSnapshot = await _firestore
+          .collection('likes')
+          .where('userId', isEqualTo: _currentUserId)
+          .get();
+      
+      // Очищаем и обновляем глобальный контроллер
+      _postController.likedPosts.clear();
+      for (final doc in likesSnapshot.docs) {
+        final postId = doc.data()['postId'] as String?;
+        if (postId != null) {
+          _postController.likedPosts[postId] = true;
+        }
+      }
+      
+      print('✅ [ProfileScreen] Loaded ${_postController.likedPosts.length} liked posts from Firestore');
+      
+      // Обновляем локальный список
+      _refreshLikedPostsFromController();
+      
+    } catch (e) {
+      print('❌ [ProfileScreen] Error loading liked posts: $e');
+    }
+  }
+
+  // ========== ИНИЦИАЛИЗАЦИЯ ==========
 
   @override
   void initState() {
@@ -155,19 +394,30 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     if (Get.isRegistered<ProfileController>()) {
       controller = Get.find<ProfileController>();
-      print('✅ Found existing ProfileController');
     } else {
       controller = Get.put(ProfileController());
-      print('⚠️ Created new ProfileController');
     }
     
     _postController = Get.find<PostController>();
-    print('✅ Found PostController');
     
+    // Подписка на обновление постов (не трогаем)
     ever(_postController.userPosts, (_) {
       if (mounted) {
         setState(() {});
-        print('📊 Posts updated from PostController');
+      }
+    });
+    
+    // 🔥 ПОДПИСКА НА ИЗМЕНЕНИЯ ЛАЙКОВ
+    _likedPostsWorker = ever(_postController.likedPosts, (_) {
+      if (mounted && _currentUserId.isNotEmpty) {
+        _refreshLikedPostsFromController();
+      }
+    });
+
+    // 🔥 ПОДПИСКА НА ИЗМЕНЕНИЯ СОХРАНЕНИЙ
+    _savedPostsWorker = ever(_postController.savedPosts, (_) {
+      if (mounted && _currentUserId.isNotEmpty) {
+        _refreshSavedPostsFromController();
       }
     });
     
@@ -177,7 +427,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     _tabController.addListener(() {
       if (mounted) {
-        print('📱 Switched to tab: ${_tabController.index}');
         setState(() {});
       }
     });
@@ -195,6 +444,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     _tabController.dispose();
     _avatarSubscription?.cancel();
     _scrollController.dispose();
+    _likedPostsWorker?.dispose();
+    _savedPostsWorker?.dispose();
     super.dispose();
   }
 
@@ -268,8 +519,11 @@ class _ProfileScreenState extends State<ProfileScreen>
       await controller.safeLoadUserData(_currentUserId);
       await _loadUserDetails();
       
-      if (refresh || _postController.userPosts[_currentUserId]?.isEmpty == true) {
-        await _postController.loadUserPosts(_currentUserId, refresh: true);
+      final hasPosts = _postController.userPosts[_currentUserId]?.isNotEmpty ?? false;
+      if (refresh || !hasPosts) {
+        await _postController.loadUserPosts(_currentUserId, refresh: refresh);
+      } else {
+        print('📦 Posts already cached, skipping load');
       }
       
       if (mounted) {
@@ -347,12 +601,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _loadLikedPosts({bool forceRefresh = false}) async {
     if (_currentUserId.isEmpty) return;
     
-    print('\n📊📊📊 [ProfileScreen] ========== LOAD LIKED POSTS ==========');
-    print('📊 forceRefresh: $forceRefresh');
-    print('📊 _likedPostsLoaded: $_likedPostsLoaded');
-    
     if (!forceRefresh && _likedPostsLoaded) {
-      print('📦 Using cached liked posts: ${_likedPosts.length}');
       return;
     }
     
@@ -366,8 +615,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           .where('userId', isEqualTo: _currentUserId)
           .orderBy('createdAt', descending: true)
           .get();
-      
-      print('📊 Found ${likesSnapshot.docs.length} liked posts in Firestore');
       
       if (likesSnapshot.docs.isEmpty) {
         if (mounted) {
@@ -406,16 +653,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         }
         
         if (post == null) {
-          print('📊 Post $postId not in storage, loading from Firestore...');
           final doc = await _firestore.collection('posts').doc(postId).get();
           if (doc.exists) {
             final data = doc.data()!;
             data['id'] = doc.id;
             post = data;
             _postController.addPostsToStorage([post]);
-            print('📊 ✅ Loaded post $postId from Firestore');
           } else {
-            print('📊 ❌ Post $postId not found in Firestore');
             continue;
           }
         }
@@ -440,7 +684,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           _likedPostsLoaded = true;
           _loadingLiked = false;
         });
-        print('📊 Updated liked posts: ${_likedPosts.length}');
       }
       
     } catch (e) {
@@ -449,18 +692,12 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() => _loadingLiked = false);
       }
     }
-    print('📊📊📊 ========== LOAD LIKED POSTS END ==========\n');
   }
 
   Future<void> _loadSavedPosts({bool forceRefresh = false}) async {
     if (_currentUserId.isEmpty) return;
     
-    print('\n📚📚📚 [ProfileScreen] ========== LOAD SAVED POSTS ==========');
-    print('📚 forceRefresh: $forceRefresh');
-    print('📚 _savedPostsLoaded: $_savedPostsLoaded');
-    
     if (!forceRefresh && _savedPostsLoaded) {
-      print('📦 Using cached saved posts: ${_savedPosts.length}');
       return;
     }
     
@@ -475,8 +712,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           .collection('savedPosts')
           .orderBy('timestamp', descending: true)
           .get();
-      
-      print('📚 Found ${savedSnapshot.docs.length} saved posts in Firestore');
       
       if (savedSnapshot.docs.isEmpty) {
         if (mounted) {
@@ -514,16 +749,13 @@ class _ProfileScreenState extends State<ProfileScreen>
         }
         
         if (post == null) {
-          print('📚 Post $postId not in storage, loading from Firestore...');
           final doc = await _firestore.collection('posts').doc(postId).get();
           if (doc.exists) {
             final data = doc.data()!;
             data['id'] = doc.id;
             post = data;
             _postController.addPostsToStorage([post]);
-            print('📚 ✅ Loaded post $postId from Firestore');
           } else {
-            print('📚 ❌ Post $postId not found in Firestore');
             continue;
           }
         }
@@ -548,7 +780,6 @@ class _ProfileScreenState extends State<ProfileScreen>
           _savedPostsLoaded = true;
           _loadingSaved = false;
         });
-        print('📚 Updated saved posts: ${_savedPosts.length}');
       }
       
     } catch (e) {
@@ -557,62 +788,64 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() => _loadingSaved = false);
       }
     }
-    print('📚📚📚 ========== LOAD SAVED POSTS END ==========\n');
   }
 
-  void _openPostDetail(Map<String, dynamic> post) {
+  // ========== ОТКРЫТИЕ ПОСТА (БЕЗ ЛИШНИХ ПАРАМЕТРОВ) ==========
+
+  void _openPostDetail(String postId) {
     if (!mounted) return;
     
-    print('📱 [ProfileScreen] Opening post detail: ${post['id']}');
-    
-    if (post['id'] != null) {
-      final freshPost = _postController.getPostFromStorage(post['id']) ?? post;
-      
-      List<Map<String, dynamic>> currentPosts;
-      int initialIndex;
-      
-      switch (_tabController.index) {
-        case 0:
-          currentPosts = _postController.userPosts[_currentUserId] ?? [];
-          initialIndex = currentPosts.indexWhere((p) => p['id'] == post['id']);
-          break;
-        case 1:
-          currentPosts = _likedPosts;
-          initialIndex = _likedPosts.indexWhere((p) => p['id'] == post['id']);
-          break;
-        case 2:
-          currentPosts = _savedPosts;
-          initialIndex = _savedPosts.indexWhere((p) => p['id'] == post['id']);
-          break;
-        default:
-          currentPosts = _postController.userPosts[_currentUserId] ?? [];
-          initialIndex = 0;
-      }
-      
-      if (initialIndex == -1) initialIndex = 0;
-      
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PostDetailScreen(
-            posts: currentPosts,
-            initialIndex: initialIndex,
-            likedPosts: _likedPostsMap,
-            savedPosts: _savedPostsMap,
-            followingUsers: _followingUsers,
-            onLikeChanged: _updateLikedPosts,
-            onSaveChanged: _updateSavedPosts,
-          ),
-        ),
-      ).then((_) {
-        print('📱 [ProfileScreen] Returned from post detail');
-        if (mounted) {
-          setState(() {});
-        }
-      });
-    } else {
+    if (postId.isEmpty) {
       _showSnackbar("Cannot open post");
+      return;
     }
+    
+    print('📱 [ProfileScreen] Opening post detail: $postId');
+    
+    List<Map<String, dynamic>> posts;
+    int initialIndex;
+    
+    switch (_tabController.index) {
+      case 0:
+        posts = _postController.userPosts[_currentUserId] ?? [];
+        initialIndex = posts.indexWhere((p) => p['id'] == postId);
+        break;
+      case 1:
+        posts = _likedPosts;
+        initialIndex = _likedPosts.indexWhere((p) => p['id'] == postId);
+        break;
+      case 2:
+        posts = _savedPosts;
+        initialIndex = _savedPosts.indexWhere((p) => p['id'] == postId);
+        break;
+      default:
+        posts = _postController.userPosts[_currentUserId] ?? [];
+        initialIndex = 0;
+    }
+    
+    if (initialIndex == -1 || posts.isEmpty) {
+      posts = _postController.userPosts[_currentUserId] ?? [];
+      initialIndex = posts.indexWhere((p) => p['id'] == postId);
+      if (initialIndex == -1) initialIndex = 0;
+    }
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(
+          posts: posts,
+          initialIndex: initialIndex,
+          followingUsers: _followingUsers,
+        ),
+      ),
+    ).then((_) {
+      print('📱 [ProfileScreen] Returned from post detail');
+      // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СОХРАНЕНИЯ И ЛАЙКИ ПРИ ВОЗВРАТЕ
+      if (mounted) {
+        _loadSavedPostsFromFirestore();
+        _loadLikedPostsFromFirestore();
+      }
+    });
   }
 
   Widget _buildPostsShimmer() {
@@ -690,127 +923,105 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    super.build(context);
+  Widget _buildBioWithEditIcon() {
+    final String currentBio = controller.bio.value;
     
-    if (_isOffline) {
-      return _buildOfflineWidget();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 4),
+                Text(
+                  currentBio.isEmpty 
+                    ? "No bio yet. Tap edit to add one!" 
+                    : currentBio, 
+                  style: const TextStyle(fontSize: 14, color: Colors.black)
+                ),
+                const SizedBox(height: 6),
+                _buildUserLinks(),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Theme(
+            data: Theme.of(context).copyWith(
+              splashColor: Colors.transparent,
+              highlightColor: Colors.transparent,
+              hoverColor: Colors.transparent,
+            ),
+            child: GestureDetector(
+              onTap: () async {
+                try {
+                  final result = await Get.to(() => EditBioPage(currentBio: controller.bio.value));
+                  if (result != null && mounted) {
+                    await controller.updateBio(result);
+                    setState(() {});
+                    _showSnackbar("Bio updated successfully");
+                  }
+                } catch (e) {
+                  _handleError('Failed to update bio', error: e);
+                }
+              },
+              behavior: HitTestBehavior.opaque,
+              child: const Icon(Icons.edit, size: 18, color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserLinks() {
+    final website = _userDetails['website']?.toString() ?? '';
+    final location = _userDetails['location']?.toString() ?? '';
+    
+    if (website.isEmpty && location.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    return Obx(() {
-      if (controller.isLoading.value && _isFirstLoad) {
-        return _buildShimmerLoading();
-      }
-
-      return Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          backgroundColor: Colors.white,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          title: Text(
-            controller.username.value, 
-            style: const TextStyle(
-              color: Colors.black, 
-              fontWeight: FontWeight.w600,
-              fontSize: 20,
-            )
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (website.isNotEmpty) ...[
+          GestureDetector(
+            onTap: () => _openWebsite(website),
+            behavior: HitTestBehavior.opaque,
+            child: Text(
+              website, 
+              style: const TextStyle(
+                fontSize: 14, 
+                color: Colors.blue, 
+                decoration: TextDecoration.underline
+              ),
+            ),
           ),
-          centerTitle: true,
-          toolbarTextStyle: const TextStyle(color: Colors.black),
-          iconTheme: const IconThemeData(color: Colors.black),
-          titleTextStyle: const TextStyle(color: Colors.black),
-          actions: [
-            // ТОЛЬКО НУЖНЫЕ КНОПКИ - БЕЗ СИНХРОНИЗАЦИИ
-            Theme(
-              data: Theme.of(context).copyWith(
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-                hoverColor: Colors.transparent,
+          const SizedBox(height: 4),
+        ],
+        if (location.isNotEmpty)
+          Row(
+            children: [
+              const Icon(Icons.location_on, size: 14, color: Colors.grey),
+              const SizedBox(width: 4),
+              Text(
+                location, 
+                style: const TextStyle(fontSize: 14, color: Colors.grey)
               ),
-              child: IconButton(
-                icon: const Icon(CupertinoIcons.ellipsis_vertical),
-                color: Colors.black,
-                onPressed: _openSettingsScreen,
-                tooltip: 'Settings',
-                splashRadius: 1,
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Theme(
-              data: Theme.of(context).copyWith(
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-                hoverColor: Colors.transparent,
-              ),
-              child: IconButton(
-                icon: const Icon(CupertinoIcons.arrowshape_turn_up_right),
-                color: Colors.black,
-                onPressed: _shareProfile,
-                tooltip: 'Share Profile',
-                splashRadius: 1,
-                splashColor: Colors.transparent,
-                highlightColor: Colors.transparent,
-              ),
-            ),
-          ],
-        ),
-        body: CustomScrollView(
-          controller: _scrollController,
-          physics: const BouncingScrollPhysics(
-            parent: AlwaysScrollableScrollPhysics(),
+            ],
           ),
-          scrollDirection: Axis.vertical,
-          slivers: [
-            CupertinoSliverRefreshControl(
-              onRefresh: _refreshProfile,
-            ),
-
-            SliverToBoxAdapter(
-              child: Column(
-                children: [
-                  _buildHeader(),
-                  const SizedBox(height: 8),
-                  _buildBioWithEditIcon(),
-                  _buildUserDetails(),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-            
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _TabBarDelegate(
-                tabController: _tabController,
-              ),
-            ),
-            
-            SliverFillRemaining(
-              child: TabBarView(
-                controller: _tabController,
-                physics: const BouncingScrollPhysics(),
-                children: [
-                  ProfilePostsGrid(
-                    userId: _currentUserId,
-                    postController: _postController,
-                    onPostTap: _openPostDetail,
-                  ),
-                  _buildLikedView(),
-                  _buildSavedView(),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    });
+      ],
+    );
   }
 
   Widget _buildHeader() {
     final postsCount = _postController.userPosts[_currentUserId]?.length ?? 0;
+    final String currentAvatar = controller.avatarUrl.value;
+    final int followers = controller.followersCount.value;
+    final int following = controller.followingCount.value;
     
     return Container(
       padding: const EdgeInsets.all(16),
@@ -826,7 +1037,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                     controller.avatarUrl.value = url;
                     setState(() {});
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
+                      const SnackBar(
                         content: Text('Аватар обновлён!'),
                         backgroundColor: Colors.green,
                         duration: Duration(seconds: 2),
@@ -843,9 +1054,9 @@ class _ProfileScreenState extends State<ProfileScreen>
             behavior: HitTestBehavior.opaque,
             child: Stack(
               children: [
-                Obx(() => ClipOval(
+                ClipOval(
                   child: CachedNetworkImage(
-                    imageUrl: controller.avatarUrl.value,
+                    imageUrl: currentAvatar,
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
@@ -862,7 +1073,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       child: const Icon(Icons.person, size: 40, color: Colors.grey),
                     ),
                   ),
-                )),
+                ),
                 Positioned(
                   bottom: 0,
                   right: 0,
@@ -885,9 +1096,9 @@ class _ProfileScreenState extends State<ProfileScreen>
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStatItem(postsCount, "Posts", onTap: null),
-                _buildStatItem(controller.followersCount.value, "Followers", 
+                _buildStatItem(followers, "Followers", 
                   onTap: _navigateToFollowers),
-                _buildStatItem(controller.followingCount.value, "Following", 
+                _buildStatItem(following, "Following", 
                   onTap: _navigateToFollowing),
               ],
             ),
@@ -903,29 +1114,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       behavior: HitTestBehavior.opaque,
       child: Column(
         children: [
-          if (label == "Followers" || label == "Following")
-            Obx(() {
-              final count = label == "Followers" 
-                  ? controller.followersCount.value 
-                  : controller.followingCount.value;
-              return Text(
-                count.toString(), 
-                style: const TextStyle(
-                  fontSize: 18, 
-                  fontWeight: FontWeight.w400,
-                  color: Colors.black
-                ),
-              );
-            })
-          else
-            Text(
-              number.toString(), 
-              style: const TextStyle(
-                fontSize: 18, 
-                fontWeight: FontWeight.w400,
-                color: Colors.black
-              ),
+          Text(
+            number.toString(), 
+            style: const TextStyle(
+              fontSize: 18, 
+              fontWeight: FontWeight.w400,
+              color: Colors.black
             ),
+          ),
           const SizedBox(height: 4),
           Text(
             label, 
@@ -993,7 +1189,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       final followersCount = followersSnapshot.docs.length;
       if (mounted) {
         controller.followersCount.value = followersCount;
-        print('📊 Updated followers count: $followersCount');
       }
     } catch (e) {
       print('❌ Error updating followers count: $e');
@@ -1011,102 +1206,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       final followingCount = followingSnapshot.docs.length;
       if (mounted) {
         controller.followingCount.value = followingCount;
-        print('📊 Updated following count: $followingCount');
       }
     } catch (e) {
       print('❌ Error updating following count: $e');
     }
-  }
-
-  Widget _buildBioWithEditIcon() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 4),
-                Obx(() => Text(
-                  controller.bio.value.isEmpty 
-                    ? "No bio yet. Tap edit to add one!" 
-                    : controller.bio.value, 
-                  style: const TextStyle(fontSize: 14, color: Colors.black)
-                )),
-                const SizedBox(height: 6),
-                _buildUserLinks(),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Theme(
-            data: Theme.of(context).copyWith(
-              splashColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              hoverColor: Colors.transparent,
-            ),
-            child: GestureDetector(
-              onTap: () async {
-                try {
-                  final result = await Get.to(() => EditBioPage(currentBio: controller.bio.value));
-                  if (result != null && mounted) {
-                    await controller.updateBio(result);
-                    _showSnackbar("Bio updated successfully");
-                  }
-                } catch (e) {
-                  _handleError('Failed to update bio', error: e);
-                }
-              },
-              behavior: HitTestBehavior.opaque,
-              child: const Icon(Icons.edit, size: 18, color: Colors.grey),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUserLinks() {
-    final website = _userDetails['website']?.toString() ?? '';
-    final location = _userDetails['location']?.toString() ?? '';
-    
-    if (website.isEmpty && location.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (website.isNotEmpty) ...[
-          GestureDetector(
-            onTap: () => _openWebsite(website),
-            behavior: HitTestBehavior.opaque,
-            child: Text(
-              website, 
-              style: const TextStyle(
-                fontSize: 14, 
-                color: Colors.blue, 
-                decoration: TextDecoration.underline
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
-        ],
-        if (location.isNotEmpty)
-          Row(
-            children: [
-              const Icon(Icons.location_on, size: 14, color: Colors.grey),
-              const SizedBox(width: 4),
-              Text(
-                location, 
-                style: const TextStyle(fontSize: 14, color: Colors.grey)
-              ),
-            ],
-          ),
-      ],
-    );
   }
 
   Widget _buildUserDetails() {
@@ -1172,111 +1275,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         ],
       ),
     );
-  }
-
-  Widget _buildLikedView() {
-    if (_loadingLiked) {
-      return _buildPostsShimmer();
-    }
-    
-    if (_likedPosts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.favorite_border,
-                size: 80,
-                color: Colors.grey,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "No liked posts yet",
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Posts you like will appear here",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    
-    return ProfilePostsGrid(
-      userId: 'liked_temp',
-      postController: _postController,
-      customPosts: _likedPosts,
-      onPostTap: _openPostDetail,
-    );
-  }
-
-  Widget _buildSavedView() {
-    if (_loadingSaved) {
-      return _buildPostsShimmer();
-    }
-    
-    if (_savedPosts.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.bookmark_border,
-                size: 80,
-                color: Colors.grey,
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                "No saved posts yet",
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                "Save posts to view them later",
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    
-    return ProfilePostsGrid(
-      userId: 'saved_temp',
-      postController: _postController,
-      customPosts: _savedPosts,
-      onPostTap: _openPostDetail,
-    );
-  }
-
-  String _getPostImageUrl(Map<String, dynamic> post) {
-    return post["thumbnailUrl"]?.toString() 
-        ?? post["imageUrl"]?.toString() 
-        ?? post["url"]?.toString() 
-        ?? "";
   }
 
   void _showSnackbar(String message) {
@@ -1447,10 +1445,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     print('🔄 Starting profile refresh...');
     
-    setState(() {
-      _isRefreshing = true;
-    });
-    
     await _clearImageCache();
     
     try {
@@ -1461,22 +1455,133 @@ class _ProfileScreenState extends State<ProfileScreen>
       await _loadLikedPosts(forceRefresh: true);
       await _loadSavedPosts(forceRefresh: true);
       
-      if (mounted) {
-        setState(() {
-          _isRefreshing = false;
-        });
-      }
+      // 🔥 ПРИНУДИТЕЛЬНАЯ ПЕРЕЗАГРУЗКА СОХРАНЕНИЙ И ЛАЙКОВ ИЗ FIRESTORE
+      await _loadSavedPostsFromFirestore();
+      await _loadLikedPostsFromFirestore();
       
       print('✅ Profile refresh completed');
       
     } catch (e) {
       _handleError('Failed to refresh profile', error: e);
-      if (mounted) {
-        setState(() {
-          _isRefreshing = false;
-        });
-      }
     }
+  }
+
+  // ==================== ОСНОВНОЙ BUILD ====================
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    
+    if (_isOffline) {
+      return _buildOfflineWidget();
+    }
+
+    return Obx(() {
+      if (controller.isLoading.value && _isFirstLoad) {
+        return _buildShimmerLoading();
+      }
+
+      return Scaffold(
+        backgroundColor: Colors.white,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: Text(
+            controller.username.value,
+            style: const TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.w600,
+              fontSize: 20,
+            )
+          ),
+          centerTitle: true,
+          toolbarTextStyle: const TextStyle(color: Colors.black),
+          iconTheme: const IconThemeData(color: Colors.black),
+          titleTextStyle: const TextStyle(color: Colors.black),
+          actions: [
+            Theme(
+              data: Theme.of(context).copyWith(
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+              ),
+              child: IconButton(
+                icon: const Icon(CupertinoIcons.ellipsis_vertical),
+                color: Colors.black,
+                onPressed: _openSettingsScreen,
+                tooltip: 'Settings',
+                splashRadius: 1,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Theme(
+              data: Theme.of(context).copyWith(
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+                hoverColor: Colors.transparent,
+              ),
+              child: IconButton(
+                icon: const Icon(CupertinoIcons.arrowshape_turn_up_right),
+                color: Colors.black,
+                onPressed: _shareProfile,
+                tooltip: 'Share Profile',
+                splashRadius: 1,
+                splashColor: Colors.transparent,
+                highlightColor: Colors.transparent,
+              ),
+            ),
+          ],
+        ),
+        body: NestedScrollView(
+          controller: _scrollController,
+          headerSliverBuilder: (context, innerBoxIsScrolled) {
+            return [
+              CupertinoSliverRefreshControl(
+                onRefresh: _refreshProfile,
+              ),
+              SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    _buildHeader(),
+                    const SizedBox(height: 8),
+                    _buildBioWithEditIcon(),
+                    _buildUserDetails(),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _TabBarDelegate(
+                  tabController: _tabController,
+                ),
+              ),
+            ];
+          },
+          body: TabBarView(
+            controller: _tabController,
+            physics: const BouncingScrollPhysics(),
+            children: [
+              _PostsTabWidget(
+                userId: _currentUserId,
+                postController: _postController,
+                onPostTap: _openPostDetail,
+              ),
+              _LikedTabWidget(
+                likedPosts: _likedPosts,
+                onPostTap: _openPostDetail,
+              ),
+              _SavedTabWidget(
+                savedPosts: _savedPosts,
+                onPostTap: _openPostDetail,
+              ),
+            ],
+          ),
+        ),
+      );
+    });
   }
 }
 

@@ -435,19 +435,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   ),
                 ),
 
-                // Уменьшенный счетчик комментариев
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 8),
-                  child: Text(
-                    '$_totalComments comments',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ),
-
                 // Comments list
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
@@ -561,7 +548,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     ),
                   ),
 
-                // Input field (без упоминания про @)
+                // Input field
                 Container(
                   padding: EdgeInsets.only(
                     left: 16,
@@ -591,7 +578,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                             decoration: InputDecoration(
                               hintText: _replyingToUserId != null
                                   ? 'Reply to @$_replyingToUsername...'
-                                  : 'Add a comment...',  // 🔥 УБРАНО " (use @ to mention)"
+                                  : 'Add a comment...',
                               hintStyle: TextStyle(
                                 fontSize: 15,
                                 color: Colors.grey[400],
@@ -689,7 +676,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Никнейм
+                      // 🔥 НИКНЕЙМ УМЕНЬШЕННОГО РАЗМЕРА
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -699,8 +686,8 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                               comment['username'] ?? 'User',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 12,
-                                color: Colors.grey,
+                                fontSize: 12, // 🔥 УМЕНЬШЕНО С 13 ДО 12
+                                color: Colors.black,
                               ),
                             ),
                           ),
@@ -765,7 +752,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   ),
                 ),
 
-                // Кнопка лайка
+                // Кнопка лайка (увеличенная)
                 Container(
                   margin: const EdgeInsets.only(left: 6),
                   child: GestureDetector(
@@ -782,7 +769,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           Icon(
                             isLiked ? Icons.favorite : Icons.favorite_border,
                             color: isLiked ? Colors.black : Colors.grey[400],
-                            size: 14,
+                            size: 18,
                           ),
                           if ((comment['likes'] ?? 0) > 0)
                             Padding(
@@ -790,7 +777,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                               child: Text(
                                 '${comment['likes']}',
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                   color: isLiked ? Colors.black : Colors.grey[600],
                                 ),

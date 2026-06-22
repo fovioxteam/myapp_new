@@ -55,12 +55,16 @@ class _PostDetailScreenState extends State<PostDetailScreen>
   int _currentIndex = 0;
   List<Map<String, dynamic>> _carouselPosts = [];
 
+  // 🔥 КЭШ ДЛЯ ВИДЖЕТОВ ПОСТОВ
+  final Map<String, Widget> _postWidgetCache = {};
+
   @override
   void initState() {
     super.initState();
 
     if (widget.posts != null && widget.posts!.isNotEmpty) {
-      _carouselPosts = widget.posts!;
+      // 🔥 СОЗДАЕМ КОПИЮ СПИСКА, ЧТОБЫ НЕ МЕНЯТЬ ОРИГИНАЛ
+      _carouselPosts = List<Map<String, dynamic>>.from(widget.posts!);
       _currentIndex = widget.initialIndex != null
           ? widget.initialIndex!.clamp(0, _carouselPosts.length - 1)
           : 0;
@@ -78,15 +82,18 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     if (_carouselPosts.isNotEmpty) {
       _pageController.dispose();
     }
+    _postWidgetCache.clear();
     super.dispose();
   }
 
   Future<void> _loadPostById(String postId) async {
+    print('📱 [PostDetailScreen] Loading post by ID: $postId');
     setState(() => _isLoading = true);
 
     try {
       final cached = _postController.getPostFromStorage(postId);
       if (cached != null) {
+        print('✅ [PostDetailScreen] Found in cache: ${cached['id']}');
         if (mounted) {
           setState(() {
             _post = cached;
@@ -96,6 +103,7 @@ class _PostDetailScreenState extends State<PostDetailScreen>
         return;
       }
 
+      print('❌ [PostDetailScreen] Not in cache, loading from Firestore');
       final doc = await _firestore.collection('posts').doc(postId).get();
 
       if (!doc.exists) {
@@ -115,6 +123,7 @@ class _PostDetailScreenState extends State<PostDetailScreen>
         });
       }
     } catch (e) {
+      print('❌ [PostDetailScreen] Error loading post: $e');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -138,6 +147,37 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     );
   }
 
+  // 🔥 ИСПРАВЛЯЕМ - БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+  Widget _buildPostItem(Map<String, dynamic> postData, bool isCurrentPost) {
+    final postId = postData['id']?.toString() ?? '';
+    
+    // 🔥 БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+    final freshPost = _postController.getPostFromStorage(postId) ?? postData;
+    
+    // 🔥 УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КАЖДОГО ПОСТА
+    final cacheKey = '${postId}_${freshPost['likes']}_${freshPost['saves']}';
+    
+    if (_postWidgetCache.containsKey(cacheKey)) {
+      return _postWidgetCache[cacheKey]!;
+    }
+    
+    final widgetItem = PostItem(
+      key: ValueKey('post_$postId'),
+      post: freshPost,
+      isFullScreen: true,
+      useMockData: false,
+      likedPosts: null,
+      savedPosts: null,
+      followingUsers: widget.followingUsers,
+      onLikeChanged: widget.onLikeChanged,
+      onSaveChanged: widget.onSaveChanged,
+      onPostDeleted: isCurrentPost ? _onPostDeleted : null,
+    );
+    
+    _postWidgetCache[cacheKey] = widgetItem;
+    return widgetItem;
+  }
+
   Widget _buildCarouselMode() {
     if (_carouselPosts.isEmpty) {
       return const Scaffold(
@@ -155,33 +195,20 @@ class _PostDetailScreenState extends State<PostDetailScreen>
         itemCount: _carouselPosts.length,
         onPageChanged: (index) {
           if (_carouselPosts.isEmpty) return;
-          setState(() {
-            _currentIndex = index.clamp(0, _carouselPosts.length - 1);
-            _post = _carouselPosts.isNotEmpty ? _carouselPosts[_currentIndex] : null;
-          });
+          // 🔥 БЕЗ setState - ТОЛЬКО ОБНОВЛЯЕМ ПЕРЕМЕННЫЕ
+          _currentIndex = index.clamp(0, _carouselPosts.length - 1);
+          _post = _carouselPosts.isNotEmpty ? _carouselPosts[_currentIndex] : null;
         },
         itemBuilder: (context, index) {
           if (_carouselPosts.isEmpty) return const SizedBox();
 
-          final post = _carouselPosts[index];
+          final postData = _carouselPosts[index];
           final isCurrentPost = index == _currentIndex;
           
-          // НЕ ДЕЛАЕМ freshPost - используем тот же пост
           return Column(
             children: [
               Expanded(
-                child: PostItem(
-                  key: ValueKey('post_${post['id']}_${isCurrentPost ? 'current' : 'other'}'),
-                  post: post,
-                  isFullScreen: true,
-                  useMockData: false,
-                  likedPosts: widget.likedPosts,
-                  savedPosts: widget.savedPosts,
-                  followingUsers: widget.followingUsers,
-                  onLikeChanged: widget.onLikeChanged,
-                  onSaveChanged: widget.onSaveChanged,
-                  onPostDeleted: isCurrentPost ? _onPostDeleted : null,
-                ),
+                child: _buildPostItem(postData, isCurrentPost),
               ),
               _buildBottomNavigation(),
             ],
@@ -204,18 +231,7 @@ class _PostDetailScreenState extends State<PostDetailScreen>
       body: Column(
         children: [
           Expanded(
-            child: PostItem(
-              key: ValueKey('post_${_post!['id']}'),
-              post: _post!,
-              isFullScreen: true,
-              useMockData: false,
-              likedPosts: widget.likedPosts,
-              savedPosts: widget.savedPosts,
-              followingUsers: widget.followingUsers,
-              onLikeChanged: widget.onLikeChanged,
-              onSaveChanged: widget.onSaveChanged,
-              onPostDeleted: _onPostDeleted,
-            ),
+            child: _buildPostItem(_post!, true),
           ),
           _buildBottomNavigation(),
         ],

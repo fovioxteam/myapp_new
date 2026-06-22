@@ -122,6 +122,7 @@ class _PostItemState extends State<PostItem>
   late List<String> _imageUrls = [];
   bool _isCarousel = false;
 
+  // КЭШ ДЛЯ АВАТАРОК
   final Map<String, String> _avatarCache = {};
   StreamSubscription<bool>? _followSubscription;
   bool _isExpanded = false;
@@ -140,7 +141,6 @@ class _PostItemState extends State<PostItem>
     _loadFollowStatus();
     _initAnimations();
     
-    // Предзагружаем все изображения карусели
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (int i = 0; i < _imageUrls.length; i++) {
         final url = _imageUrls[i];
@@ -351,17 +351,21 @@ class _PostItemState extends State<PostItem>
     } catch (e) {}
   }
 
+  // КЭШИРОВАННОЕ ПОЛУЧЕНИЕ АВАТАРКИ
   String _getUserAvatar(String? url) {
     if (url == null || url.isEmpty) {
       return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
     }
+    
     if (_avatarCache.containsKey(url)) {
       return _avatarCache[url]!;
     }
+    
     if (_isValidUrl(url)) {
       _avatarCache[url] = url;
       return url;
     }
+    
     return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
   }
 
@@ -466,6 +470,7 @@ class _PostItemState extends State<PostItem>
     }
   }
 
+  // 🔥 ИЗМЕНЕННЫЙ _toggleLike - ВЫЗЫВАЕТ КОЛБЭК
   Future<void> _toggleLike() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('like')) return;
@@ -495,6 +500,7 @@ class _PostItemState extends State<PostItem>
       await _sendLikeNotification(postId, widget.post['userId']?.toString() ?? '');
     }
 
+    // 🔥 ВЫЗЫВАЕМ КОЛБЭК ДЛЯ ОБНОВЛЕНИЯ UI В ПРОФИЛЕ
     if (widget.onLikeChanged != null) {
       final isNowLiked = _postController.isPostLiked(postId);
       widget.onLikeChanged!(postId, isNowLiked);
@@ -503,6 +509,7 @@ class _PostItemState extends State<PostItem>
     _actionCompleted('like');
   }
 
+  // 🔥 ИЗМЕНЕННЫЙ _toggleSave - ВЫЗЫВАЕТ КОЛБЭК
   Future<void> _toggleSave() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('save')) return;
@@ -526,6 +533,7 @@ class _PostItemState extends State<PostItem>
 
     await _postController.toggleSave(postId);
 
+    // 🔥 ВЫЗЫВАЕМ КОЛБЭК ДЛЯ ОБНОВЛЕНИЯ UI В ПРОФИЛЕ
     if (widget.onSaveChanged != null) {
       final isNowSaved = _postController.isPostSaved(postId);
       widget.onSaveChanged!(postId, isNowSaved);
@@ -686,7 +694,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ИСПРАВЛЕНАЯ КАРУСЕЛЬ - С КЭШИРОВАНИЕМ СТРАНИЦ
   Widget _buildCarousel() {
     final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
     final fitModes = freshPost['fitModes'] as List? ?? [];
@@ -696,7 +703,7 @@ class _PostItemState extends State<PostItem>
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
       itemCount: _imageUrls.length,
-      allowImplicitScrolling: true, // 🔥 СОХРАНЯЕТ СТРАНИЦЫ В ПАМЯТИ
+      allowImplicitScrolling: true,
       onPageChanged: (index) {
         if (!mounted) return;
         setState(() {
@@ -713,7 +720,6 @@ class _PostItemState extends State<PostItem>
         }
         final isFullScreenMode = mode == 'cover';
         
-        // Оборачиваем в RepaintBoundary с ключом
         return RepaintBoundary(
           key: ValueKey('carousel_page_$index'),
           child: Container(
@@ -740,9 +746,11 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // 🔥 ИЗМЕНЕННЫЙ _buildUserInfoAndCaption - С Obx
   Widget _buildUserInfoAndCaption() {
+    final postId = widget.post['id']?.toString() ?? '';
+    
     return Obx(() {
-      final postId = widget.post['id']?.toString() ?? '';
       final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
       
       final userName = freshPost['userName'] ?? 'Anonymous';
@@ -750,6 +758,8 @@ class _PostItemState extends State<PostItem>
       final userId = freshPost['userId'];
       final caption = freshPost['caption'] ?? '';
       final createdAt = freshPost['createdAt'];
+
+      final cachedAvatar = _getUserAvatar(userAvatar?.toString());
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,9 +780,7 @@ class _PostItemState extends State<PostItem>
                     ],
                   ),
                   child: CircleAvatar(
-                    backgroundImage: NetworkImage(
-                      _getUserAvatar(userAvatar?.toString()),
-                    ),
+                    backgroundImage: NetworkImage(cachedAvatar),
                     radius: 16,
                     backgroundColor: Colors.grey[800],
                   ),
@@ -971,18 +979,18 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // 🔥 ИЗМЕНЕННЫЙ _buildActionButtons - С Obx
   Widget _buildActionButtons() {
+    final postId = widget.post['id']?.toString() ?? '';
+    
     return Obx(() {
-      final postId = widget.post['id']?.toString() ?? '';
-      
-      final freshPost = _postController.getPostFromStorage(postId);
-      final post = freshPost ?? widget.post;
+      final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
       
       final isLiked = _postController.isPostLiked(postId);
       final isSaved = _postController.isPostSaved(postId);
-      final likesCount = post['likes'] ?? 0;
-      final commentsCount = post['comments'] ?? 0;
-      final savesCount = post['saves'] ?? 0;
+      final likesCount = freshPost['likes'] ?? 0;
+      final commentsCount = freshPost['comments'] ?? 0;
+      final savesCount = freshPost['saves'] ?? 0;
 
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
@@ -1096,8 +1104,8 @@ class _PostItemState extends State<PostItem>
   }
 
   Widget _buildFullScreenPost() {
-    final imageUrl = _getCurrentImageUrl();
     final postId = widget.post['id']?.toString() ?? '';
+    final imageUrl = _getCurrentImageUrl();
     
     final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
     final hasCaption = freshPost['caption'] != null && 
@@ -1111,6 +1119,10 @@ class _PostItemState extends State<PostItem>
       mode = fitModes.first?.toString() ?? 'contain';
     }
     final isFullScreenMode = mode == 'cover';
+    
+    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    final double tabBarHeight = 54 + 16 + 16;
+    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
     
     return GestureDetector(
       onLongPress: () {
@@ -1193,7 +1205,7 @@ class _PostItemState extends State<PostItem>
             
             if (_isCarousel && _imageUrls.length > 1)
               Positioned(
-                bottom: 20,
+                bottom: bottomPadding + 10,
                 left: 0,
                 right: 0,
                 child: IgnorePointer(
@@ -1227,7 +1239,11 @@ class _PostItemState extends State<PostItem>
               ),
               
             Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: bottomPadding,
+              ),
               child: Stack(
                 children: [
                   Positioned(

@@ -1,4 +1,4 @@
-// lib/screens/feed_screen.dart
+// lib/screens/feed_screen.dart - ОРИГИНАЛ (НЕ МЕНЯЛСЯ)
 
 import 'dart:async';
 import 'dart:io';
@@ -617,7 +617,6 @@ class _FeedScreenState extends State<FeedScreen>
     Get.to(() => const UploadScreen());
   }
 
-  // 🔥 ОСНОВНАЯ ЛЕНТА - БЕЗ REFRESHINDICATOR (УБРАЛИ ЛИШНИЙ ЛОУДЕР)
   Widget _buildForYouContent() {
     if (_forYouPostIds.isEmpty) {
       return const Center(

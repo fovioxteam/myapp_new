@@ -1,6 +1,4 @@
-﻿// lib/screens/user_profile_screen.dart
-
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -47,8 +45,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   final BlockService _blockService = Get.find<BlockService>();
 
   List<String> _followingUsers = [];
-  final Map<String, bool> _likedPostsMap = {};
-  final Map<String, bool> _savedPostsMap = {};
 
   bool _localIsFollowing = false;
   StreamSubscription<bool>? _followStatusListener;
@@ -71,7 +67,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
     _loadInitialCache();
     _loadFollowingUsers();
-    _loadUserLikesAndSaves();
     
     ever(_postController.userPosts, (_) {
       if (mounted) {
@@ -79,42 +74,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         print('📊 Posts updated from PostController for user: ${widget.userId}');
       }
     });
-  }
-
-  Future<void> _loadUserLikesAndSaves() async {
-    final currentUserId = _auth.currentUser?.uid;
-    if (currentUserId == null) return;
-
-    try {
-      final likesSnapshot = await _firestore
-          .collection('likes')
-          .where('userId', isEqualTo: currentUserId)
-          .limit(100)
-          .get();
-
-      for (final doc in likesSnapshot.docs) {
-        final data = doc.data();
-        final postId = data['postId'] as String?;
-        if (postId != null) {
-          _likedPostsMap[postId] = true;
-        }
-      }
-
-      final savesSnapshot = await _firestore
-          .collection('users')
-          .doc(currentUserId)
-          .collection('savedPosts')
-          .limit(100)
-          .get();
-
-      for (final doc in savesSnapshot.docs) {
-        _savedPostsMap[doc.id] = true;
-      }
-
-      print('📊 Loaded ${_likedPostsMap.length} liked and ${_savedPostsMap.length} saved posts');
-    } catch (e) {
-      print('Error loading likes/saves: $e');
-    }
   }
 
   Future<void> _loadFollowingUsers() async {
@@ -398,50 +357,35 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
-  void _openPostDetail(Map<String, dynamic> post) {
+  // 🔥 ОТКРЫТИЕ ПОСТА — ТОЛЬКО СПИСОК, ИНДЕКС И ПОДПИСЧИКИ
+  void _openPostDetail(String postId) {
     if (!mounted) return;
     
-    print('📱 [UserProfileScreen] Opening post detail: ${post['id']}');
-    
-    if (post['id'] != null) {
-      final freshPost = _postController.getPostFromStorage(post['id']) ?? post;
-      
-      final userPosts = _postController.getUserPosts(widget.userId);
-      final initialIndex = userPosts.indexWhere((p) => p['id'] == post['id']);
-      
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PostDetailScreen(
-            posts: userPosts,
-            initialIndex: initialIndex != -1 ? initialIndex : 0,
-            likedPosts: _likedPostsMap,
-            savedPosts: _savedPostsMap,
-            followingUsers: _followingUsers,
-            onLikeChanged: (postId, isLiked) {
-              setState(() {
-                if (isLiked) {
-                  _likedPostsMap[postId] = true;
-                } else {
-                  _likedPostsMap.remove(postId);
-                }
-              });
-            },
-            onSaveChanged: (postId, isSaved) {
-              setState(() {
-                if (isSaved) {
-                  _savedPostsMap[postId] = true;
-                } else {
-                  _savedPostsMap.remove(postId);
-                }
-              });
-            },
-          ),
-        ),
-      );
-    } else {
+    if (postId.isEmpty) {
       _showSnackbar("Cannot open post");
+      return;
     }
+    
+    print('📱 [UserProfileScreen] Opening post detail: $postId');
+    
+    final userPosts = _postController.getUserPosts(widget.userId);
+    final initialIndex = userPosts.indexWhere((p) => p['id'] == postId);
+    if (initialIndex == -1) {
+      _showSnackbar("Post not found");
+      return;
+    }
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(
+          posts: userPosts,
+          initialIndex: initialIndex,
+          followingUsers: _followingUsers,
+          // больше ничего не передаём — всё берётся из PostController
+        ),
+      ),
+    );
   }
 
   @override
@@ -540,7 +484,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     
     await controller.loadUserData(widget.userId);
     await _loadFollowingUsers();
-    await _loadUserLikesAndSaves();
     
     print('✅ User profile refresh completed');
   }
@@ -560,7 +503,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _buildStatItem(userPosts.length, "Posts", onTap: () {}),
-                // 🔥 СЧЁТЧИК ПОДПИСЧИКОВ ЧЕРЕЗ СТРИМ
                 StreamBuilder<int>(
                   stream: _followService.getFollowersCountStream(widget.userId),
                   builder: (context, snapshot) {
@@ -568,7 +510,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                     return _buildStatItem(count, "Followers", onTap: _navigateToFollowers);
                   },
                 ),
-                // 🔥 СЧЁТЧИК ПОДПИСОК ЧЕРЕЗ СТРИМ
                 StreamBuilder<int>(
                   stream: _followService.getFollowingCountStream(widget.userId),
                   builder: (context, snapshot) {

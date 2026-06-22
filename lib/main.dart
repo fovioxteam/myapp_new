@@ -1,4 +1,4 @@
-// lib/main.dart - БЕЗ APP CHECK
+// lib/main.dart
 
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -29,7 +29,6 @@ import 'screens/security_settings_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/new_message_screen.dart';
 import 'screens/no_internet_screen.dart';
-// import 'screens/custom_splash_screen.dart'; // УДАЛЕНО - файл удален
 import 'screens/welcome_screen.dart';
 import 'screens/post_detail_screen.dart';
 
@@ -73,8 +72,6 @@ void main() async {
   PaintingBinding.instance.imageCache.maximumSizeBytes = 150 << 20;
   
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  
-  // 🔥 APP CHECK УДАЛЁН - НЕ ИСПОЛЬЗУЕТСЯ
   
   await _initializeServices();
   _updateAlgoliaIndex();
@@ -428,7 +425,6 @@ class AuthWrapper extends StatelessWidget {
     return Obx(() {
       final authController = Get.find<AuthController>();
       
-      // ВРЕМЕННЫЙ SPALSH СКРИН (без картинки) - вместо удаленного CustomSplashScreen
       if (authController.isLoading.value && authController.firebaseUser.value == null) {
         return const Scaffold(
           backgroundColor: Colors.white,
@@ -449,6 +445,104 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
+// ========== КАСТОМНАЯ ИКОНКА ДОМА ==========
+
+class HomeIcon extends StatelessWidget {
+  final bool isActive;
+  final Color color;
+  final double size;
+
+  const HomeIcon({
+    super.key,
+    required this.isActive,
+    required this.color,
+    this.size = 26,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _HomePainter(isActive: isActive, color: color),
+    );
+  }
+}
+
+class _HomePainter extends CustomPainter {
+  final bool isActive;
+  final Color color;
+
+  _HomePainter({required this.isActive, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.2
+      ..style = isActive ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+    final w = size.width;
+    final h = size.height;
+    
+    path.moveTo(w * 0.1, h * 0.4);
+    path.quadraticBezierTo(w * 0.1, h * 0.35, w * 0.15, h * 0.35);
+    path.lineTo(w * 0.4, h * 0.12);
+    path.quadraticBezierTo(w * 0.5, h * 0.04, w * 0.6, h * 0.12);
+    path.lineTo(w * 0.85, h * 0.35);
+    path.quadraticBezierTo(w * 0.9, h * 0.35, w * 0.9, h * 0.4);
+    path.lineTo(w * 0.85, h * 0.4);
+    path.lineTo(w * 0.85, h * 0.8);
+    path.quadraticBezierTo(w * 0.85, h * 0.88, w * 0.78, h * 0.88);
+    path.lineTo(w * 0.22, h * 0.88);
+    path.quadraticBezierTo(w * 0.15, h * 0.88, w * 0.15, h * 0.8);
+    path.lineTo(w * 0.15, h * 0.4);
+    path.lineTo(w * 0.1, h * 0.4);
+    path.close();
+
+    if (isActive) {
+      final doorPath = Path();
+      doorPath.moveTo(w * 0.38, h * 0.88);
+      doorPath.lineTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.88);
+      doorPath.close();
+      
+      final combinedPath = Path.combine(
+        PathOperation.difference,
+        path,
+        doorPath,
+      );
+      
+      canvas.drawPath(combinedPath, paint);
+    } else {
+      canvas.drawPath(path, paint);
+      
+      final doorPaint = Paint()
+        ..color = color
+        ..strokeWidth = 2.2
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+      final doorPath = Path();
+      doorPath.moveTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.38, h * 0.88);
+      doorPath.moveTo(w * 0.62, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.88);
+      doorPath.moveTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.7);
+      
+      canvas.drawPath(doorPath, doorPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
 
@@ -456,7 +550,7 @@ class MainApp extends StatefulWidget {
   State<MainApp> createState() => _MainAppState();
 }
 
-class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
+class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   int _selectedIndex = 0;
   late final AuthController _authController;
   late final ProfileController _profileController;
@@ -464,6 +558,11 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
   late final UnreadService _unreadService;
   late final List<Widget> _screens;
   bool _isRefreshingFeed = false;
+  bool _isRefreshingProfile = false;
+  
+  // Контроллер для анимации масштаба
+  late AnimationController _scaleController;
+  late Animation<double> _scaleAnimation;
 
   @override
   void initState() {
@@ -497,6 +596,30 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
         _messagesController.initializeMessages(user.uid);
       }
     });
+    
+    // Инициализация анимации масштаба
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: 1.3),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.3, end: 0.95),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.95, end: 1.0),
+        weight: 30,
+      ),
+    ]).animate(CurvedAnimation(
+      parent: _scaleController,
+      curve: Curves.easeInOut,
+    ));
   }
   
   void _updateMessagesScreen(String userId) {
@@ -523,25 +646,42 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
   
   @override
   void dispose() {
+    _scaleController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
   
-  bool get _isDarkTheme => _selectedIndex == 0;
-  Color get _backgroundColor => _isDarkTheme ? Colors.black : Colors.white;
-  
-  Color _getIconColor(int index) {
-    return _selectedIndex == index 
-        ? (_isDarkTheme ? Colors.white : Colors.black)
-        : (_isDarkTheme ? Colors.grey.shade400 : Colors.grey.shade600);
-  }
+  Color get _backgroundColor => Colors.black;
   
   void _onItemTapped(int index) {
+    if (index == 2) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => const UploadScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+      return;
+    }
+    
+    // Двойное нажатие на домик (индекс 0) — обновить ленту
     if (index == 0 && _selectedIndex == 0) {
       _refreshFeed();
-    } else {
-      setState(() => _selectedIndex = index);
+      return;
     }
+    
+    // 🔥 Двойное нажатие на профиль (индекс 4) — обновить профиль
+    if (index == 4 && _selectedIndex == 4) {
+      _refreshProfile();
+      return;
+    }
+    
+    // Обычное переключение вкладки
+    _scaleController.forward(from: 0.0);
+    setState(() {
+      _selectedIndex = index;
+    });
   }
   
   Future<void> _refreshFeed() async {
@@ -551,106 +691,289 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver {
     if (mounted) setState(() => _isRefreshingFeed = false);
   }
   
-  Widget _buildNavIcon(dynamic icon, int index) {
-    if (index == 0 && _isRefreshingFeed) {
-      return CupertinoActivityIndicator(radius: 12, color: _isDarkTheme ? Colors.white : Colors.black);
+  // 🔥 МЕТОД ДЛЯ ОБНОВЛЕНИЯ ПРОФИЛЯ
+  Future<void> _refreshProfile() async {
+    if (_isRefreshingProfile) return;
+    setState(() => _isRefreshingProfile = true);
+    
+    // Обновляем экран профиля (пересоздаем виджет)
+    _screens[4] = const ProfileScreen();
+    
+    // Обновляем данные профиля через контроллер
+    final userId = _authController.firebaseUser.value?.uid;
+    if (userId != null && userId.isNotEmpty) {
+      // loadUserData обновляет данные пользователя (аватар, имя, био)
+      // refreshPosts обновляет посты пользователя
+      await Future.wait([
+        _profileController.loadUserData(userId),
+        _profileController.refreshPosts(userId),
+      ]);
     }
     
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Transform.scale(
-          scale: _selectedIndex == index ? 1.1 : 1.0,
-          child: Icon(icon, color: _getIconColor(index), size: 24),
-        ),
-        if (index == 3)
-          Obx(() {
-            final unreadCount = _unreadService.totalUnread.value;
-            if (unreadCount == 0) return const SizedBox.shrink();
-            return Positioned(
-              top: -2,
-              right: -2,
-              child: Container(width: 10, height: 10, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
-            );
-          }),
-      ],
-    );
-  }
-  
-  Widget _buildNavItem(dynamic icon, int index) {
-    if (index == 2) {
-      return _buildCenterButton();
-    }
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _onItemTapped(index),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: _buildNavIcon(icon, index),
-        ),
-      ),
-    );
-  }
-  
-  Widget _buildCenterButton() {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => const UploadScreen(),
-          fullscreenDialog: true,
-        ),
-      ),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        child: Transform.scale(
-          scale: _selectedIndex == 2 ? 1.1 : 1.0,
-          child: Icon(
-            CupertinoIcons.add,
-            color: _getIconColor(2),
-            size: 28,
-          ),
-        ),
-      ),
-    );
+    await Future.delayed(const Duration(milliseconds: 600));
+    if (mounted) setState(() => _isRefreshingProfile = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
+    final double screenWidth = MediaQuery.of(context).size.width - 32;
+    final double itemWidth = screenWidth / 5;
+    const double baseCircleWidth = 72;
+    const double baseCircleHeight = 50;
+    final double circleLeft = itemWidth * _selectedIndex + (itemWidth - baseCircleWidth) / 2;
+    
     return Scaffold(
       backgroundColor: _backgroundColor,
-      body: IndexedStack(index: _selectedIndex, children: _screens),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: _backgroundColor,
-          border: Border(
-            top: BorderSide(
-              color: _isDarkTheme ? Colors.grey.shade800 : Colors.grey.shade200,
-              width: 0.3,
-            ),
-          ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 4),
-            child: SizedBox(
-              height: 48,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildNavItem(Icons.home, 0),
-                  _buildNavItem(CupertinoIcons.search, 1),
-                  _buildCenterButton(),
-                  _buildNavItem(CupertinoIcons.chat_bubble_2_fill, 3),
-                  _buildNavItem(CupertinoIcons.person_fill, 4),
-                ],
+      body: Stack(
+        children: [
+          // Основной контент
+          IndexedStack(index: _selectedIndex, children: _screens),
+          
+          // НИЖНИЙ БЛЮР
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+                child: Container(
+                  height: 60,
+                  color: Colors.transparent,
+                ),
               ),
             ),
           ),
+        ],
+      ),
+      extendBody: true,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            // Фон таббара с размытием
+            ClipRRect(
+              borderRadius: BorderRadius.circular(30),
+              child: BackdropFilter(
+                filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: isDark 
+                        ? Colors.black.withOpacity(0.7)
+                        : Colors.white.withOpacity(0.85),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: isDark 
+                          ? Colors.white.withOpacity(0.1)
+                          : Colors.black.withOpacity(0.05),
+                      width: 0.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.15),
+                        blurRadius: 20,
+                        spreadRadius: 0,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ),
+            // Анимированный кружок
+            AnimatedPositioned(
+              duration: const Duration(milliseconds: 500),
+              curve: Curves.easeOutCubic,
+              left: circleLeft,
+              child: Align(
+                alignment: Alignment.center,
+                child: AnimatedBuilder(
+                  animation: _scaleAnimation,
+                  builder: (context, child) {
+                    final double animatedHeight = baseCircleHeight * _scaleAnimation.value;
+                    return Container(
+                      width: baseCircleWidth,
+                      height: animatedHeight,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.rectangle,
+                        borderRadius: BorderRadius.circular(animatedHeight / 2),
+                        color: isDark 
+                            ? Colors.white.withOpacity(0.12)
+                            : Colors.black.withOpacity(0.06),
+                        border: Border.all(
+                          color: isDark 
+                              ? Colors.white.withOpacity(0.1)
+                              : Colors.black.withOpacity(0.05),
+                          width: 1,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            // Иконки
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _NavItem(
+                  index: 0,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  icon: Icons.home_outlined,
+                  activeIcon: Icons.home,
+                  isDark: isDark,
+                  isRefreshing: _isRefreshingFeed,
+                  isCustomHome: true,
+                ),
+                _NavItem(
+                  index: 1,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  icon: CupertinoIcons.search,
+                  activeIcon: CupertinoIcons.search,
+                  isDark: isDark,
+                  isRefreshing: false,
+                ),
+                _CenterButton(
+                  index: 2,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  icon: CupertinoIcons.add,
+                  isDark: isDark,
+                ),
+                _NavItem(
+                  index: 3,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  icon: CupertinoIcons.chat_bubble_2,
+                  activeIcon: CupertinoIcons.chat_bubble_2_fill,
+                  isDark: isDark,
+                  isRefreshing: false,
+                ),
+                _NavItem(
+                  index: 4,
+                  currentIndex: _selectedIndex,
+                  onTap: _onItemTapped,
+                  icon: CupertinoIcons.person,
+                  activeIcon: CupertinoIcons.person_fill,
+                  isDark: isDark,
+                  isRefreshing: _isRefreshingProfile,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ========== ВИДЖЕТЫ ТАББАРА ==========
+
+class _NavItem extends StatelessWidget {
+  final int index;
+  final int currentIndex;
+  final void Function(int) onTap;
+  final IconData icon;
+  final IconData activeIcon;
+  final bool isDark;
+  final bool isRefreshing;
+  final bool isCustomHome;
+
+  const _NavItem({
+    super.key,
+    required this.index,
+    required this.currentIndex,
+    required this.onTap,
+    required this.icon,
+    required this.activeIcon,
+    required this.isDark,
+    this.isRefreshing = false,
+    this.isCustomHome = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isActive = index == currentIndex;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onTap(index),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: isRefreshing
+            ? CupertinoActivityIndicator(
+                radius: 12,
+                color: isDark ? Colors.white : Colors.black,
+              )
+            : isCustomHome && index == 0
+                ? HomeIcon(
+                    isActive: isActive,
+                    color: isActive
+                        ? (isDark ? Colors.white : Colors.black)
+                        : (isDark ? Colors.white : Colors.black),
+                    size: 26,
+                  )
+                : Icon(
+                    isActive ? activeIcon : icon,
+                    size: 26,
+                    weight: 900.0,
+                    color: isActive
+                        ? (isDark ? Colors.white : Colors.black)
+                        : (isDark ? Colors.white : Colors.black),
+                  ),
+      ),
+    );
+  }
+}
+
+class _CenterButton extends StatelessWidget {
+  final int index;
+  final int currentIndex;
+  final void Function(int) onTap;
+  final IconData icon;
+  final bool isDark;
+
+  const _CenterButton({
+    super.key,
+    required this.index,
+    required this.currentIndex,
+    required this.onTap,
+    required this.icon,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isActive = index == currentIndex;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onTap(index),
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: isActive
+              ? (isDark ? Colors.white : Colors.black)
+              : Colors.transparent,
+        ),
+        child: Icon(
+          icon,
+          size: 26,
+          weight: 900.0,
+          color: isActive
+              ? (isDark ? Colors.black : Colors.white)
+              : (isDark ? Colors.white : Colors.black),
         ),
       ),
     );

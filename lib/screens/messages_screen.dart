@@ -120,7 +120,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
-  // 🔥 КРАСНЫЙ КРУЖОК - ТОЛЬКО ТОЧКА (БЕЗ ЦИФРЫ)
   Widget _buildNotificationBadge() {
     return Obx(() {
       if (_controller.unreadNotificationsCount.value == 0) {
@@ -162,18 +161,10 @@ class _MessagesScreenState extends State<MessagesScreen> {
     });
   }
 
-  // 🔥 ПРИ ОТКРЫТИИ ЭКРАНА УВЕДОМЛЕНИЙ - УБИРАЕМ КРАСНЫЙ КРУЖОК И ПОМЕЧАЕМ ВСЕ КАК ПРОЧИТАННЫЕ
   Future<void> _openNotificationsScreen() async {
-    // 1. Сразу убираем красный кружок локально (без await, т.к. метод void)
     _controller.clearAllNotificationsCount();
-    
-    // 2. Помечаем ВСЕ уведомления как прочитанные в Firestore
     await _controller.markAllActivityNotificationsAsRead();
-    
-    // 3. Открываем экран уведомлений
     await Get.to(() => const NotificationsScreen());
-    
-    // 4. После возвращения обновляем счетчик (на случай если пришли новые)
     await _controller.refreshNotificationsCount();
   }
 
@@ -186,8 +177,8 @@ class _MessagesScreenState extends State<MessagesScreen> {
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 56,
+                height: 56,
                 decoration: const BoxDecoration(
                   color: Color(0xFFF2F2F7),
                   shape: BoxShape.circle,
@@ -305,7 +296,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
         leading: CircleAvatar(
-          radius: 24,
+          radius: 28,
           backgroundColor: Colors.grey[200],
           backgroundImage: avatarUrl.isNotEmpty
               ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
@@ -385,6 +376,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
+  // 🔥 УВЕЛИЧЕННАЯ КАРТОЧКА С РАЗДЕЛИТЕЛЬНОЙ ЛИНИЕЙ
   Widget _buildChatItem(Map<String, dynamic> chat) {
     final timeAgo = _controller.getTimeAgo(chat['lastMessageTime'] as Timestamp?);
     final isMuted = _controller.mutedChats[chat['chatId']] ?? false;
@@ -396,109 +388,123 @@ class _MessagesScreenState extends State<MessagesScreen> {
     final otherUserId = chat['otherUserId']?.toString() ?? '';
     final isVerified = chat['otherUserIsVerified'] ?? false;
     
-    return Material(
-      color: Colors.transparent,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        onTap: () => _openChat(chat),
-        leading: Stack(
-          children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: Colors.grey[200],
-              backgroundImage: avatarUrl.isNotEmpty
-                  ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
-                  : null,
-              child: avatarUrl.isEmpty
-                  ? const Icon(Icons.person, color: Colors.grey, size: 22)
-                  : null,
-            ),
-            if (_controller.onlineStatuses[otherUserId] == true)
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  width: 10,
-                  height: 10,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF34C759),
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2,
+    return Column(
+      children: [
+        Material(
+          color: Colors.transparent,
+          child: ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+            onTap: () => _openChat(chat),
+            onLongPress: () => _showChatOptions(chat),
+            leading: Stack(
+              children: [
+                CircleAvatar(
+                  radius: 28, // 🔥 УВЕЛИЧЕНО с 22 до 28
+                  backgroundColor: Colors.grey[200],
+                  backgroundImage: avatarUrl.isNotEmpty
+                      ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
+                      : null,
+                  child: avatarUrl.isEmpty
+                      ? const Icon(Icons.person, color: Colors.grey, size: 28)
+                      : null,
+                ),
+                if (_controller.onlineStatuses[otherUserId] == true)
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF34C759),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-          ],
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                userName,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                  fontSize: 14,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+              ],
             ),
-            if (isVerified)
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: Icon(CupertinoIcons.checkmark_seal_fill, color: Colors.black, size: 14),
-              ),
-            if (isMuted)
-              const Padding(
-                padding: EdgeInsets.only(left: 4),
-                child: Icon(
-                  CupertinoIcons.bell_slash,
-                  color: Color(0xFF8E8E93),
-                  size: 14,
+            title: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    userName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black,
+                      fontSize: 16, // 🔥 УВЕЛИЧЕНО с 14 до 16
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-              ),
-          ],
-        ),
-        subtitle: Row(
-          children: [
-            Expanded(
-              child: Text(
-                lastMessage,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: hasUnread ? Colors.black : const Color(0xFF8E8E93),
-                  fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                maxLines: 1,
-              ),
+                if (isVerified)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(CupertinoIcons.checkmark_seal_fill, color: Colors.black, size: 14),
+                  ),
+                if (isMuted)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(
+                      CupertinoIcons.bell_slash,
+                      color: Color(0xFF8E8E93),
+                      size: 14,
+                    ),
+                  ),
+              ],
             ),
-            const SizedBox(width: 4),
-            if (hasUnread)
-              Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  color: Colors.black,
-                  shape: BoxShape.circle,
+            subtitle: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    lastMessage,
+                    style: TextStyle(
+                      fontSize: 14, // 🔥 УВЕЛИЧЕНО с 13 до 14
+                      color: hasUnread ? Colors.black : const Color(0xFF8E8E93),
+                      fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    maxLines: 1,
+                  ),
                 ),
-              ),
-            const SizedBox(width: 4),
-            Text(
-              ' • $timeAgo',
-              style: TextStyle(
-                fontSize: 11,
-                color: hasUnread ? Colors.black : const Color(0xFF8E8E93),
-                fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
-              ),
+                const SizedBox(width: 4),
+                if (hasUnread)
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.black,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Text(
+                  ' • $timeAgo',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: hasUnread ? Colors.black : const Color(0xFF8E8E93),
+                    fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ],
             ),
-          ],
+            trailing: null,
+          ),
         ),
-        trailing: null,
-      ),
+        // 🔥 ТОНКАЯ СЕРАЯ РАЗДЕЛИТЕЛЬНАЯ ЛИНИЯ
+        Padding(
+          padding: const EdgeInsets.only(left: 80),
+          child: Divider(
+            height: 1,
+            thickness: 0.5,
+            color: Colors.grey[300],
+          ),
+        ),
+      ],
     );
   }
 
@@ -625,13 +631,13 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   child: Row(
                     children: [
                       CircleAvatar(
-                        radius: 24,
+                        radius: 28,
                         backgroundColor: Colors.grey[200],
                         backgroundImage: avatarUrl.isNotEmpty
                             ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
                             : null,
                         child: avatarUrl.isEmpty
-                            ? const Icon(Icons.person, color: Colors.grey, size: 24)
+                            ? const Icon(Icons.person, color: Colors.grey, size: 28)
                             : null,
                       ),
                       const SizedBox(width: 16),
@@ -918,10 +924,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                 children: [
                   if (_controller.requests.isNotEmpty && _controller.debouncedSearchQuery.isEmpty)
                     _buildRequestsSection(),
-                  ..._controller.filteredChats.map((chat) => GestureDetector(
-                    onLongPress: () => _showChatOptions(chat),
-                    child: _buildChatItem(chat),
-                  )),
+                  ..._controller.filteredChats.map((chat) => _buildChatItem(chat)),
                   const SizedBox(height: 20),
                 ],
               ),

@@ -29,11 +29,15 @@ class PostController extends GetxController {
   final Set<String> _loadedPostIds = {};
   final Set<String> _preloadedImages = {};
   
-  // 🔥 КЭШ ДЛЯ IMAGE PROVIDER - РЕШАЕТ ПРОБЛЕМУ МЕРЦАНИЯ
+  // 🔥 КЭШ ДЛЯ IMAGE PROVIDER
   final Map<String, ImageProvider> _imageProviderCache = {};
   
   // 🔥 ГЛОБАЛЬНЫЙ КЭШ ДЛЯ МИНИАТЮР ПОИСКА
   static final Map<String, Widget> _searchThumbnailCache = {};
+
+  // 🔥 ЖЕСТКИЙ КЭШ АВАТАРОК
+  static final Map<String, String> _avatarUrlCache = {};
+  static final Map<String, String> _usernameCache = {};
 
   // Ограничения кэша
   static const int maxAuthorCache = 200;
@@ -60,9 +64,6 @@ class PostController extends GetxController {
   // 🔄 Защита пагинации от гонок
   bool _feedRequestActive = false;
   final Map<String, bool> _userRequestActive = {};
-  
-  // 🔥 ФЛАГ ДЛЯ ПРЕДОТВРАЩЕНИЯ ЛИШНИХ ВЫЗОВОВ
-  final Set<String> _loadedUserIds = {};
 
   @override
   void onInit() {
@@ -95,7 +96,10 @@ class PostController extends GetxController {
           .get();
 
       for (var doc in likesSnapshot.docs) {
-        likedPosts[doc.data()['postId']] = true;
+        final postId = doc.data()['postId'] as String?;
+        if (postId != null) {
+          likedPosts[postId] = true;
+        }
       }
 
       final savesSnapshot = await _firestore
@@ -117,17 +121,28 @@ class PostController extends GetxController {
   // ========== 🔥 ПОЛУЧЕНИЕ ДАННЫХ АВТОРА С КЭШИРОВАНИЕМ ==========
 
   Future<Map<String, dynamic>> _getAuthorData(String userId) async {
-    if (_authorCache.containsKey(userId)) {
-      return _authorCache[userId]!;
+    print('🔍 [AVATAR CACHE] Checking cache for userId: $userId');
+    
+    if (_usernameCache.containsKey(userId) && _avatarUrlCache.containsKey(userId)) {
+      print('✅ [AVATAR CACHE] HIT! Returning cached data: username=${_usernameCache[userId]}, avatar=${_avatarUrlCache[userId]}');
+      return {
+        'username': _usernameCache[userId]!,
+        'avatarUrl': _avatarUrlCache[userId]!,
+      };
     }
 
+    print('❌ [AVATAR CACHE] MISS! Loading from Firestore for userId: $userId');
+    
     final authorDoc = await _firestore.collection('users').doc(userId).get();
     final authorData = authorDoc.data() ?? {};
 
-    final result = {
-      'username': authorData['username']?.toString() ?? 'User',
-      'avatarUrl': authorData['avatarUrl']?.toString() ?? '',
-    };
+    final username = authorData['username']?.toString() ?? 'User';
+    final avatarUrl = authorData['avatarUrl']?.toString() ?? '';
+
+    print('💾 [AVATAR CACHE] Saving to cache: username=$username, avatar=$avatarUrl');
+    
+    _usernameCache[userId] = username;
+    _avatarUrlCache[userId] = avatarUrl;
 
     if (_authorCache.length >= maxAuthorCache) {
       final keysList = _authorCache.keys.toList();
@@ -135,12 +150,84 @@ class PostController extends GetxController {
         _authorCache.remove(keysList.first);
       }
     }
-    _authorCache[userId] = result;
+    _authorCache[userId] = {'username': username, 'avatarUrl': avatarUrl};
 
-    return result;
+    return {
+      'username': username,
+      'avatarUrl': avatarUrl,
+    };
   }
 
-  // ========== 🔥 ЕДИНЫЙ ПРОВАЙДЕР ДЛЯ ИЗОБРАЖЕНИЙ С КЭШЕМ ==========
+  // ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ КЭША ==========
+
+  void updateAvatarInCache(String userId, String newAvatarUrl) {
+    print('🔄 [AVATAR CACHE] Updating avatar for userId: $userId -> $newAvatarUrl');
+    _avatarUrlCache[userId] = newAvatarUrl;
+    
+    for (final post in posts.values) {
+      if (post['userId'] == userId) {
+        post['userAvatar'] = newAvatarUrl;
+      }
+    }
+    
+    for (int i = 0; i < feedPosts.length; i++) {
+      if (feedPosts[i]['userId'] == userId) {
+        feedPosts[i]['userAvatar'] = newAvatarUrl;
+      }
+    }
+    
+    if (userPosts.containsKey(userId)) {
+      final updatedList = userPosts[userId]!.map((post) {
+        final newPost = Map<String, dynamic>.from(post);
+        newPost['userAvatar'] = newAvatarUrl;
+        return newPost;
+      }).toList();
+      userPosts[userId] = updatedList;
+    }
+    
+    posts.refresh();
+    feedPosts.refresh();
+    userPosts.refresh();
+    print('✅ [AVATAR CACHE] Avatar updated in all posts');
+  }
+
+  void updateUsernameInCache(String userId, String newUsername) {
+    print('🔄 [AVATAR CACHE] Updating username for userId: $userId -> $newUsername');
+    _usernameCache[userId] = newUsername;
+    
+    for (final post in posts.values) {
+      if (post['userId'] == userId) {
+        post['userName'] = newUsername;
+      }
+    }
+    
+    for (int i = 0; i < feedPosts.length; i++) {
+      if (feedPosts[i]['userId'] == userId) {
+        feedPosts[i]['userName'] = newUsername;
+      }
+    }
+    
+    if (userPosts.containsKey(userId)) {
+      final updatedList = userPosts[userId]!.map((post) {
+        final newPost = Map<String, dynamic>.from(post);
+        newPost['userName'] = newUsername;
+        return newPost;
+      }).toList();
+      userPosts[userId] = updatedList;
+    }
+    
+    posts.refresh();
+    feedPosts.refresh();
+    userPosts.refresh();
+    print('✅ [AVATAR CACHE] Username updated in all posts');
+  }
+
+  void updateUserDataInCache(String userId, String newUsername, String newAvatarUrl) {
+    updateUsernameInCache(userId, newUsername);
+    updateAvatarInCache(userId, newAvatarUrl);
+  }
+
+  // ========== 🔥 ЕДИНЫЙ ПРОВАЙДЕР ДЛЯ ИЗОБРАЖЕНИЙ ==========
   
   ImageProvider getImageProvider(String url, {int width = 1080, int height = 1920}) {
     if (_imageProviderCache.containsKey(url)) {
@@ -199,129 +286,8 @@ class PostController extends GetxController {
     return widget;
   }
   
-  // Очистка кэша миниатюр поиска
   void clearSearchThumbnailCache() {
     _searchThumbnailCache.clear();
-  }
-
-  // ========== 🔥 НОВЫЕ МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ ДАННЫХ ПОЛЬЗОВАТЕЛЯ ==========
-  
-  /// Обновить имя пользователя во всех кэшированных постах
-  void updateUserNameInCache(String userId, String newUsername) {
-    print('🔄 Updating username in cache: $userId -> $newUsername');
-    
-    // Обновляем в общем хранилище постов
-    for (final post in posts.values) {
-      if (post['userId'] == userId) {
-        post['userName'] = newUsername;
-      }
-    }
-    
-    // Обновляем в ленте
-    for (int i = 0; i < feedPosts.length; i++) {
-      if (feedPosts[i]['userId'] == userId) {
-        final updatedPost = Map<String, dynamic>.from(feedPosts[i]);
-        updatedPost['userName'] = newUsername;
-        feedPosts[i] = updatedPost;
-      }
-    }
-    
-    // Обновляем в поиске
-    for (int i = 0; i < searchPosts.length; i++) {
-      if (searchPosts[i]['userId'] == userId) {
-        final updatedPost = Map<String, dynamic>.from(searchPosts[i]);
-        updatedPost['userName'] = newUsername;
-        searchPosts[i] = updatedPost;
-      }
-    }
-    
-    // Обновляем в постах пользователя
-    if (userPosts.containsKey(userId)) {
-      final updatedList = userPosts[userId]!.map((post) {
-        final newPost = Map<String, dynamic>.from(post);
-        newPost['userName'] = newUsername;
-        return newPost;
-      }).toList();
-      userPosts[userId] = updatedList;
-    }
-    
-    // Обновляем сингл пост
-    for (final post in singlePost.values) {
-      if (post['userId'] == userId) {
-        post['userName'] = newUsername;
-      }
-    }
-    
-    // Принудительно обновляем UI
-    posts.refresh();
-    feedPosts.refresh();
-    searchPosts.refresh();
-    userPosts.refresh();
-    singlePost.refresh();
-    
-    print('✅ Username updated in all cached posts');
-  }
-  
-  /// Обновить аватар пользователя во всех кэшированных постах
-  void updateUserAvatarInCache(String userId, String newAvatarUrl) {
-    print('🔄 Updating user avatar in cache: $userId');
-    
-    // Обновляем в общем хранилище постов
-    for (final post in posts.values) {
-      if (post['userId'] == userId) {
-        post['userAvatar'] = newAvatarUrl;
-      }
-    }
-    
-    // Обновляем в ленте
-    for (int i = 0; i < feedPosts.length; i++) {
-      if (feedPosts[i]['userId'] == userId) {
-        final updatedPost = Map<String, dynamic>.from(feedPosts[i]);
-        updatedPost['userAvatar'] = newAvatarUrl;
-        feedPosts[i] = updatedPost;
-      }
-    }
-    
-    // Обновляем в поиске
-    for (int i = 0; i < searchPosts.length; i++) {
-      if (searchPosts[i]['userId'] == userId) {
-        final updatedPost = Map<String, dynamic>.from(searchPosts[i]);
-        updatedPost['userAvatar'] = newAvatarUrl;
-        searchPosts[i] = updatedPost;
-      }
-    }
-    
-    // Обновляем в постах пользователя
-    if (userPosts.containsKey(userId)) {
-      final updatedList = userPosts[userId]!.map((post) {
-        final newPost = Map<String, dynamic>.from(post);
-        newPost['userAvatar'] = newAvatarUrl;
-        return newPost;
-      }).toList();
-      userPosts[userId] = updatedList;
-    }
-    
-    // Обновляем сингл пост
-    for (final post in singlePost.values) {
-      if (post['userId'] == userId) {
-        post['userAvatar'] = newAvatarUrl;
-      }
-    }
-    
-    // Принудительно обновляем UI
-    posts.refresh();
-    feedPosts.refresh();
-    searchPosts.refresh();
-    userPosts.refresh();
-    singlePost.refresh();
-    
-    print('✅ User avatar updated in all cached posts');
-  }
-  
-  /// Обновить и имя и аватар одновременно
-  void updateUserDataInCache(String userId, String newUsername, String newAvatarUrl) {
-    updateUserNameInCache(userId, newUsername);
-    updateUserAvatarInCache(userId, newAvatarUrl);
   }
 
   void preloadImage(String url) {
@@ -393,27 +359,58 @@ class PostController extends GetxController {
 
   // ========== 🔥 ОСНОВНОЙ МЕТОД ОБРАБОТКИ ПОСТА ==========
 
-  Future<Map<String, dynamic>?> _processPost(DocumentSnapshot doc) async {
+  Future<Map<String, dynamic>?> _processPost(DocumentSnapshot doc, {bool forceRefresh = false}) async {
     try {
       final data = doc.data() as Map<String, dynamic>;
       final postId = doc.id;
 
-      if (_loadedPostIds.contains(postId)) {
-        return posts[postId];
+      print('📦 [POST PROCESS] PostId: $postId, forceRefresh: $forceRefresh');
+
+      if (!forceRefresh && _loadedPostIds.contains(postId)) {
+        final cached = posts[postId];
+        if (cached != null) {
+          print('✅ [POST PROCESS] CACHE HIT for postId: $postId');
+          return cached;
+        }
       }
+
+      if (forceRefresh && _loadedPostIds.contains(postId)) {
+        final cached = posts[postId];
+        if (cached != null) {
+          final currentLikes = data['likes'] as int? ?? 0;
+          final currentComments = data['comments'] as int? ?? 0;
+          final currentSaves = data['saves'] as int? ?? 0;
+          
+          final cachedLikes = cached['likes'] ?? 0;
+          final cachedComments = cached['comments'] ?? 0;
+          final cachedSaves = cached['saves'] ?? 0;
+          
+          if (currentLikes == cachedLikes && 
+              currentComments == cachedComments && 
+              currentSaves == cachedSaves) {
+            print('✅ [POST PROCESS] Data unchanged, returning cached post: $postId');
+            return cached;
+          }
+          print('🔄 [POST PROCESS] Data changed, updating post: $postId');
+        }
+      }
+
+      print('❌ [POST PROCESS] CACHE MISS or data changed for postId: $postId');
 
       final imageUrls = extractImageUrls(data);
-
-      if (imageUrls.isNotEmpty) {
-        preloadPostImages(imageUrls);
+      if (imageUrls.isEmpty) {
+        print('❌ [POST PROCESS] No images for postId: $postId');
+        return null;
       }
 
-      if (imageUrls.isEmpty) return null;
-
       final authorId = data['userId'] as String?;
-      if (authorId == null) return null;
+      if (authorId == null) {
+        print('❌ [POST PROCESS] No authorId for postId: $postId');
+        return null;
+      }
 
       final authorData = await _getAuthorData(authorId);
+      print('📦 [POST PROCESS] Author data: username=${authorData['username']}, avatar=${authorData['avatarUrl']}');
 
       List<String> fitModes = [];
       final dynamic fitModesRaw = data['fitModes'];
@@ -457,10 +454,11 @@ class PostController extends GetxController {
       };
 
       _loadedPostIds.add(postId);
+      print('✅ [POST PROCESS] Post processed and cached: $postId');
       return result;
 
     } catch (e) {
-      print('❌ Error processing post: $e');
+      print('❌ [POST PROCESS] Error processing post: $e');
       return null;
     }
   }
@@ -523,7 +521,7 @@ class PostController extends GetxController {
     _loadedPostIds.remove(postId);
   }
 
-  // ========== 🔥 ОПТИМИСТИЧНОЕ УДАЛЕНИЕ ИЗ UI ==========
+  // ========== 🔥 ОПТИМИСТИЧНОЕ УДАЛЕНИЕ ==========
   void removePostFromAllLists(String postId) {
     print('🗑️ [PostController] Optimistically removing post: $postId');
     
@@ -718,14 +716,11 @@ class PostController extends GetxController {
   // ========== 👤 ЗАГРУЗКА ПОСТОВ ПОЛЬЗОВАТЕЛЯ ==========
 
   Future<void> loadUserPosts(String userId, {bool refresh = false}) async {
-    if (!refresh && _loadedUserIds.contains(userId)) {
-      print('📦 User posts already loaded for $userId, skipping');
-      return;
-    }
-    
     if (_userRequestActive[userId] == true) return;
     if (!refresh && _hasMoreUserPosts[userId] == false) return;
 
+    print('📡 [USER] loadUserPosts called: userId=$userId, refresh=$refresh');
+    
     _userRequestActive[userId] = true;
     isLoadingUserPosts[userId] = true;
 
@@ -742,30 +737,35 @@ class PostController extends GetxController {
 
       final snapshot = await query.get();
 
-      if (refresh) {
-        userPosts[userId] = [];
-        _lastUserDoc[userId] = null;
-        _hasMoreUserPosts[userId] = true;
-        _loadedUserIds.remove(userId);
-      }
-
       final newPosts = <Map<String, dynamic>>[];
       for (var doc in snapshot.docs) {
         final processedPost = await _processPost(doc);
         if (processedPost != null) newPosts.add(processedPost);
       }
 
-      addPostsToStorage(newPosts);
+      if (newPosts.isNotEmpty) {
+        addPostsToStorage(newPosts);
+        
+        final currentList = userPosts[userId] ?? [];
+        final existingIds = currentList.map((p) => p['id']).toSet();
+        final postsToAdd = newPosts.where((p) => !existingIds.contains(p['id'])).toList();
+        
+        if (refresh) {
+          userPosts[userId] = newPosts;
+        } else {
+          if (postsToAdd.isNotEmpty) {
+            userPosts[userId] = [...currentList, ...postsToAdd];
+          } else if (currentList.isEmpty) {
+            userPosts[userId] = newPosts;
+          }
+        }
+      }
 
       if (snapshot.docs.isNotEmpty) {
         _lastUserDoc[userId] = snapshot.docs.last;
         _hasMoreUserPosts[userId] = snapshot.docs.length == _pageSize;
       } else {
         _hasMoreUserPosts[userId] = false;
-      }
-      
-      if (!refresh && newPosts.isNotEmpty) {
-        _loadedUserIds.add(userId);
       }
 
       _subscribeToPostUpdates(newPosts.map((p) => p['id'] as String).toList());
@@ -779,7 +779,69 @@ class PostController extends GetxController {
   }
 
   Future<void> refreshUserPosts(String userId) async {
+    _lastUserDoc[userId] = null;
+    _hasMoreUserPosts[userId] = true;
     await loadUserPosts(userId, refresh: true);
+  }
+
+  // ========== 🔥 НОВЫЙ МЕТОД ДЛЯ ПАГИНАЦИИ ==========
+  
+  Future<List<Map<String, dynamic>>> loadMoreUserPosts(
+    String userId, {
+    required int page,
+    required int pageSize,
+  }) async {
+    try {
+      print('📡 [POST] Loading more posts for user: $userId, page: $page');
+      
+      Query query = _firestore
+          .collection('posts')
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .limit(pageSize);
+      
+      // Если есть последний документ - пагинация
+      if (_lastUserDoc[userId] != null) {
+        query = query.startAfterDocument(_lastUserDoc[userId]!);
+      }
+      
+      final snapshot = await query.get();
+      
+      if (snapshot.docs.isEmpty) {
+        _hasMoreUserPosts[userId] = false;
+        return [];
+      }
+      
+      final newPosts = <Map<String, dynamic>>[];
+      for (final doc in snapshot.docs) {
+        final processedPost = await _processPost(doc);
+        if (processedPost != null) {
+          newPosts.add(processedPost);
+        }
+      }
+      
+      if (newPosts.isNotEmpty) {
+        addPostsToStorage(newPosts);
+        _lastUserDoc[userId] = snapshot.docs.last;
+        _hasMoreUserPosts[userId] = snapshot.docs.length == pageSize;
+        
+        // Обновляем userPosts
+        final currentList = userPosts[userId] ?? [];
+        final existingIds = currentList.map((p) => p['id']).toSet();
+        final postsToAdd = newPosts.where((p) => !existingIds.contains(p['id'])).toList();
+        
+        if (postsToAdd.isNotEmpty) {
+          userPosts[userId] = [...currentList, ...postsToAdd];
+        }
+      }
+      
+      print('✅ [POST] Loaded ${newPosts.length} more posts for user: $userId');
+      return newPosts;
+      
+    } catch (e) {
+      print('❌ [POST] Error loading more posts: $e');
+      return [];
+    }
   }
 
   // ========== 🔄 ПОДПИСКА НА ОБНОВЛЕНИЯ ==========
@@ -799,7 +861,7 @@ class PostController extends GetxController {
         .snapshots()
         .listen((snapshot) async {
           if (snapshot.exists) {
-            final updatedPost = await _processPost(snapshot);
+            final updatedPost = await _processPost(snapshot, forceRefresh: false);
             if (updatedPost != null) {
               if (posts.containsKey(postId)) {
                 updatedPost['isInFeed'] = posts[postId]!['isInFeed'] ?? false;
@@ -976,7 +1038,6 @@ class PostController extends GetxController {
     userPosts[userId] = [];
     _lastUserDoc[userId] = null;
     _hasMoreUserPosts[userId] = true;
-    _loadedUserIds.remove(userId);
   }
 
   void clearUserPostsCache(String userId) {
@@ -984,7 +1045,6 @@ class PostController extends GetxController {
     isLoadingUserPosts.remove(userId);
     _lastUserDoc.remove(userId);
     _hasMoreUserPosts.remove(userId);
-    _loadedUserIds.remove(userId);
   }
 
   void clearCache() {
@@ -993,5 +1053,21 @@ class PostController extends GetxController {
     _preloadedImages.clear();
     _imageProviderCache.clear();
     _searchThumbnailCache.clear();
+  }
+
+  void clearAvatarCache() {
+    _avatarUrlCache.clear();
+    _usernameCache.clear();
+    print('🗑️ [AVATAR CACHE] Cleared');
+  }
+
+  void printCacheState() {
+    print('📊 [CACHE STATE] ==========');
+    print('📊 Posts count: ${posts.length}');
+    print('📊 Feed posts count: ${feedPosts.length}');
+    print('📊 User posts keys: ${userPosts.keys}');
+    print('📊 Avatar cache: $_avatarUrlCache');
+    print('📊 Username cache: $_usernameCache');
+    print('📊 =========================');
   }
 }

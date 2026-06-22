@@ -87,6 +87,43 @@ class _SearchScreenState extends State<SearchScreen>
     super.dispose();
   }
 
+  // ============ НОВЫЙ МЕТОД ДЛЯ ПОЛУЧЕНИЯ THUMBNAIL ============
+  String _getThumbnailUrl(Map<String, dynamic> post) {
+    if (post["thumbnailUrl"] != null && post["thumbnailUrl"].toString().isNotEmpty) {
+      return post["thumbnailUrl"].toString();
+    }
+    if (post["imageUrl"] != null && post["imageUrl"].toString().isNotEmpty) {
+      return post["imageUrl"].toString();
+    }
+    if (post["url"] != null && post["url"].toString().isNotEmpty) {
+      return post["url"].toString();
+    }
+
+    final imageUrls = post["imageUrls"];
+    if (imageUrls is List && imageUrls.isNotEmpty) {
+      final first = imageUrls.first?.toString() ?? '';
+      if (first.isNotEmpty) return first;
+    }
+
+    final images = post["images"];
+    if (images is List && images.isNotEmpty) {
+      final first = images.first?.toString() ?? '';
+      if (first.isNotEmpty) return first;
+    }
+
+    if (post["post"] is Map<String, dynamic>) {
+      return _getThumbnailUrl(post["post"] as Map<String, dynamic>);
+    }
+    if (post["postData"] is Map<String, dynamic>) {
+      return _getThumbnailUrl(post["postData"] as Map<String, dynamic>);
+    }
+    if (post["item"] is Map<String, dynamic>) {
+      return _getThumbnailUrl(post["item"] as Map<String, dynamic>);
+    }
+
+    return '';
+  }
+
   void _cleanupUserSubscriptions() {
     final userIds = _users.map((user) => user['id'] as String).toSet();
     
@@ -816,6 +853,7 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
+  // ============ ОБНОВЛЕННЫЙ МЕТОД С КЭШИРОВАНИЕМ АВАТАРОК ============
   Widget _buildUserSearchResults() {
     if (_users.isEmpty) {
       print('🔍 [SEARCH] No users found, showing empty state');
@@ -873,12 +911,15 @@ class _SearchScreenState extends State<SearchScreen>
                     child: user['avatarUrl'].isNotEmpty
                         ? ClipOval(
                             child: CachedNetworkImage(
+                              key: ValueKey('avatar_${user['id']}_${user['avatarUrl']}'), // ✅ ДОБАВЛЕН КЛЮЧ
                               imageUrl: user['avatarUrl'],
                               fit: BoxFit.cover,
                               width: 44,
                               height: 44,
-                              fadeInDuration: Duration.zero,
-                              fadeOutDuration: Duration.zero,
+                              memCacheWidth: 100, // ✅ ДОБАВЛЕНО
+                              filterQuality: FilterQuality.high, // ✅ ДОБАВЛЕНО
+                              fadeInDuration: Duration.zero, // ✅ ДОБАВЛЕНО
+                              fadeOutDuration: Duration.zero, // ✅ ДОБАВЛЕНО
                               errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey, size: 20),
                             ),
                           )
@@ -934,6 +975,7 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
+  // ============ ОБНОВЛЕННЫЙ МЕТОД С КЭШИРОВАНИЕМ ПОСТОВ ============
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
       print('🔍 [SEARCH] No posts found, showing empty state');
@@ -983,7 +1025,8 @@ class _SearchScreenState extends State<SearchScreen>
       itemCount: _posts.length,
       itemBuilder: (context, index) {
         final post = _posts[index];
-        final imageUrl = post['imageUrl'] as String? ?? '';
+        final imageUrl = _getThumbnailUrl(post); // ✅ ИСПОЛЬЗУЕМ НОВЫЙ МЕТОД
+        final postId = post['id']?.toString() ?? '';
         
         return GestureDetector(
           onTap: () => _openPostDetail(index),
@@ -991,11 +1034,15 @@ class _SearchScreenState extends State<SearchScreen>
             color: Colors.grey[200],
             child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
                 ? CachedNetworkImage(
+                    key: ValueKey('search_post_${postId}_$imageUrl'), // ✅ ДОБАВЛЕН КЛЮЧ
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
-                    fadeInDuration: Duration.zero,
+                    memCacheWidth: 400, // ✅ ДОБАВЛЕНО
+                    filterQuality: FilterQuality.high, // ✅ ДОБАВЛЕНО
+                    fadeInDuration: Duration.zero, // ✅ ДОБАВЛЕНО
+                    fadeOutDuration: Duration.zero, // ✅ ДОБАВЛЕНО
                     placeholder: (context, url) => Container(color: Colors.grey[300]),
                     errorWidget: (context, url, error) => Container(
                       color: Colors.grey[300],
