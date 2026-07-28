@@ -51,6 +51,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
 
   bool _isOpeningChat = false;
 
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -129,6 +131,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   void dispose() {
     _tabController.dispose();
     _followStatusListener?.cancel();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -357,7 +360,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
-  // 🔥 ОТКРЫТИЕ ПОСТА — ТОЛЬКО СПИСОК, ИНДЕКС И ПОДПИСЧИКИ
   void _openPostDetail(String postId) {
     if (!mounted) return;
     
@@ -382,7 +384,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           posts: userPosts,
           initialIndex: initialIndex,
           followingUsers: _followingUsers,
-          // больше ничего не передаём — всё берётся из PostController
         ),
       ),
     );
@@ -421,60 +422,39 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         ),
         actions: _buildOtherProfileActions(),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: CustomScrollView(
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
-              slivers: [
-                CupertinoSliverRefreshControl(
-                  onRefresh: _refreshProfile,
-                ),
-
-                SliverToBoxAdapter(
-                  child: Column(
-                    children: [
-                      _buildHeader(),
-                      const SizedBox(height: 8),
-                      _buildBioSection(),
-                      _buildActionButtons(),
-                      const SizedBox(height: 16),
-                    ],
-                  ),
-                ),
-
-                SliverPersistentHeader(
-                  pinned: true,
-                  delegate: _TabBarDelegate(
-                    tabController: _tabController,
-                  ),
-                ),
-
-                SliverFillRemaining(
-                  child: _buildPostsView(),
-                ),
-              ],
+      body: NestedScrollView(
+        controller: _scrollController,
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            CupertinoSliverRefreshControl(
+              onRefresh: _refreshProfile,
             ),
-          ),
-          Container(
-            height: kBottomNavigationBarHeight + 8,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              border: Border(
-                top: BorderSide(
-                  color: Colors.grey.shade800,
-                  width: 0.5,
-                ),
+            SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  _buildHeader(),
+                  const SizedBox(height: 8),
+                  _buildBioSection(),
+                  _buildActionButtons(),
+                  const SizedBox(height: 16),
+                ],
               ),
             ),
-            child: const SafeArea(
-              top: false,
-              child: SizedBox.shrink(),
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabBarDelegate(
+                tabController: _tabController,
+              ),
             ),
-          ),
-        ],
+          ];
+        },
+        body: TabBarView(
+          controller: _tabController,
+          physics: const BouncingScrollPhysics(),
+          children: [
+            _buildPostsView(),
+          ],
+        ),
       ),
     );
   }
@@ -484,6 +464,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     
     await controller.loadUserData(widget.userId);
     await _loadFollowingUsers();
+    
+    // 🔥 ОБНОВЛЯЕМ ПОСТЫ ПРИ ПУЛЛ-ТО-РЕФРЕШ
+    await _postController.loadUserPosts(widget.userId, refresh: true);
     
     print('✅ User profile refresh completed');
   }

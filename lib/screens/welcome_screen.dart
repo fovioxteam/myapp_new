@@ -68,81 +68,159 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     final authController = Get.find<AuthController>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // Проверяем, можем ли вернуться назад (если это модальное окно)
+    final bool isModal = Navigator.canPop(context);
+
     return Scaffold(
       backgroundColor: isDark ? Colors.black : Colors.white,
       body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                /// 🔥 LOGO ANIMATION
-                FadeTransition(
-                  opacity: _logoFade,
-                  child: SlideTransition(
-                    position: _logoSlide,
-                    child: Text(
-                      'Foviox',
-                      style: GoogleFonts.pacifico(
-                        fontSize: 38,
-                        color: isDark ? Colors.white : Colors.black,
+        child: Stack(
+          children: [
+            // 🔥 СТРЕЛОЧКА НАЗАД (только если это модальное окно)
+            if (isModal)
+              Positioned(
+                top: 8,
+                left: 8,
+                child: IconButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  icon: Icon(
+                    Icons.arrow_back,
+                    color: isDark ? Colors.white : Colors.black,
+                    size: 28,
+                  ),
+                  padding: const EdgeInsets.all(8),
+                  splashRadius: 24,
+                ),
+              ),
+            
+            // Основной контент
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    /// 🔥 LOGO ANIMATION
+                    FadeTransition(
+                      opacity: _logoFade,
+                      child: SlideTransition(
+                        position: _logoSlide,
+                        child: Text(
+                          'Foviox',
+                          style: GoogleFonts.pacifico(
+                            fontSize: 38,
+                            color: isDark ? Colors.white : Colors.black,
+                          ),
+                        ),
                       ),
                     ),
-                  ),
-                ),
 
-                const SizedBox(height: 48),
+                    const SizedBox(height: 48),
 
-                /// 🔥 BUTTONS ANIMATION
-                FadeTransition(
-                  opacity: _buttonsFade,
-                  child: SlideTransition(
-                    position: _buttonsSlide,
-                    child: Column(
-                      children: [
-                        // Google
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: Obx(() => OutlinedButton.icon(
-                                onPressed: authController.isLoading.value
-                                    ? null
-                                    : () => authController.loginWithGoogle(),
-                                icon: Container(
-                                  width: 22,
-                                  height: 22,
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    'G',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      fontFamily: 'Roboto',
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black,
-                                    ),
-                                  ),
-                                ),
-                                label: authController.isLoading.value
-                                    ? const SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : Text(
-                                        'Continue with Google',
+                    /// 🔥 BUTTONS ANIMATION
+                    FadeTransition(
+                      opacity: _buttonsFade,
+                      child: SlideTransition(
+                        position: _buttonsSlide,
+                        child: Column(
+                          children: [
+                            // Google
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: Obx(() => OutlinedButton.icon(
+                                    onPressed: authController.isLoading.value
+                                        ? null
+                                        : () async {
+                                            await authController.loginWithGoogle();
+                                            if (authController.isLoggedIn) {
+                                              if (Navigator.canPop(context)) {
+                                                Navigator.pop(context, true);
+                                              }
+                                            }
+                                          },
+                                    icon: Container(
+                                      width: 22,
+                                      height: 22,
+                                      alignment: Alignment.center,
+                                      child: Text(
+                                        'G',
                                         style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w500,
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                          fontFamily: 'Roboto',
                                           color: isDark
                                               ? Colors.white
                                               : Colors.black,
                                         ),
                                       ),
+                                    ),
+                                    label: authController.isLoading.value
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : Text(
+                                            'Continue with Google',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w500,
+                                              color: isDark
+                                                  ? Colors.white
+                                                  : Colors.black,
+                                            ),
+                                          ),
+                                    style: OutlinedButton.styleFrom(
+                                      side: BorderSide(
+                                        color: isDark
+                                            ? Colors.grey.shade800
+                                            : Colors.grey.shade300,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(30),
+                                      ),
+                                    ),
+                                  )),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // Apple
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  if (kIsWeb) {
+                                    Get.snackbar(
+                                      'Apple Sign In',
+                                      'Apple login not supported on web yet',
+                                      snackPosition: SnackPosition.BOTTOM,
+                                      backgroundColor: Colors.grey.shade100,
+                                      colorText: Colors.black,
+                                    );
+                                  } else {
+                                    authController.loginWithApple();
+                                  }
+                                },
+                                icon: Icon(
+                                  Icons.apple,
+                                  size: 22,
+                                  color:
+                                      isDark ? Colors.white : Colors.black,
+                                ),
+                                label: Text(
+                                  'Continue with Apple',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color:
+                                        isDark ? Colors.white : Colors.black,
+                                  ),
+                                ),
                                 style: OutlinedButton.styleFrom(
                                   side: BorderSide(
                                     color: isDark
@@ -153,116 +231,73 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                     borderRadius: BorderRadius.circular(30),
                                   ),
                                 ),
-                              )),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Apple
-                        SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              if (kIsWeb) {
-                                Get.snackbar(
-                                  'Apple Sign In',
-                                  'Apple login not supported on web yet',
-                                );
-                              } else {
-                                authController.loginWithApple();
-                              }
-                            },
-                            icon: Icon(
-                              Icons.apple,
-                              size: 22,
-                              color:
-                                  isDark ? Colors.white : Colors.black,
-                            ),
-                            label: Text(
-                              'Continue with Apple',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w500,
-                                color:
-                                    isDark ? Colors.white : Colors.black,
                               ),
                             ),
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: isDark
-                                    ? Colors.grey.shade800
-                                    : Colors.grey.shade300,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                            ),
-                          ),
-                        ),
 
-                        const SizedBox(height: 40),
+                            const SizedBox(height: 40),
 
-                        // Terms
-                        Wrap(
-                          alignment: WrapAlignment.center,
-                          spacing: 4,
-                          children: [
-                            Text(
-                              'By continuing, you agree to our',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark
-                                    ? Colors.grey.shade500
-                                    : Colors.grey.shade600,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => Get.to(() =>
-                                  const PolicyScreen(showPrivacy: false)),
-                              child: Text(
-                                'Terms',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black,
+                            // Terms
+                            Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 4,
+                              children: [
+                                Text(
+                                  'By continuing, you agree to our',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.grey.shade500
+                                        : Colors.grey.shade600,
+                                  ),
                                 ),
-                              ),
-                            ),
-                            Text(
-                              'and',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: isDark
-                                    ? Colors.grey.shade500
-                                    : Colors.grey.shade600,
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => Get.to(() =>
-                                  const PolicyScreen(showPrivacy: true)),
-                              child: Text(
-                                'Privacy Policy',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                  color: isDark
-                                      ? Colors.white
-                                      : Colors.black,
+                                GestureDetector(
+                                  onTap: () => Get.to(() =>
+                                      const PolicyScreen(showPrivacy: false)),
+                                  child: Text(
+                                    'Terms',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black,
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                Text(
+                                  'and',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: isDark
+                                        ? Colors.grey.shade500
+                                        : Colors.grey.shade600,
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () => Get.to(() =>
+                                      const PolicyScreen(showPrivacy: true)),
+                                  child: Text(
+                                    'Privacy Policy',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );

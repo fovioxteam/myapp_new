@@ -194,7 +194,6 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     setState(() => _isReporting = true);
 
     try {
-      // Сохраняем жалобу в основную коллекцию
       await _firestore.collection('reports').add({
         'postId': postId,
         'postOwnerId': _postUserId,
@@ -205,7 +204,6 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // Сохраняем в историю жалоб пользователя
       if (_currentUserId != null) {
         await _firestore
             .collection('users')
@@ -238,66 +236,57 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Colors.white,
+        color: Colors.black, // 👈 черный фон
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            margin: const EdgeInsets.symmetric(vertical: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: Colors.grey[300],
-              borderRadius: BorderRadius.circular(2),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8), // 👈 минимальные отступы
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Индикатор (полоска) - светлая на черном
+            Container(
+              margin: const EdgeInsets.only(top: 4, bottom: 8), // 👈 еще меньше
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[700],
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
 
-          if (_isOwnPost)
+            // Список опций
+            if (_isOwnPost)
+              _buildOption(
+                icon: CupertinoIcons.delete,
+                label: _isDeleting ? 'Deleting...' : 'Delete Post',
+                onTap: _isDeleting ? null : _deletePost,
+              ),
+
+            if (_isOwnPost) const Divider(color: Color.fromARGB(255, 0, 0, 0)),
+
             _buildOption(
-              icon: CupertinoIcons.delete,
-              label: _isDeleting ? 'Deleting...' : 'Delete Post',
-              onTap: _isDeleting ? null : _deletePost,
+              icon: CupertinoIcons.share,
+              label: _isSharing ? 'Sharing...' : 'Share',
+              onTap: _isSharing ? null : _sharePost,
             ),
 
-          if (_isOwnPost) const Divider(),
-
-          _buildOption(
-            icon: CupertinoIcons.share,
-            label: _isSharing ? 'Sharing...' : 'Share',
-            onTap: _isSharing ? null : _sharePost,
-          ),
-
-          _buildOption(
-            icon: CupertinoIcons.arrow_down_doc,
-            label: _isSaving ? 'Saving...' : 'Save Image',
-            onTap: _isSaving ? null : _saveImage,
-          ),
-
-          // Кнопка жалобы (только для чужих постов)
-          if (!_isOwnPost) ...[
-            const Divider(),
             _buildOption(
-              icon: CupertinoIcons.flag,
-              label: _isReporting ? 'Reporting...' : 'Report',
-              onTap: _isReporting ? null : _reportPost,
+              icon: CupertinoIcons.arrow_down_doc,
+              label: _isSaving ? 'Saving...' : 'Save Image',
+              onTap: _isSaving ? null : _saveImage,
             ),
+
+            if (!_isOwnPost) ...[
+              const Divider(color: Color.fromARGB(255, 0, 0, 0)),
+              _buildOption(
+                icon: CupertinoIcons.flag,
+                label: _isReporting ? 'Reporting...' : 'Report',
+                onTap: _isReporting ? null : _reportPost,
+              ),
+            ],
           ],
-
-          const SizedBox(height: 8),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: CupertinoButton(
-              onPressed: () => Get.back(),
-              color: Colors.grey[200],
-              child: const Text('Cancel', style: TextStyle(color: Colors.black)),
-            ),
-          ),
-
-          const SizedBox(height: 16),
-        ],
+        ),
       ),
     );
   }
@@ -309,15 +298,15 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
   }) {
     return CupertinoButton(
       onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // 👈 уменьшил вертикальный паддинг
       child: Row(
         children: [
-          Icon(icon, color: onTap == null ? Colors.grey : Colors.black),
+          Icon(icon, color: onTap == null ? Colors.grey[600] : Colors.white),
           const SizedBox(width: 16),
           Text(
             label,
             style: TextStyle(
-              color: onTap == null ? Colors.grey : Colors.black,
+              color: onTap == null ? Colors.grey[600] : Colors.white,
             ),
           ),
         ],

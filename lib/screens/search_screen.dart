@@ -1,5 +1,3 @@
-// lib/screens/search_screen.dart
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -87,7 +85,7 @@ class _SearchScreenState extends State<SearchScreen>
     super.dispose();
   }
 
-  // ============ НОВЫЙ МЕТОД ДЛЯ ПОЛУЧЕНИЯ THUMBNAIL ============
+  // ============ МЕТОД ДЛЯ ПОЛУЧЕНИЯ THUMBNAIL ============
   String _getThumbnailUrl(Map<String, dynamic> post) {
     if (post["thumbnailUrl"] != null && post["thumbnailUrl"].toString().isNotEmpty) {
       return post["thumbnailUrl"].toString();
@@ -249,7 +247,6 @@ class _SearchScreenState extends State<SearchScreen>
     await _saveSearchHistory();
   }
 
-  // Обновляет имена пользователей в постах из Firestore
   Future<void> _refreshUserNamesInPosts() async {
     print('🔄 [SEARCH] Refreshing user names from Firestore...');
     
@@ -362,10 +359,7 @@ class _SearchScreenState extends State<SearchScreen>
       
       final currentUserId = _auth.currentUser?.uid;
       
-      // 🔥 ФИЛЬТРУЕМ СЕБЯ ИЗ ПОЛЬЗОВАТЕЛЕЙ
       final filteredUsers = users.where((user) => user['id'] != currentUserId).toList();
-      
-      // 🔥 ФИЛЬТРУЕМ СВОИ ПОСТЫ
       final filteredPosts = posts.where((post) => post['userId'] != currentUserId).toList();
       
       print('🔍 [SEARCH] After filtering:');
@@ -378,7 +372,6 @@ class _SearchScreenState extends State<SearchScreen>
         _isSearching = false;
       });
       
-      // Обновляем имена из Firestore для чужих постов
       await _refreshUserNamesInPosts();
       
       print('🔍 [SEARCH] State updated:');
@@ -853,7 +846,7 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
-  // ============ ОБНОВЛЕННЫЙ МЕТОД С КЭШИРОВАНИЕМ АВАТАРОК ============
+  // ============ ИСПРАВЛЕНО: отступ снизу ТОЧНО такой же, как в ProfilePostsGrid ============
   Widget _buildUserSearchResults() {
     if (_users.isEmpty) {
       print('🔍 [SEARCH] No users found, showing empty state');
@@ -893,89 +886,93 @@ class _SearchScreenState extends State<SearchScreen>
       physics: const BouncingScrollPhysics(),
       slivers: [
         CupertinoSliverRefreshControl(onRefresh: _refreshSearch),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, index) {
-              final user = _users[index];
-              final userId = user['id'] as String;
-              final isFollowing = _getCurrentFollowStatus(userId, index);
+        // 👇 Отступ ровно 80 (как в ProfilePostsGrid)
+        SliverPadding(
+          padding: const EdgeInsets.only(bottom: 80),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                final user = _users[index];
+                final userId = user['id'] as String;
+                final isFollowing = _getCurrentFollowStatus(userId, index);
 
-              return Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  leading: Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.grey[100]),
-                    child: user['avatarUrl'].isNotEmpty
-                        ? ClipOval(
-                            child: CachedNetworkImage(
-                              key: ValueKey('avatar_${user['id']}_${user['avatarUrl']}'), // ✅ ДОБАВЛЕН КЛЮЧ
-                              imageUrl: user['avatarUrl'],
-                              fit: BoxFit.cover,
-                              width: 44,
-                              height: 44,
-                              memCacheWidth: 100, // ✅ ДОБАВЛЕНО
-                              filterQuality: FilterQuality.high, // ✅ ДОБАВЛЕНО
-                              fadeInDuration: Duration.zero, // ✅ ДОБАВЛЕНО
-                              fadeOutDuration: Duration.zero, // ✅ ДОБАВЛЕНО
-                              errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey, size: 20),
-                            ),
-                          )
-                        : const Icon(Icons.person, color: Colors.grey, size: 20),
-                  ),
-                  title: Text(
-                    user['username'],
-                    style: const TextStyle(
-                      color: Colors.black87,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                return Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.grey[100]),
+                      child: user['avatarUrl'].isNotEmpty
+                          ? ClipOval(
+                              child: CachedNetworkImage(
+                                key: ValueKey('avatar_${user['id']}_${user['avatarUrl']}'),
+                                imageUrl: user['avatarUrl'],
+                                fit: BoxFit.cover,
+                                width: 44,
+                                height: 44,
+                                memCacheWidth: 100,
+                                filterQuality: FilterQuality.high,
+                                fadeInDuration: Duration.zero,
+                                fadeOutDuration: Duration.zero,
+                                errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey, size: 20),
+                              ),
+                            )
+                          : const Icon(Icons.person, color: Colors.grey, size: 20),
                     ),
-                  ),
-                  trailing: SizedBox(
-                    width: 85,
-                    height: 32,
-                    child: ElevatedButton(
-                      onPressed: () => _handleFollowTap(userId, index),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isFollowing ? Colors.grey[100]! : Colors.black,
-                        foregroundColor: isFollowing ? Colors.black87 : Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        elevation: 0,
-                      ),
-                      child: Text(
-                        isFollowing ? "Following" : "Follow",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: isFollowing ? Colors.black87 : Colors.white,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    title: Text(
+                      user['username'],
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
+                    trailing: SizedBox(
+                      width: 85,
+                      height: 32,
+                      child: ElevatedButton(
+                        onPressed: () => _handleFollowTap(userId, index),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: isFollowing ? Colors.grey[100]! : Colors.black,
+                          foregroundColor: isFollowing ? Colors.black87 : Colors.white,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          isFollowing ? "Following" : "Follow",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: isFollowing ? Colors.black87 : Colors.white,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                    onTap: () {
+                      print('🔍 [SEARCH] User tapped: ${user['username']} (${user['id']})');
+                      _addToSearchHistory(user['username']);
+                      _followService.checkFollowStatus(userId);
+                      Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
+                    },
                   ),
-                  onTap: () {
-                    print('🔍 [SEARCH] User tapped: ${user['username']} (${user['id']})');
-                    _addToSearchHistory(user['username']);
-                    _followService.checkFollowStatus(userId);
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
-                  },
-                ),
-              );
-            },
-            childCount: _users.length,
+                );
+              },
+              childCount: _users.length,
+            ),
           ),
         ),
       ],
     );
   }
 
-  // ============ ОБНОВЛЕННЫЙ МЕТОД С КЭШИРОВАНИЕМ ПОСТОВ ============
+  // ============ ИСПРАВЛЕНО: отступ 80, crossAxisCount = 3 ============
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
       print('🔍 [SEARCH] No posts found, showing empty state');
@@ -1015,9 +1012,15 @@ class _SearchScreenState extends State<SearchScreen>
     print('🔍 [SEARCH] Building posts grid with ${_posts.length} posts');
     return GridView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.all(1),
+      padding: const EdgeInsets.only(
+        left: 1,
+        right: 1,
+        top: 1,
+        bottom: 80, // 👈 ТОЧНО ТАКОЙ ЖЕ, как в ProfilePostsGrid
+      ),
+      physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
+        crossAxisCount: 3,
         crossAxisSpacing: 1,
         mainAxisSpacing: 1,
         childAspectRatio: 0.75,
@@ -1025,7 +1028,7 @@ class _SearchScreenState extends State<SearchScreen>
       itemCount: _posts.length,
       itemBuilder: (context, index) {
         final post = _posts[index];
-        final imageUrl = _getThumbnailUrl(post); // ✅ ИСПОЛЬЗУЕМ НОВЫЙ МЕТОД
+        final imageUrl = _getThumbnailUrl(post);
         final postId = post['id']?.toString() ?? '';
         
         return GestureDetector(
@@ -1034,15 +1037,15 @@ class _SearchScreenState extends State<SearchScreen>
             color: Colors.grey[200],
             child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
                 ? CachedNetworkImage(
-                    key: ValueKey('search_post_${postId}_$imageUrl'), // ✅ ДОБАВЛЕН КЛЮЧ
+                    key: ValueKey('search_post_${postId}_$imageUrl'),
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
                     width: double.infinity,
                     height: double.infinity,
-                    memCacheWidth: 400, // ✅ ДОБАВЛЕНО
-                    filterQuality: FilterQuality.high, // ✅ ДОБАВЛЕНО
-                    fadeInDuration: Duration.zero, // ✅ ДОБАВЛЕНО
-                    fadeOutDuration: Duration.zero, // ✅ ДОБАВЛЕНО
+                    memCacheWidth: 400,
+                    filterQuality: FilterQuality.high,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
                     placeholder: (context, url) => Container(color: Colors.grey[300]),
                     errorWidget: (context, url, error) => Container(
                       color: Colors.grey[300],

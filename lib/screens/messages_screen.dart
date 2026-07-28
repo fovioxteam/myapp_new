@@ -13,6 +13,8 @@ import '../services/block_service.dart';
 import '../controllers/messages_controller.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/unread_service.dart';
+import 'guest_messages_screen.dart';
+import '../services/auth_service.dart';
 
 class MessagesScreen extends StatefulWidget {
   final String currentUserId;
@@ -376,7 +378,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
     );
   }
 
-  // 🔥 УВЕЛИЧЕННАЯ КАРТОЧКА С РАЗДЕЛИТЕЛЬНОЙ ЛИНИЕЙ
   Widget _buildChatItem(Map<String, dynamic> chat) {
     final timeAgo = _controller.getTimeAgo(chat['lastMessageTime'] as Timestamp?);
     final isMuted = _controller.mutedChats[chat['chatId']] ?? false;
@@ -399,7 +400,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
             leading: Stack(
               children: [
                 CircleAvatar(
-                  radius: 28, // 🔥 УВЕЛИЧЕНО с 22 до 28
+                  radius: 28,
                   backgroundColor: Colors.grey[200],
                   backgroundImage: avatarUrl.isNotEmpty
                       ? CachedNetworkImageProvider(avatarUrl) as ImageProvider
@@ -435,7 +436,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       color: Colors.black,
-                      fontSize: 16, // 🔥 УВЕЛИЧЕНО с 14 до 16
+                      fontSize: 16,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -463,7 +464,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
                   child: Text(
                     lastMessage,
                     style: TextStyle(
-                      fontSize: 14, // 🔥 УВЕЛИЧЕНО с 13 до 14
+                      fontSize: 14,
                       color: hasUnread ? Colors.black : const Color(0xFF8E8E93),
                       fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
                       overflow: TextOverflow.ellipsis,
@@ -495,7 +496,6 @@ class _MessagesScreenState extends State<MessagesScreen> {
             trailing: null,
           ),
         ),
-        // 🔥 ТОНКАЯ СЕРАЯ РАЗДЕЛИТЕЛЬНАЯ ЛИНИЯ
         Padding(
           padding: const EdgeInsets.only(left: 80),
           child: Divider(
@@ -576,7 +576,19 @@ class _MessagesScreenState extends State<MessagesScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _openNewMessageScreen,
+              onPressed: () {
+                // Проверяем, что пользователь авторизован
+                if (currentUser != null) {
+                  _openNewMessageScreen();
+                } else {
+                  Get.snackbar(
+                    'Error',
+                    'Please login to start a conversation',
+                    backgroundColor: Colors.black,
+                    colorText: Colors.white,
+                  );
+                }
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
@@ -805,7 +817,17 @@ class _MessagesScreenState extends State<MessagesScreen> {
   }
 
   void _openNewMessageScreen() {
-    if (currentUser == null) return;
+    // 🔥 ПРОВЕРКА НА NULL
+    if (currentUser == null) {
+      Get.snackbar(
+        'Login Required',
+        'Please login to start a conversation',
+        backgroundColor: Colors.black,
+        colorText: Colors.white,
+        snackPosition: SnackPosition.BOTTOM,
+      );
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
@@ -817,7 +839,7 @@ class _MessagesScreenState extends State<MessagesScreen> {
       builder: (context) => SizedBox(
         height: MediaQuery.of(context).size.height * 0.9,
         child: NewMessageScreen(
-          currentUserId: currentUser!.uid,
+          currentUserId: currentUser!.uid, // Теперь безопасно, так как проверили
         ),
       ),
     ).then((result) {
@@ -829,6 +851,12 @@ class _MessagesScreenState extends State<MessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 🔥 ПРОВЕРКА ГОСТЯ
+    final authService = Get.find<AuthService>();
+    if (!authService.isLoggedIn) {
+      return GuestMessagesScreen();
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(

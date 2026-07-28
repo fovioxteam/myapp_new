@@ -1,5 +1,3 @@
-// lib/screens/feed_screen.dart - ОРИГИНАЛ (НЕ МЕНЯЛСЯ)
-
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -223,7 +221,7 @@ class _FeedScreenState extends State<FeedScreen>
         if (!photosStatus.isGranted) {
           await Permission.photosAddOnly.request();
         }
-      }
+      }  
     } catch (e) {
       print('Error checking permissions: $e');
     }
@@ -406,7 +404,7 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  Future<void> _loadMoreFollowing() async {
+  Future<void> _loadMoreFollowing() async { 
     if (!_hasMoreFollowing || _isLoadingMoreFollowing || !mounted) return;
     
     _isLoadingMoreFollowing = true;
@@ -602,7 +600,7 @@ class _FeedScreenState extends State<FeedScreen>
         'tab': tab,
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       },
-    ));
+    ));  
   }
 
   void _navigateToSearch() {

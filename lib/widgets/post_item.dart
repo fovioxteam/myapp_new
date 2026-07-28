@@ -13,6 +13,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get/get.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../services/metrics_service.dart';
 import '../controllers/post_controller.dart';
@@ -21,7 +22,12 @@ import '../screens/user_profile_screen.dart';
 import '../widgets/comments_bottom_sheet.dart';
 import '../services/follow_service.dart';
 import '../screens/post_options_screen.dart';
+import '../services/auth_service.dart';
 import 'progressive_image.dart';
+
+// 👇 TAG IMPORTS
+import '../models/post_tag.dart';
+import '../widgets/post_tags_overlay.dart';
 
 mixin SafeActionMixin {
   final Map<String, bool> _actionInProgress = {};
@@ -58,6 +64,7 @@ class PostItem extends StatefulWidget {
   final VoidCallback? onPostDeleted;
   final Function(String, bool)? onLikeChanged;
   final Function(String, bool)? onSaveChanged;
+  final VoidCallback? onLinkClick;
   
   final bool isVisible;
   final int priority;
@@ -78,6 +85,7 @@ class PostItem extends StatefulWidget {
     this.onPostDeleted,
     this.onLikeChanged,
     this.onSaveChanged,
+    this.onLinkClick,
     this.isVisible = true,
     this.priority = 2,
   });
@@ -122,12 +130,14 @@ class _PostItemState extends State<PostItem>
   late List<String> _imageUrls = [];
   bool _isCarousel = false;
 
-  // КЭШ ДЛЯ АВАТАРОК
+  // AVATAR CACHE
   final Map<String, String> _avatarCache = {};
   StreamSubscription<bool>? _followSubscription;
   bool _isExpanded = false;
   bool _isLongPressInProgress = false;
   bool _didCallPostVisible = false;
+
+  final Map<int, bool> _showTagsForCarouselIndex = {};
 
   static const String _fallbackImageUrl = 'https://via.placeholder.com/500?text=Image+error';
   
@@ -140,6 +150,10 @@ class _PostItemState extends State<PostItem>
     _validateImageUrl();
     _loadFollowStatus();
     _initAnimations();
+    
+    for (int i = 0; i < _imageUrls.length; i++) {
+      _showTagsForCarouselIndex[i] = false;
+    }
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (int i = 0; i < _imageUrls.length; i++) {
@@ -252,9 +266,20 @@ class _PostItemState extends State<PostItem>
   void _initializeCarousel() {
     _imageUrls = _getImageUrls();
     _isCarousel = _imageUrls.length > 1;
+    
+    for (int i = 0; i < _imageUrls.length; i++) {
+      _showTagsForCarouselIndex[i] = false;
+    }
+    
     if (_isCarousel) {
       _carouselController = PageController();
     }
+  }
+
+  void _toggleTagsForCarouselIndex(int index) {
+    setState(() {
+      _showTagsForCarouselIndex[index] = !(_showTagsForCarouselIndex[index] ?? false);
+    });
   }
 
   List<String> _getImageUrls() {
@@ -351,7 +376,6 @@ class _PostItemState extends State<PostItem>
     } catch (e) {}
   }
 
-  // КЭШИРОВАННОЕ ПОЛУЧЕНИЕ АВАТАРКИ
   String _getUserAvatar(String? url) {
     if (url == null || url.isEmpty) {
       return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
@@ -409,6 +433,12 @@ class _PostItemState extends State<PostItem>
 
   Future<void> _toggleFollow() async {
     if (!mounted || !_canExecuteAction('follow')) return;
+
+    if (!AuthService.instance.isLoggedIn) {
+      await AuthService.instance.requireAuth();
+      _actionCompleted('follow');
+      return;
+    }
 
     final userId = widget.post['userId']?.toString() ?? '';
     final currentUser = _auth.currentUser;
@@ -470,10 +500,17 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  // 🔥 ИЗМЕНЕННЫЙ _toggleLike - ВЫЗЫВАЕТ КОЛБЭК
   Future<void> _toggleLike() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('like')) return;
+
+    if (!AuthService.instance.isLoggedIn) {
+      final result = await AuthService.instance.requireAuth();
+      if (result != true) {
+        _actionCompleted('like');
+        return;
+      }
+    }
 
     final postId = widget.post['id']?.toString() ?? '';
     final currentUser = _auth.currentUser;
@@ -500,7 +537,6 @@ class _PostItemState extends State<PostItem>
       await _sendLikeNotification(postId, widget.post['userId']?.toString() ?? '');
     }
 
-    // 🔥 ВЫЗЫВАЕМ КОЛБЭК ДЛЯ ОБНОВЛЕНИЯ UI В ПРОФИЛЕ
     if (widget.onLikeChanged != null) {
       final isNowLiked = _postController.isPostLiked(postId);
       widget.onLikeChanged!(postId, isNowLiked);
@@ -509,10 +545,17 @@ class _PostItemState extends State<PostItem>
     _actionCompleted('like');
   }
 
-  // 🔥 ИЗМЕНЕННЫЙ _toggleSave - ВЫЗЫВАЕТ КОЛБЭК
   Future<void> _toggleSave() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('save')) return;
+
+    if (!AuthService.instance.isLoggedIn) {
+      final result = await AuthService.instance.requireAuth();
+      if (result != true) {
+        _actionCompleted('save');
+        return;
+      }
+    }
 
     final postId = widget.post['id']?.toString() ?? '';
     final currentUser = _auth.currentUser;
@@ -533,7 +576,6 @@ class _PostItemState extends State<PostItem>
 
     await _postController.toggleSave(postId);
 
-    // 🔥 ВЫЗЫВАЕМ КОЛБЭК ДЛЯ ОБНОВЛЕНИЯ UI В ПРОФИЛЕ
     if (widget.onSaveChanged != null) {
       final isNowSaved = _postController.isPostSaved(postId);
       widget.onSaveChanged!(postId, isNowSaved);
@@ -556,6 +598,12 @@ class _PostItemState extends State<PostItem>
   void _showCommentsSheet() {
     if (_isLongPressInProgress) return;
     if (!mounted) return;
+
+    if (!AuthService.instance.isLoggedIn) {
+      AuthService.instance.requireAuth();
+      return;
+    }
+
     final postId = widget.post['id']?.toString() ?? '';
     final postUserId = widget.post['userId']?.toString() ?? '';
     final postImageUrl = _getCurrentImageUrl();
@@ -646,6 +694,13 @@ class _PostItemState extends State<PostItem>
     return _isValidUrl(url) ? url : _fallbackImageUrl;
   }
 
+  List<PostTag> _getTagsFromPost(Map<String, dynamic> post) {
+    final tagsData = post['tags'] as List? ?? [];
+    return tagsData
+        .map((e) => PostTag.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
   Widget _buildTikTokIndicators() {
     final totalImages = _imageUrls.length;
     final currentIndex = _currentCarouselIndex;
@@ -694,6 +749,207 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 ИЗОБРАЖЕНИЕ ДЛЯ AUTO (С ТЭГАМИ)
+  // ============================================================
+  Widget _buildAutoImage(String imageUrl) {
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+        .toList();
+    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 9 / 16,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _hasImageError
+                ? _buildErrorWidget()
+                : CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.contain,
+                    width: double.infinity,
+                    height: double.infinity,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    placeholderFadeInDuration: Duration.zero,
+                    placeholder: (context, url) => Container(color: Colors.black),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.black,
+                      child: const Icon(Icons.broken_image, color: Colors.white),
+                    ),
+                  ),
+            if (hasTagsForThisImage)
+              PostTagsOverlay(
+                tags: tagsForThisImage,
+                isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
+                onTagTap: (tag) async {
+                  widget.onLinkClick?.call();
+                  final url = Uri.parse(tag.url);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  } else {
+                    _showSnackBar('Cannot open link', Colors.red);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // 🔥 ИЗОБРАЖЕНИЕ ДЛЯ FULL (С ТЭГАМИ)
+  // ============================================================
+  Widget _buildFullImage(String imageUrl) {
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+        .toList();
+    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+
+    return Positioned.fill(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _hasImageError
+              ? _buildErrorWidget()
+              : CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.cover,
+                  width: double.infinity,
+                  height: double.infinity,
+                  fadeInDuration: Duration.zero,
+                  fadeOutDuration: Duration.zero,
+                  placeholderFadeInDuration: Duration.zero,
+                  placeholder: (context, url) => Container(color: Colors.black),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.black,
+                    child: const Icon(Icons.broken_image, color: Colors.white),
+                  ),
+                ),
+          if (hasTagsForThisImage)
+            PostTagsOverlay(
+              tags: tagsForThisImage,
+              isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
+              onTagTap: (tag) async {
+                widget.onLinkClick?.call();
+                final url = Uri.parse(tag.url);
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } else {
+                  _showSnackBar('Cannot open link', Colors.red);
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // 🔥 КАРУСЕЛЬ — AUTO (С ТЭГАМИ)
+  // ============================================================
+  Widget _buildAutoCarouselItem(String url, int index) {
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_$index'))
+        .toList();
+    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+
+    return Center(
+      child: AspectRatio(
+        aspectRatio: 9 / 16,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+              fadeInDuration: Duration.zero,
+              fadeOutDuration: Duration.zero,
+              placeholderFadeInDuration: Duration.zero,
+              placeholder: (context, url) => Container(color: Colors.black),
+              errorWidget: (context, url, error) => Container(
+                color: Colors.black,
+                child: const Icon(Icons.broken_image, color: Colors.white),
+              ),
+            ),
+            if (hasTagsForThisImage)
+              PostTagsOverlay(
+                tags: tagsForThisImage,
+                isVisible: _showTagsForCarouselIndex[index] ?? false,
+                onTagTap: (tag) async {
+                  widget.onLinkClick?.call();
+                  final url = Uri.parse(tag.url);
+                  if (await canLaunchUrl(url)) {
+                    await launchUrl(url, mode: LaunchMode.externalApplication);
+                  } else {
+                    _showSnackBar('Cannot open link', Colors.red);
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
+  // 🔥 КАРУСЕЛЬ — FULL (С ТЭГАМИ)
+  // ============================================================
+  Widget _buildFullCarouselItem(String url, int index) {
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_$index'))
+        .toList();
+    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+
+    return Center(
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            fadeInDuration: Duration.zero,
+            fadeOutDuration: Duration.zero,
+            placeholderFadeInDuration: Duration.zero,
+            placeholder: (context, url) => Container(color: Colors.black),
+            errorWidget: (context, url, error) => Container(
+              color: Colors.black,
+              child: const Icon(Icons.broken_image, color: Colors.white),
+            ),
+          ),
+          if (hasTagsForThisImage)
+            PostTagsOverlay(
+              tags: tagsForThisImage,
+              isVisible: _showTagsForCarouselIndex[index] ?? false,
+              onTagTap: (tag) async {
+                widget.onLinkClick?.call();
+                final url = Uri.parse(tag.url);
+                if (await canLaunchUrl(url)) {
+                  await launchUrl(url, mode: LaunchMode.externalApplication);
+                } else {
+                  _showSnackBar('Cannot open link', Colors.red);
+                }
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // 🔥 КАРУСЕЛЬ
+  // ============================================================
   Widget _buildCarousel() {
     final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
     final fitModes = freshPost['fitModes'] as List? ?? [];
@@ -708,12 +964,14 @@ class _PostItemState extends State<PostItem>
         if (!mounted) return;
         setState(() {
           _currentCarouselIndex = index;
+          for (int i = 0; i < _imageUrls.length; i++) {
+            _showTagsForCarouselIndex[i] = false;
+          }
         });
         _preloadMultipleImages();
       },
       itemBuilder: (context, index) {
         final url = _imageUrls[index];
-        
         String mode = 'cover';
         if (index < fitModes.length) {
           mode = fitModes[index]?.toString() ?? 'cover';
@@ -722,31 +980,14 @@ class _PostItemState extends State<PostItem>
         
         return RepaintBoundary(
           key: ValueKey('carousel_page_$index'),
-          child: Container(
-            color: Colors.black,
-            child: Center(
-              child: CachedNetworkImage(
-                imageUrl: url,
-                fit: isFullScreenMode ? BoxFit.cover : BoxFit.contain,
-                width: double.infinity,
-                height: double.infinity,
-                fadeInDuration: Duration.zero,
-                fadeOutDuration: Duration.zero,
-                placeholderFadeInDuration: Duration.zero,
-                placeholder: (context, url) => Container(color: Colors.black),
-                errorWidget: (context, url, error) => Container(
-                  color: Colors.black,
-                  child: const Icon(Icons.broken_image, color: Colors.white),
-                ),
-              ),
-            ),
-          ),
+          child: isFullScreenMode
+              ? _buildFullCarouselItem(url, index)
+              : _buildAutoCarouselItem(url, index),
         );
       },
     );
   }
 
-  // 🔥 ИЗМЕНЕННЫЙ _buildUserInfoAndCaption - С Obx
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -936,16 +1177,19 @@ class _PostItemState extends State<PostItem>
   }) {
     Widget button = GestureDetector(
       onTap: onTap,
-      child: Icon(
-        icon,
-        color: Colors.white,
-        size: iconSize,
-        shadows: const [
-          Shadow(
-            color: Colors.black38,
-            blurRadius: 6,
-          ),
-        ],
+      child: SizedBox(
+        width: 32,
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: iconSize,
+          shadows: const [
+            Shadow(
+              color: Colors.black38,
+              blurRadius: 6,
+            ),
+          ],
+        ),
       ),
     );
 
@@ -979,7 +1223,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // 🔥 ИЗМЕНЕННЫЙ _buildActionButtons - С Obx
   Widget _buildActionButtons() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -991,11 +1234,17 @@ class _PostItemState extends State<PostItem>
       final likesCount = freshPost['likes'] ?? 0;
       final commentsCount = freshPost['comments'] ?? 0;
       final savesCount = freshPost['saves'] ?? 0;
+      final allTags = _getTagsFromPost(freshPost);
+      final tagsForThisImage = allTags
+          .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+          .toList();
+      final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
 
-      return Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      return SizedBox(
+        width: 50,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             _buildActionButton(
               onTap: _toggleLike,
@@ -1004,14 +1253,14 @@ class _PostItemState extends State<PostItem>
               scaleAnimation: _likeIconScale,
               iconSize: 32,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _buildActionButton(
               onTap: _showCommentsSheet,
               icon: CupertinoIcons.chat_bubble,
               count: commentsCount,
               iconSize: 28,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             _buildActionButton(
               onTap: _toggleSave,
               icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
@@ -1019,6 +1268,22 @@ class _PostItemState extends State<PostItem>
               scaleAnimation: _saveIconScale,
               iconSize: 28,
             ),
+            if (hasTagsForThisImage) ...[
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: () {
+                  _toggleTagsForCarouselIndex(_currentCarouselIndex);
+                },
+                child: const SizedBox(
+                  width: 32,
+                  child: Icon(
+                    Icons.location_on_outlined,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       );
@@ -1062,11 +1327,16 @@ class _PostItemState extends State<PostItem>
   Widget _buildPreviewPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
-    
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_0'))
+        .toList();
+    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+
     if (_previewWidgetCache.containsKey(postId)) {
       return _previewWidgetCache[postId]!;
     }
-    
+
     final cachedWidget = RepaintBoundary(
       key: ValueKey('preview_${postId}_fixed'),
       child: GestureDetector(
@@ -1077,32 +1347,71 @@ class _PostItemState extends State<PostItem>
         onTap: widget.onTap,
         child: Container(
           color: Colors.grey[100],
-          child: _hasImageError
-              ? _buildErrorWidget()
-              : CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  placeholderFadeInDuration: Duration.zero,
-                  memCacheWidth: 300,
-                  memCacheHeight: 300,
-                  placeholder: (context, url) => Container(color: Colors.grey[300]),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.grey[300],
-                    child: const Icon(Icons.broken_image, color: Colors.grey),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _hasImageError
+                  ? _buildErrorWidget()
+                  : CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                      placeholderFadeInDuration: Duration.zero,
+                      memCacheWidth: 300,
+                      memCacheHeight: 300,
+                      placeholder: (context, url) => Container(color: Colors.grey[300]),
+                      errorWidget: (context, url, error) => Container(
+                        color: Colors.grey[300],
+                        child: const Icon(Icons.broken_image, color: Colors.grey),
+                      ),
+                    ),
+              if (hasTagsForThisImage)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.link,
+                          color: Colors.white,
+                          size: 12,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${tagsForThisImage.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
+            ],
+          ),
         ),
       ),
     );
-    
+
     _previewWidgetCache[postId] = cachedWidget;
     return cachedWidget;
   }
 
+  // ============================================================
+  // 🔥 ОСНОВНОЙ _buildFullScreenPost — БЕЗ ТЭГОВ В КОРНЕВОМ STACK
+  // ============================================================
   Widget _buildFullScreenPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
@@ -1123,6 +1432,8 @@ class _PostItemState extends State<PostItem>
     final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
     final double tabBarHeight = 54 + 16 + 16;
     final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
+
+    // Тэги уже внутри изображений — не добавляем их сюда
     
     return GestureDetector(
       onLongPress: () {
@@ -1150,37 +1461,31 @@ class _PostItemState extends State<PostItem>
         }
       },
       onDoubleTap: _handleDoubleTap,
+      onTap: () {
+        // Переключаем видимость тегов для текущего индекса
+        final allTags = _getTagsFromPost(freshPost);
+        final hasTags = allTags
+            .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+            .isNotEmpty;
+        if (hasTags) {
+          _toggleTagsForCarouselIndex(_currentCarouselIndex);
+        }
+      },
       behavior: HitTestBehavior.opaque,
       child: Container(
         color: Colors.black,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            Positioned.fill(
-              child: (_isCarousel && _imageUrls.length > 1)
-                  ? _buildCarousel()
-                  : Container(
-                      color: Colors.black,
-                      child: Center(
-                        child: _hasImageError
-                            ? _buildErrorWidget()
-                            : CachedNetworkImage(
-                                imageUrl: imageUrl,
-                                fit: isFullScreenMode ? BoxFit.cover : BoxFit.contain,
-                                width: double.infinity,
-                                height: double.infinity,
-                                fadeInDuration: Duration.zero,
-                                fadeOutDuration: Duration.zero,
-                                placeholderFadeInDuration: Duration.zero,
-                                placeholder: (context, url) => Container(color: Colors.black),
-                                errorWidget: (context, url, error) => Container(
-                                  color: Colors.black,
-                                  child: const Icon(Icons.broken_image, color: Colors.white),
-                                ),
-                              ),
-                      ),
-                    ),
-            ),
-            
+            // ===== ИЗОБРАЖЕНИЕ (теги уже внутри) =====
+            if (_isCarousel && _imageUrls.length > 1)
+              _buildCarousel()
+            else
+              isFullScreenMode
+                  ? _buildFullImage(imageUrl)
+                  : _buildAutoImage(imageUrl),
+
+            // ===== ГРАДИЕНТ СНИЗУ =====
             Positioned(
               bottom: 0,
               left: 0,
@@ -1203,6 +1508,7 @@ class _PostItemState extends State<PostItem>
               ),
             ),
             
+            // ===== ИНДИКАТОРЫ КАРУСЕЛИ =====
             if (_isCarousel && _imageUrls.length > 1)
               Positioned(
                 bottom: bottomPadding + 10,
@@ -1214,6 +1520,7 @@ class _PostItemState extends State<PostItem>
                 ),
               ),
               
+            // ===== АНИМАЦИЯ ЛАЙКА =====
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 50,
@@ -1238,6 +1545,7 @@ class _PostItemState extends State<PostItem>
                 ),
               ),
               
+            // ===== НИЖНЯЯ ПАНЕЛЬ =====
             Padding(
               padding: EdgeInsets.only(
                 left: 16,

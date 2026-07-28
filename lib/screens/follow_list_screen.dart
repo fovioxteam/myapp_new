@@ -268,102 +268,101 @@ class _FollowListScreenState extends State<FollowListScreen> {
                     ],
                   ),
                 )
-              : RefreshIndicator(
-                  onRefresh: _refresh,
-                  child: CustomScrollView(
-                    controller: _scrollController,
-                    physics: const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics(),
+              : CustomScrollView(
+                  controller: _scrollController,
+                  physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
+                  slivers: [
+                    // 👇 ТОЛЬКО ЭТОТ ОСТАВЛЕН
+                    CupertinoSliverRefreshControl(
+                      onRefresh: _refresh,
                     ),
-                    slivers: [
-                      // 🔥 NATIVE PULL TO REFRESH (как в ProfileScreen)
-                      const CupertinoSliverRefreshControl(),
-                      
-                      SliverList(
-                        delegate: SliverChildBuilderDelegate(
-                          (context, index) {
-                            final user = _filteredUsers[index];
-                            final id = user['id'];
-                            final isMe = _currentUserId == id;
+                    
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final user = _filteredUsers[index];
+                          final id = user['id'];
+                          final isMe = _currentUserId == id;
 
-                            return ListTile(
-                              leading: CircleAvatar(
-                                backgroundImage: user['avatarUrl']
-                                        .toString()
-                                        .isNotEmpty
-                                    ? CachedNetworkImageProvider(
-                                        user['avatarUrl'])
-                                    : null,
-                                child: user['avatarUrl'].toString().isEmpty
-                                    ? const Icon(Icons.person, color: Colors.grey)
-                                    : null,
+                          return ListTile(
+                            leading: CircleAvatar(
+                              backgroundImage: user['avatarUrl']
+                                      .toString()
+                                      .isNotEmpty
+                                  ? CachedNetworkImageProvider(
+                                      user['avatarUrl'])
+                                  : null,
+                              child: user['avatarUrl'].toString().isEmpty
+                                  ? const Icon(Icons.person, color: Colors.grey)
+                                  : null,
+                            ),
+                            title: Text(
+                              user['username'],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w500,
                               ),
-                              title: Text(
-                                user['username'],
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              trailing: isMe
-                                  ? null
-                                  : Obx(() {
-                                      final isFollowing =
-                                          _followService.getCachedFollowStatus(id);
+                            ),
+                            trailing: isMe
+                                ? null
+                                : Obx(() {
+                                    final isFollowing =
+                                        _followService.getCachedFollowStatus(id);
 
-                                      return SizedBox(
-                                        width: 85,
-                                        height: 30,
-                                        child: ElevatedButton(
-                                          onPressed: () => _handleFollow(id),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: isFollowing
-                                                ? Colors.grey[100]!
-                                                : Colors.black,
-                                            foregroundColor: isFollowing
-                                                ? Colors.black87
-                                                : Colors.white,
-                                            padding: EdgeInsets.zero,
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                            ),
-                                            elevation: 0,
+                                    return SizedBox(
+                                      width: 85,
+                                      height: 30,
+                                      child: ElevatedButton(
+                                        onPressed: () => _handleFollow(id),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: isFollowing
+                                              ? Colors.grey[100]!
+                                              : Colors.black,
+                                          foregroundColor: isFollowing
+                                              ? Colors.black87
+                                              : Colors.white,
+                                          padding: EdgeInsets.zero,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(6),
                                           ),
-                                          child: Text(
-                                            isFollowing ? "Following" : "Follow",
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                          elevation: 0,
+                                        ),
+                                        child: Text(
+                                          isFollowing ? "Following" : "Follow",
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
-                                      );
-                                    }),
-                              onTap: () {
-                                if (isMe) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const ProfileScreen(),
-                                    ),
-                                  );
-                                } else {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) =>
-                                          UserProfileScreen(userId: id),
-                                    ),
-                                  );
-                                }
-                              },
-                            );
-                          },
-                          childCount: _filteredUsers.length,
-                        ),
+                                      ),
+                                    );
+                                  }),
+                            onTap: () {
+                              if (isMe) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const ProfileScreen(),
+                                  ),
+                                );
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                        UserProfileScreen(userId: id),
+                                  ),
+                                );
+                              }
+                            },
+                          );
+                        },
+                        childCount: _filteredUsers.length,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
     );
   }

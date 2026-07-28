@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import '../services/auth_service.dart'; // 👈 ДОБАВИТЬ
 
 class AuthController extends GetxController {
   static AuthController get instance => Get.find();
@@ -14,7 +15,6 @@ class AuthController extends GetxController {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  // 🔥 STATE
   final Rx<User?> firebaseUser = Rx<User?>(null);
   final RxBool isLoading = false.obs;
   final RxString username = ''.obs;
@@ -36,13 +36,9 @@ class AuthController extends GetxController {
     });
   }
 
-  // =========================================================
-  // 🔥 LOAD USER
-  // =========================================================
   Future<void> _loadUserData(String userId) async {
     try {
       final doc = await _firestore.collection('users').doc(userId).get();
-
       if (doc.exists) {
         final data = doc.data()!;
         username.value = data['username'] ?? '';
@@ -53,49 +49,31 @@ class AuthController extends GetxController {
     }
   }
 
-  // =========================================================
-  // 🔥 GOOGLE LOGIN (WEB + MOBILE)
-  // =========================================================
   Future<void> loginWithGoogle() async {
     try {
       isLoading.value = true;
 
       if (kIsWeb) {
-        // 🔥 WEB LOGIN
         GoogleAuthProvider googleProvider = GoogleAuthProvider();
-
-        final userCredential =
-            await FirebaseAuth.instance.signInWithPopup(googleProvider);
-
+        final userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
         final user = userCredential.user;
         if (user == null) throw Exception('User is null');
-
         await _handleUser(user);
       } else {
-        // 🔥 ANDROID / iOS LOGIN
-        final GoogleSignInAccount? googleUser =
-            await _googleSignIn.signIn();
-
+        final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
         if (googleUser == null) return;
-
         final googleAuth = await googleUser.authentication;
-
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-
-        final userCredential =
-            await _auth.signInWithCredential(credential);
-
+        final userCredential = await _auth.signInWithCredential(credential);
         final user = userCredential.user;
         if (user == null) throw Exception('User is null');
-
         await _handleUser(user, googleUser);
       }
     } catch (e) {
       print('🔥 Google login error: $e');
-
       Get.snackbar(
         'Error',
         'Google login failed',
@@ -108,26 +86,19 @@ class AuthController extends GetxController {
     }
   }
 
-  // =========================================================
-  // 🔥 USER HANDLER
-  // =========================================================
-  Future<void> _handleUser(User user,
-      [GoogleSignInAccount? googleUser]) async {
-    final userDoc =
-        await _firestore.collection('users').doc(user.uid).get();
+  Future<void> _handleUser(User user, [GoogleSignInAccount? googleUser]) async {
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
     if (!userDoc.exists) {
       await _createNewUser(user, googleUser);
     } else {
+      // 🔥 ОБНОВЛЯЕМ AUTH SERVICE
+      await AuthService.instance.onUserLoggedIn();
       _goToApp();
     }
   }
 
-  // =========================================================
-  // 🔥 CREATE USER
-  // =========================================================
-  Future<void> _createNewUser(
-      User user, GoogleSignInAccount? googleUser) async {
+  Future<void> _createNewUser(User user, GoogleSignInAccount? googleUser) async {
     try {
       final generatedUsername = _generateUsername();
 
@@ -136,50 +107,37 @@ class AuthController extends GetxController {
         'email': user.email ?? '',
         'username': generatedUsername,
         'username_lowercase': generatedUsername.toLowerCase(),
-        'displayName':
-            googleUser?.displayName ?? user.displayName ?? '',
-        'avatarUrl':
-            googleUser?.photoUrl ?? user.photoURL ?? '',
+        'displayName': googleUser?.displayName ?? user.displayName ?? '',
+        'avatarUrl': googleUser?.photoUrl ?? user.photoURL ?? '',
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-
         'followersCount': 0,
         'followingCount': 0,
         'postsCount': 0,
-
         'isPrivateAccount': false,
         'bio': '',
       };
 
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .set(userData);
+      await _firestore.collection('users').doc(user.uid).set(userData);
 
       username.value = generatedUsername;
-      avatarUrl.value =
-          googleUser?.photoUrl ?? user.photoURL ?? '';
+      avatarUrl.value = googleUser?.photoUrl ?? user.photoURL ?? '';
+
+      // 🔥 ОБНОВЛЯЕМ AUTH SERVICE
+      await AuthService.instance.onUserLoggedIn();
 
       print('✅ New user created');
-
       _goToApp();
     } catch (e) {
       print('❌ Create user error: $e');
     }
   }
 
-  // =========================================================
-  // 🔥 USERNAME GENERATOR
-  // =========================================================
   String _generateUsername() {
-    final randomNum =
-        DateTime.now().millisecondsSinceEpoch % 1000000;
+    final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
     return 'user$randomNum';
   }
 
-  // =========================================================
-  // 🔥 APPLE LOGIN (заглушка)
-  // =========================================================
   Future<void> loginWithApple() async {
     Get.snackbar(
       'Coming soon',
@@ -188,26 +146,22 @@ class AuthController extends GetxController {
     );
   }
 
-  // =========================================================
-  // 🔥 NAVIGATION
-  // =========================================================
   void _goToApp() {
     Get.offAllNamed('/');
   }
 
-  // =========================================================
-  // 🔥 LOGOUT
-  // =========================================================
   Future<void> logout() async {
     try {
       if (!kIsWeb) {
         await _googleSignIn.signOut();
       }
-
       await _auth.signOut();
 
       username.value = '';
       avatarUrl.value = '';
+
+      // 🔥 СОЗДАЁМ НОВОГО ГОСТЯ
+      await AuthService.instance.logout();
 
       Get.offAllNamed('/welcome');
     } catch (e) {
@@ -215,9 +169,6 @@ class AuthController extends GetxController {
     }
   }
 
-  // =========================================================
-  // 🔥 HELPERS
-  // =========================================================
   bool get isLoggedIn => _auth.currentUser != null;
   String? get currentUserId => _auth.currentUser?.uid;
 }

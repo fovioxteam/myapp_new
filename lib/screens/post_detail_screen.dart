@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../widgets/post_item.dart';
 import '../controllers/post_controller.dart';
+import '../services/recommendation_service.dart'; // 👈 ДОБАВИТЬ
 
 class PostDetailScreen extends StatefulWidget {
   final List<Map<String, dynamic>>? posts;
@@ -63,7 +64,6 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     super.initState();
 
     if (widget.posts != null && widget.posts!.isNotEmpty) {
-      // 🔥 СОЗДАЕМ КОПИЮ СПИСКА, ЧТОБЫ НЕ МЕНЯТЬ ОРИГИНАЛ
       _carouselPosts = List<Map<String, dynamic>>.from(widget.posts!);
       _currentIndex = widget.initialIndex != null
           ? widget.initialIndex!.clamp(0, _carouselPosts.length - 1)
@@ -137,6 +137,45 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     }
   }
 
+  // 🔥 ОБРАБОТЧИК КЛИКА ПО ССЫЛКЕ (увеличивает счётчик)
+  Future<void> _handleLinkClick(String postId) async {
+    if (postId.isEmpty) return;
+    
+    print('🔗 [PostDetailScreen] Link clicked for post: $postId');
+    
+    try {
+      // Увеличиваем счётчик кликов в Firestore
+      await _firestore.collection('posts').doc(postId).update({
+        'clicks': FieldValue.increment(1),
+      });
+      
+      // Обновляем локальный пост
+      final post = _postController.getPostFromStorage(postId);
+      if (post != null) {
+        final updatedPost = Map<String, dynamic>.from(post);
+        final currentClicks = (updatedPost['clicks'] ?? 0) as int;
+        updatedPost['clicks'] = currentClicks + 1;
+        
+        // Пересчитываем hotScore
+        final hotScore = RecommendationService.calculateHotScore(updatedPost);
+        updatedPost['hotScore'] = hotScore;
+        
+        _postController.addPostsToStorage([updatedPost]);
+        
+        // Обновляем текущий пост если он отображается
+        if (_post != null && _post!['id'] == postId) {
+          setState(() {
+            _post = updatedPost;
+          });
+        }
+        
+        print('✅ [PostDetailScreen] Link click counted: +1 click, hotScore: $hotScore');
+      }
+    } catch (e) {
+      print('❌ [PostDetailScreen] Error counting link click: $e');
+    }
+  }
+
   Widget _buildBottomNavigation() {
     return Container(
       height: kBottomNavigationBarHeight + 8,
@@ -151,10 +190,10 @@ class _PostDetailScreenState extends State<PostDetailScreen>
   Widget _buildPostItem(Map<String, dynamic> postData, bool isCurrentPost) {
     final postId = postData['id']?.toString() ?? '';
     
-    // 🔥 БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+    // БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
     final freshPost = _postController.getPostFromStorage(postId) ?? postData;
     
-    // 🔥 УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КАЖДОГО ПОСТА
+    // УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КАЖДОГО ПОСТА
     final cacheKey = '${postId}_${freshPost['likes']}_${freshPost['saves']}';
     
     if (_postWidgetCache.containsKey(cacheKey)) {
@@ -172,6 +211,8 @@ class _PostDetailScreenState extends State<PostDetailScreen>
       onLikeChanged: widget.onLikeChanged,
       onSaveChanged: widget.onSaveChanged,
       onPostDeleted: isCurrentPost ? _onPostDeleted : null,
+      // 🔥 ДОБАВЛЯЕМ КОЛБЭК ДЛЯ КЛИКА ПО ССЫЛКЕ
+      onLinkClick: () => _handleLinkClick(postId),
     );
     
     _postWidgetCache[cacheKey] = widgetItem;
@@ -195,7 +236,6 @@ class _PostDetailScreenState extends State<PostDetailScreen>
         itemCount: _carouselPosts.length,
         onPageChanged: (index) {
           if (_carouselPosts.isEmpty) return;
-          // 🔥 БЕЗ setState - ТОЛЬКО ОБНОВЛЯЕМ ПЕРЕМЕННЫЕ
           _currentIndex = index.clamp(0, _carouselPosts.length - 1);
           _post = _carouselPosts.isNotEmpty ? _carouselPosts[_currentIndex] : null;
         },

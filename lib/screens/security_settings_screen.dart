@@ -8,9 +8,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:crypto/crypto.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:get/get.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:convert';
 import 'dart:math';
-import 'welcome_screen.dart';
+import '../main.dart';
+import '../controllers/post_controller.dart';
+import '../controllers/messages_controller.dart';
+import '../controllers/profile_controller.dart';
 
 class SecuritySettingsScreen extends StatefulWidget {
   const SecuritySettingsScreen({super.key});
@@ -310,43 +315,61 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   }
 
   Future<void> _logoutAllDevices(BuildContext context) async {
+    // 🔥 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ
+    final user = _auth.currentUser;
+    if (user == null) {
+      // Если пользователя нет, просто переходим на главный экран
+      if (context.mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainApp()),
+          (route) => false,
+        );
+      }
+      return;
+    }
+    
     try {
       setState(() => _isLoading = true);
       
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Not logged in');
+      // Останавливаем все listeners
+      await _stopAllListeners();
       
-      await _auth.signOut();
-      await _googleSignIn.signOut();
+      // Выход для веба и мобильных
+      if (kIsWeb) {
+        await _auth.signOut();
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.clear();
+        } catch (_) {}
+      } else {
+        await _auth.signOut();
+        await _googleSignIn.signOut();
+      }
       
       if (!context.mounted) return;
       
-      // 🔥 ЧЕРНЫЙ SNACKBAR
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Logged out from all devices'),
-          backgroundColor: Colors.black,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      
       Navigator.of(context).popUntil((route) => route.isFirst);
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-        (route) => false,
-      );
+      
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainApp()),
+          (route) => false,
+        );
+      }
       
     } catch (e) {
+      print("❌ Logout error: $e");
+      
       if (!context.mounted) return;
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: Text('Logout error: ${e.toString()}'),
           backgroundColor: Colors.black,
         ),
       );
       
-    } finally {
       setState(() => _isLoading = false);
     }
   }
@@ -482,7 +505,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     );
   }
 
-  // 🔐 ДИАЛОГ ПОВТОРНОЙ АУТЕНТИФИКАЦИИ (С ЧЕРНОЙ CUPERTINO ИКОНКОЙ)
   Future<bool> _showReauthDialog(BuildContext context) async {
     return await showDialog<bool>(
       context: context,
@@ -497,9 +519,8 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 🔥 ИКОНКА CUPERTINO (Apple стиль) - ЧЕРНАЯ
               const Icon(
-                Icons.phonelink_lock_rounded,  // Cupertino стиль
+                Icons.phonelink_lock_rounded,
                 size: 64,
                 color: Colors.black,
               ),
@@ -562,7 +583,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     ).then((value) => value ?? false);
   }
 
-  // 🔐 ПОВТОРНАЯ АУТЕНТИФИКАЦИЯ ДЛЯ GOOGLE/APPLE
   Future<bool> _reauthenticateUser() async {
     final user = _auth.currentUser;
     if (user == null) return false;
@@ -571,22 +591,26 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     bool isGoogle = providerData.any((p) => p.providerId == 'google.com');
     bool isApple = providerData.any((p) => p.providerId == 'apple.com');
     
-    print("🔍 Re-authenticating with provider: ${isGoogle ? 'Google' : (isApple ? 'Apple' : 'Unknown')}");
-    
     try {
       if (isGoogle) {
-        await _googleSignIn.signOut();
-        final googleUser = await _googleSignIn.signIn();
-        if (googleUser == null) return false;
-        
-        final googleAuth = await googleUser.authentication;
-        final credential = GoogleAuthProvider.credential(
-          accessToken: googleAuth.accessToken,
-          idToken: googleAuth.idToken,
-        );
-        
-        await user.reauthenticateWithCredential(credential);
-        return true;
+        if (kIsWeb) {
+          final provider = GoogleAuthProvider();
+          await user.reauthenticateWithPopup(provider);
+          return true;
+        } else {
+          await _googleSignIn.signOut();
+          final googleUser = await _googleSignIn.signIn();
+          if (googleUser == null) return false;
+          
+          final googleAuth = await googleUser.authentication;
+          final credential = GoogleAuthProvider.credential(
+            accessToken: googleAuth.accessToken,
+            idToken: googleAuth.idToken,
+          );
+          
+          await user.reauthenticateWithCredential(credential);
+          return true;
+        }
         
       } else if (isApple) {
         final rawNonce = _generateNonce();
@@ -617,7 +641,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     }
   }
   
-  // Хелперы для Apple
   String _generateNonce() {
     final random = Random.secure();
     final values = List<int>.generate(32, (i) => random.nextInt(256));
@@ -630,43 +653,74 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     return base64Url.encode(digest.bytes);
   }
 
-  // 🛑 ОСТАНОВКА ВСЕХ СЕРВИСОВ
-  Future<void> _stopAllServices() async {
-    print("🛑 Stopping all services...");
+  Future<void> _stopAllListeners() async {
+    print("🛑 Stopping all Firestore listeners...");
     
     try {
-      // Закрываем все Firestore listeners
+      if (Get.isRegistered<PostController>()) {
+        final postController = Get.find<PostController>();
+        postController.clearCache();
+        postController.feedPosts.clear();
+        postController.userPosts.clear();
+        print("✅ PostController cleared");
+      }
+      
+      if (Get.isRegistered<MessagesController>()) {
+        final messagesController = Get.find<MessagesController>();
+        messagesController.dispose();
+        print("✅ MessagesController disposed");
+      }
+      
+      if (Get.isRegistered<ProfileController>()) {
+        final profileController = Get.find<ProfileController>();
+        profileController.username.value = '';
+        profileController.bio.value = '';
+        profileController.avatarUrl.value = '';
+        profileController.followersCount.value = 0;
+        profileController.followingCount.value = 0;
+        print("✅ ProfileController cleared");
+      }
+      
       await _firestore.terminate();
       print("✅ Firestore terminated");
+      
     } catch (e) {
-      print("⚠️ Error stopping services: $e");
+      print("⚠️ Error stopping listeners: $e");
     }
   }
 
-  // 🔥 ОСНОВНОЙ МЕТОД УДАЛЕНИЯ АККАУНТА
+  Future<void> _stopAllServices() async {
+    await _stopAllListeners();
+  }
+
   Future<void> _deleteAccount(BuildContext context) async {
+    // 🔥 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ
+    final user = _auth.currentUser;
+    if (user == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No user logged in'),
+            backgroundColor: Colors.black,
+          ),
+        );
+        Navigator.of(context).pop();
+      }
+      return;
+    }
+    
     try {
       setState(() => _isLoading = true);
       
-      final user = _auth.currentUser;
-      if (user == null) throw Exception('Not logged in');
-      
-      print("🔍 Current user: ${user.uid}");
-      print("🔍 Providers: ${user.providerData.map((e) => e.providerId).join(', ')}");
-      
-      // Шаг 1: Показываем диалог реавторизации
       final shouldReauth = await _showReauthDialog(context);
       if (!shouldReauth) {
-        print("❌ User cancelled re-authentication");
+        setState(() => _isLoading = false);
         return;
       }
       
-      // Шаг 2: Повторная аутентификация
       final reauthResult = await _reauthenticateUser();
       if (!reauthResult) {
-        print("❌ Re-authentication failed");
         if (mounted) {
-          // 🔥 ЧЕРНЫЙ SNACKBAR
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Re-authentication failed. Please try again.'),
@@ -674,70 +728,36 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
             ),
           );
         }
+        setState(() => _isLoading = false);
         return;
       }
       
-      print("✅ User re-authenticated successfully");
-      
-      // Шаг 3: ОСТАНАВЛИВАЕМ ВСЕ СЕРВИСЫ ПЕРЕД УДАЛЕНИЕМ
       await _stopAllServices();
       
-      // Шаг 4: Показываем индикатор загрузки (ЧЕРНЫЙ SNACKBAR)
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Deleting your account... This may take a few moments.'),
-            backgroundColor: Colors.black,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-      
-      // Шаг 5: Удаляем данные через Cloud Function
       final callable = _functions.httpsCallable('deleteUserAccount');
-      final result = await callable.call({'userId': user.uid});
+      await callable.call({'userId': user.uid});
       
-      print("✅ DELETE FUNCTION RESULT: ${result.data}");
-      
-      // Шаг 6: Удаляем пользователя из Auth
       await user.delete();
       
-      print("✅ User deleted from Auth");
+      if (!kIsWeb) {
+        await _googleSignIn.signOut();
+      }
       
-      // Шаг 7: Выход из Google
-      await _googleSignIn.signOut();
-      
-      // Шаг 8: Очищаем локальное хранилище
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.clear();
-      } catch (e) {
-        print("⚠️ Error clearing prefs: $e");
-      }
+      } catch (e) {}
       
       if (!mounted) return;
       
-      // 🔥 ЧЕРНЫЙ SNACKBAR - УСПЕХ
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Account deleted successfully'),
-          backgroundColor: Colors.black,
-          duration: Duration(seconds: 2),
-        ),
-      );
-      
-      // Небольшая задержка
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      if (!mounted) return;
-      
-      // Шаг 9: ПЕРЕХОД НА WELCOME SCREEN
       Navigator.of(context).popUntil((route) => route.isFirst);
       
-      await Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const WelcomeScreen()),
-        (route) => false,
-      );
+      if (context.mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const MainApp()),
+          (route) => false,
+        );
+      }
       
     } catch (e) {
       print("❌ DELETE ERROR: $e");
@@ -753,7 +773,6 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
         errorMessage = 'Network error. Please check your connection';
       }
       
-      // 🔥 ЧЕРНЫЙ SNACKBAR - ОШИБКА
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Delete error: $errorMessage'),

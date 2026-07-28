@@ -1,5 +1,3 @@
-// lib/main.dart
-
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -31,6 +29,7 @@ import 'screens/new_message_screen.dart';
 import 'screens/no_internet_screen.dart';
 import 'screens/welcome_screen.dart';
 import 'screens/post_detail_screen.dart';
+import 'screens/auth_sheet.dart';
 
 // Controllers
 import 'controllers/profile_controller.dart';
@@ -54,6 +53,7 @@ import 'services/unread_service.dart';
 import 'services/media_service.dart';
 import 'services/algolia_service.dart';
 import 'services/push_notifications_service.dart';
+import 'services/auth_service.dart';
 
 // Bindings
 import 'bindings/chat_binding.dart';
@@ -157,6 +157,7 @@ Future<void> _initializeServices() async {
   Get.put(UploadController(), permanent: true);
   Get.put(MetricsService(), permanent: true);
   Get.put(UnreadService(), permanent: true);
+  Get.put(AuthService(), permanent: true); // 👈 ДОБАВЛЯЕМ
   
   await PushNotificationsService().init();
   
@@ -413,6 +414,7 @@ class _ConnectivityWrapper extends StatelessWidget {
   }
 }
 
+// ========== 🔥 ИСПРАВЛЕННЫЙ AUTH WRAPPER ==========
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -421,6 +423,7 @@ class AuthWrapper extends StatelessWidget {
     if (!Get.isRegistered<AuthController>()) Get.put(AuthController(), permanent: true);
     if (!Get.isRegistered<ProfileController>()) Get.put(ProfileController(), permanent: true);
     if (!Get.isRegistered<PostController>()) Get.put(PostController(), permanent: true);
+    if (!Get.isRegistered<AuthService>()) Get.put(AuthService(), permanent: true);
     
     return Obx(() {
       final authController = Get.find<AuthController>();
@@ -436,11 +439,9 @@ class AuthWrapper extends StatelessWidget {
         );
       }
       
-      if (authController.isLoggedIn) {
-        return const MainApp();
-      }
-      
-      return const WelcomeScreen();
+      // 🔥 ВСЕГДА ПОКАЗЫВАЕМ ГЛАВНЫЙ ЭКРАН
+      // Экран входа (WelcomeScreen) показывается только через AuthService.requireAuth()
+      return const MainApp();
     });
   }
 }
@@ -655,6 +656,12 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
   
   void _onItemTapped(int index) {
     if (index == 2) {
+      // Проверяем авторизацию перед созданием поста
+      final authService = AuthService.instance;
+      if (!authService.isLoggedIn) {
+        authService.requireAuth();
+        return;
+      }
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -719,7 +726,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
     final double screenWidth = MediaQuery.of(context).size.width - 32;
     final double itemWidth = screenWidth / 5;
-    const double baseCircleWidth = 72;
+    const double baseCircleWidth = 56; // 👈 УМЕНЬШИЛИ С 72 ДО 56
     const double baseCircleHeight = 50;
     final double circleLeft = itemWidth * _selectedIndex + (itemWidth - baseCircleWidth) / 2;
     

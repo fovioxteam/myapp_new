@@ -1,3 +1,5 @@
+// lib/screens/profile_screen.dart
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -30,6 +32,8 @@ import '../widgets/shimmer_loading.dart';
 import '../widgets/profile_posts_grid.dart';
 import 'user_profile_screen.dart';
 import 'post_detail_screen.dart';
+import 'guest_profile_screen.dart'; // 👈 ДОБАВЛЕНО
+import '../services/auth_service.dart'; // 👈 ДОБАВЛЕНО
 
 // ========== ВКЛАДКА ПОСТОВ ==========
 class _PostsTabWidget extends StatefulWidget {
@@ -214,9 +218,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   final ScrollController _scrollController = ScrollController();
 
-  // 🔥 ПОДПИСКИ НА ГЛОБАЛЬНЫЕ ИЗМЕНЕНИЯ
   Worker? _likedPostsWorker;
   Worker? _savedPostsWorker;
+  Worker? _likedDatesWorker;
+  Worker? _savedDatesWorker;
 
   // ========== МЕТОДЫ ОБНОВЛЕНИЯ ИЗ ГЛОБАЛЬНОГО КОНТРОЛЛЕРА ==========
   
@@ -225,41 +230,35 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     print('🔄 [ProfileScreen] Refreshing liked posts from PostController');
     
-    final likedPostIds = _postController.likedPosts.entries
-        .where((entry) => entry.value == true)
-        .map((entry) => entry.key)
+    final likedEntries = _postController.likedDates.entries
+        .where((entry) => _postController.likedPosts[entry.key] == true)
+        .map((entry) => MapEntry(entry.key, entry.value))
         .toList();
     
-    print('📊 [ProfileScreen] likedPostIds (filtered true): $likedPostIds');
+    likedEntries.sort((a, b) => b.value.compareTo(a.value));
     
     final updatedLikedPosts = <Map<String, dynamic>>[];
     final updatedLikedPostsMap = <String, bool>{};
+    final updatedLikedPostsDates = <String, DateTime>{};
     
-    for (final postId in likedPostIds) {
+    for (var entry in likedEntries) {
+      final postId = entry.key;
+      final date = entry.value;
       final post = _postController.getPostFromStorage(postId);
       if (post != null) {
         updatedLikedPosts.add(post);
         updatedLikedPostsMap[postId] = true;
-      } else {
-        print('⚠️ [ProfileScreen] Post not found in storage: $postId');
+        updatedLikedPostsDates[postId] = date;
       }
     }
-    
-    updatedLikedPosts.sort((a, b) {
-      final dateA = a['createdAt'] is Timestamp 
-          ? (a['createdAt'] as Timestamp).toDate() 
-          : DateTime.now();
-      final dateB = b['createdAt'] is Timestamp 
-          ? (b['createdAt'] as Timestamp).toDate() 
-          : DateTime.now();
-      return dateB.compareTo(dateA);
-    });
     
     if (mounted) {
       setState(() {
         _likedPosts = updatedLikedPosts;
         _likedPostsMap.clear();
         _likedPostsMap.addAll(updatedLikedPostsMap);
+        _likedPostsDates.clear();
+        _likedPostsDates.addAll(updatedLikedPostsDates);
         _likedPostsLoaded = true;
       });
     }
@@ -271,44 +270,36 @@ class _ProfileScreenState extends State<ProfileScreen>
     if (_currentUserId.isEmpty) return;
     
     print('🔄 [ProfileScreen] Refreshing saved posts from PostController');
-    print('📊 [ProfileScreen] savedPosts keys: ${_postController.savedPosts.keys.toList()}');
-    print('📊 [ProfileScreen] savedPosts entries: ${_postController.savedPosts.entries.toList()}');
     
-    final savedPostIds = _postController.savedPosts.entries
-        .where((entry) => entry.value == true)
-        .map((entry) => entry.key)
+    final savedEntries = _postController.savedDates.entries
+        .where((entry) => _postController.savedPosts[entry.key] == true)
+        .map((entry) => MapEntry(entry.key, entry.value))
         .toList();
     
-    print('📊 [ProfileScreen] savedPostIds (filtered true): $savedPostIds');
+    savedEntries.sort((a, b) => b.value.compareTo(a.value));
     
     final updatedSavedPosts = <Map<String, dynamic>>[];
     final updatedSavedPostsMap = <String, bool>{};
+    final updatedSavedPostsDates = <String, DateTime>{};
     
-    for (final postId in savedPostIds) {
+    for (var entry in savedEntries) {
+      final postId = entry.key;
+      final date = entry.value;
       final post = _postController.getPostFromStorage(postId);
       if (post != null) {
         updatedSavedPosts.add(post);
         updatedSavedPostsMap[postId] = true;
-      } else {
-        print('⚠️ [ProfileScreen] Post not found in storage: $postId');
+        updatedSavedPostsDates[postId] = date;
       }
     }
-    
-    updatedSavedPosts.sort((a, b) {
-      final dateA = a['createdAt'] is Timestamp 
-          ? (a['createdAt'] as Timestamp).toDate() 
-          : DateTime.now();
-      final dateB = b['createdAt'] is Timestamp 
-          ? (b['createdAt'] as Timestamp).toDate() 
-          : DateTime.now();
-      return dateB.compareTo(dateA);
-    });
     
     if (mounted) {
       setState(() {
         _savedPosts = updatedSavedPosts;
         _savedPostsMap.clear();
         _savedPostsMap.addAll(updatedSavedPostsMap);
+        _savedPostsDates.clear();
+        _savedPostsDates.addAll(updatedSavedPostsDates);
         _savedPostsLoaded = true;
       });
     }
@@ -316,28 +307,64 @@ class _ProfileScreenState extends State<ProfileScreen>
     print('✅ [ProfileScreen] Saved posts updated: ${_savedPosts.length} posts');
   }
 
-  // 🔥 ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА СОХРАНЕНИЙ ИЗ FIRESTORE
+  // ========== ЗАГРУЗКА ИЗ FIRESTORE ==========
   Future<void> _loadSavedPostsFromFirestore() async {
     if (_currentUserId.isEmpty) return;
     
-    print('🔄 [ProfileScreen] Loading saved posts from Firestore directly');
+    print('🔄 [ProfileScreen] Loading saved posts from Firestore');
     
     try {
       final savedSnapshot = await _firestore
           .collection('users')
           .doc(_currentUserId)
           .collection('savedPosts')
+          .orderBy('timestamp', descending: true)
           .get();
       
-      // Очищаем и обновляем глобальный контроллер
       _postController.savedPosts.clear();
+      _postController.savedDates.clear();
+      
+      final postIds = <String>[];
       for (final doc in savedSnapshot.docs) {
-        _postController.savedPosts[doc.id] = true;
+        final postId = doc.id;
+        final data = doc.data();
+        final timestamp = data['timestamp'] as Timestamp?;
+        if (postId != null) {
+          _postController.savedPosts[postId] = true;
+          if (timestamp != null) {
+            _postController.savedDates[postId] = timestamp.toDate();
+          } else {
+            _postController.savedDates[postId] = DateTime.now();
+          }
+          postIds.add(postId);
+        }
       }
       
-      print('✅ [ProfileScreen] Loaded ${_postController.savedPosts.length} saved posts from Firestore');
+      print('📦 [ProfileScreen] Saved post IDs: $postIds');
       
-      // Обновляем локальный список
+      final missingPostIds = <String>[];
+      for (final postId in postIds) {
+        if (_postController.getPostFromStorage(postId) == null) {
+          missingPostIds.add(postId);
+        }
+      }
+      
+      if (missingPostIds.isNotEmpty) {
+        print('📦 [ProfileScreen] Fetching ${missingPostIds.length} missing saved posts...');
+        for (final postId in missingPostIds) {
+          try {
+            final doc = await _firestore.collection('posts').doc(postId).get();
+            if (doc.exists) {
+              final data = doc.data()!;
+              data['id'] = doc.id;
+              _postController.addPostsToStorage([data]);
+            }
+          } catch (e) {
+            print('❌ Error fetching saved post $postId: $e');
+          }
+        }
+      }
+      
       _refreshSavedPostsFromController();
       
     } catch (e) {
@@ -345,30 +372,61 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // 🔥 ПРИНУДИТЕЛЬНАЯ ЗАГРУЗКА ЛАЙКНУТЫХ ИЗ FIRESTORE
   Future<void> _loadLikedPostsFromFirestore() async {
     if (_currentUserId.isEmpty) return;
     
-    print('🔄 [ProfileScreen] Loading liked posts from Firestore directly');
+    print('🔄 [ProfileScreen] Loading liked posts from Firestore');
     
     try {
       final likesSnapshot = await _firestore
           .collection('likes')
           .where('userId', isEqualTo: _currentUserId)
+          .orderBy('createdAt', descending: true)
           .get();
       
-      // Очищаем и обновляем глобальный контроллер
       _postController.likedPosts.clear();
+      _postController.likedDates.clear();
+      
+      final postIds = <String>[];
       for (final doc in likesSnapshot.docs) {
         final postId = doc.data()['postId'] as String?;
+        final timestamp = doc.data()['createdAt'] as Timestamp?;
         if (postId != null) {
           _postController.likedPosts[postId] = true;
+          if (timestamp != null) {
+            _postController.likedDates[postId] = timestamp.toDate();
+          } else {
+            _postController.likedDates[postId] = DateTime.now();
+          }
+          postIds.add(postId);
         }
       }
       
-      print('✅ [ProfileScreen] Loaded ${_postController.likedPosts.length} liked posts from Firestore');
+      print('📦 [ProfileScreen] Liked post IDs: $postIds');
       
-      // Обновляем локальный список
+      final missingPostIds = <String>[];
+      for (final postId in postIds) {
+        if (_postController.getPostFromStorage(postId) == null) {
+          missingPostIds.add(postId);
+        }
+      }
+      
+      if (missingPostIds.isNotEmpty) {
+        print('📦 [ProfileScreen] Fetching ${missingPostIds.length} missing liked posts...');
+        for (final postId in missingPostIds) {
+          try {
+            final doc = await _firestore.collection('posts').doc(postId).get();
+            if (doc.exists) {
+              final data = doc.data()!;
+              data['id'] = doc.id;
+              _postController.addPostsToStorage([data]);
+            }
+          } catch (e) {
+            print('❌ Error fetching liked post $postId: $e');
+          }
+        }
+      }
+      
       _refreshLikedPostsFromController();
       
     } catch (e) {
@@ -400,22 +458,31 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     _postController = Get.find<PostController>();
     
-    // Подписка на обновление постов (не трогаем)
     ever(_postController.userPosts, (_) {
       if (mounted) {
         setState(() {});
       }
     });
     
-    // 🔥 ПОДПИСКА НА ИЗМЕНЕНИЯ ЛАЙКОВ
     _likedPostsWorker = ever(_postController.likedPosts, (_) {
       if (mounted && _currentUserId.isNotEmpty) {
         _refreshLikedPostsFromController();
       }
     });
 
-    // 🔥 ПОДПИСКА НА ИЗМЕНЕНИЯ СОХРАНЕНИЙ
     _savedPostsWorker = ever(_postController.savedPosts, (_) {
+      if (mounted && _currentUserId.isNotEmpty) {
+        _refreshSavedPostsFromController();
+      }
+    });
+
+    _likedDatesWorker = ever(_postController.likedDates, (_) {
+      if (mounted && _currentUserId.isNotEmpty) {
+        _refreshLikedPostsFromController();
+      }
+    });
+
+    _savedDatesWorker = ever(_postController.savedDates, (_) {
       if (mounted && _currentUserId.isNotEmpty) {
         _refreshSavedPostsFromController();
       }
@@ -446,6 +513,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     _scrollController.dispose();
     _likedPostsWorker?.dispose();
     _savedPostsWorker?.dispose();
+    _likedDatesWorker?.dispose();
+    _savedDatesWorker?.dispose();
     super.dispose();
   }
 
@@ -492,10 +561,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
     
     if (!_likedPostsLoaded) {
-      await _loadLikedPosts(forceRefresh: false);
+      await _loadLikedPostsFromFirestore();
     }
     if (!_savedPostsLoaded) {
-      await _loadSavedPosts(forceRefresh: false);
+      await _loadSavedPostsFromFirestore();
     }
   }
 
@@ -598,199 +667,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<void> _loadLikedPosts({bool forceRefresh = false}) async {
-    if (_currentUserId.isEmpty) return;
-    
-    if (!forceRefresh && _likedPostsLoaded) {
-      return;
-    }
-    
-    if (mounted) {
-      setState(() => _loadingLiked = true);
-    }
-    
-    try {
-      final likesSnapshot = await _firestore
-          .collection('likes')
-          .where('userId', isEqualTo: _currentUserId)
-          .orderBy('createdAt', descending: true)
-          .get();
-      
-      if (likesSnapshot.docs.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _likedPosts = [];
-            _likedPostsMap.clear();
-            _likedPostsDates.clear();
-            _loadingLiked = false;
-            _likedPostsLoaded = true;
-          });
-        }
-        return;
-      }
-      
-      final likeDates = <String, DateTime>{};
-      for (final doc in likesSnapshot.docs) {
-        final data = doc.data();
-        final postId = data['postId'] as String?;
-        final timestamp = data['createdAt'] as Timestamp?;
-        if (postId != null && timestamp != null) {
-          likeDates[postId] = timestamp.toDate();
-        }
-      }
-      
-      final likedPosts = <Map<String, dynamic>>[];
-      final likedPostsMap = <String, bool>{};
-      
-      for (final postId in likeDates.keys) {
-        Map<String, dynamic>? post;
-        
-        final postsList = _postController.userPosts[_currentUserId] ?? [];
-        post = postsList.firstWhereSafe((p) => p['id'] == postId);
-        
-        if (post == null) {
-          post = _postController.getPostFromStorage(postId);
-        }
-        
-        if (post == null) {
-          final doc = await _firestore.collection('posts').doc(postId).get();
-          if (doc.exists) {
-            final data = doc.data()!;
-            data['id'] = doc.id;
-            post = data;
-            _postController.addPostsToStorage([post]);
-          } else {
-            continue;
-          }
-        }
-        
-        likedPosts.add(post);
-        likedPostsMap[postId] = true;
-      }
-      
-      likedPosts.sort((a, b) {
-        final dateA = likeDates[a['id']] ?? DateTime(2000);
-        final dateB = likeDates[b['id']] ?? DateTime(2000);
-        return dateB.compareTo(dateA);
-      });
-      
-      if (mounted) {
-        setState(() {
-          _likedPosts = likedPosts;
-          _likedPostsMap.clear();
-          _likedPostsMap.addAll(likedPostsMap);
-          _likedPostsDates.clear();
-          _likedPostsDates.addAll(likeDates);
-          _likedPostsLoaded = true;
-          _loadingLiked = false;
-        });
-      }
-      
-    } catch (e) {
-      print('❌ Error loading liked posts: $e');
-      if (mounted) {
-        setState(() => _loadingLiked = false);
-      }
-    }
-  }
-
-  Future<void> _loadSavedPosts({bool forceRefresh = false}) async {
-    if (_currentUserId.isEmpty) return;
-    
-    if (!forceRefresh && _savedPostsLoaded) {
-      return;
-    }
-    
-    if (mounted) {
-      setState(() => _loadingSaved = true);
-    }
-    
-    try {
-      final savedSnapshot = await _firestore
-          .collection('users')
-          .doc(_currentUserId)
-          .collection('savedPosts')
-          .orderBy('timestamp', descending: true)
-          .get();
-      
-      if (savedSnapshot.docs.isEmpty) {
-        if (mounted) {
-          setState(() {
-            _savedPosts = [];
-            _savedPostsMap.clear();
-            _savedPostsDates.clear();
-            _loadingSaved = false;
-            _savedPostsLoaded = true;
-          });
-        }
-        return;
-      }
-      
-      final saveDates = <String, DateTime>{};
-      for (final doc in savedSnapshot.docs) {
-        final data = doc.data();
-        final timestamp = data['timestamp'] as Timestamp?;
-        if (timestamp != null) {
-          saveDates[doc.id] = timestamp.toDate();
-        }
-      }
-      
-      final savedPosts = <Map<String, dynamic>>[];
-      final savedPostsMap = <String, bool>{};
-      
-      for (final postId in saveDates.keys) {
-        Map<String, dynamic>? post;
-        
-        final postsList = _postController.userPosts[_currentUserId] ?? [];
-        post = postsList.firstWhereSafe((p) => p['id'] == postId);
-        
-        if (post == null) {
-          post = _postController.getPostFromStorage(postId);
-        }
-        
-        if (post == null) {
-          final doc = await _firestore.collection('posts').doc(postId).get();
-          if (doc.exists) {
-            final data = doc.data()!;
-            data['id'] = doc.id;
-            post = data;
-            _postController.addPostsToStorage([post]);
-          } else {
-            continue;
-          }
-        }
-        
-        savedPosts.add(post);
-        savedPostsMap[postId] = true;
-      }
-      
-      savedPosts.sort((a, b) {
-        final dateA = saveDates[a['id']] ?? DateTime(2000);
-        final dateB = saveDates[b['id']] ?? DateTime(2000);
-        return dateB.compareTo(dateA);
-      });
-      
-      if (mounted) {
-        setState(() {
-          _savedPosts = savedPosts;
-          _savedPostsMap.clear();
-          _savedPostsMap.addAll(savedPostsMap);
-          _savedPostsDates.clear();
-          _savedPostsDates.addAll(saveDates);
-          _savedPostsLoaded = true;
-          _loadingSaved = false;
-        });
-      }
-      
-    } catch (e) {
-      print('❌ Error loading saved posts: $e');
-      if (mounted) {
-        setState(() => _loadingSaved = false);
-      }
-    }
-  }
-
-  // ========== ОТКРЫТИЕ ПОСТА (БЕЗ ЛИШНИХ ПАРАМЕТРОВ) ==========
+  // ========== ОТКРЫТИЕ ПОСТА ==========
 
   void _openPostDetail(String postId) {
     if (!mounted) return;
@@ -836,16 +713,19 @@ class _ProfileScreenState extends State<ProfileScreen>
           posts: posts,
           initialIndex: initialIndex,
           followingUsers: _followingUsers,
+          onLikeChanged: (postId, isLiked) {
+            if (mounted) {
+              _refreshLikedPostsFromController();
+            }
+          },
+          onSaveChanged: (postId, isSaved) {
+            if (mounted) {
+              _refreshSavedPostsFromController();
+            }
+          },
         ),
       ),
-    ).then((_) {
-      print('📱 [ProfileScreen] Returned from post detail');
-      // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СОХРАНЕНИЯ И ЛАЙКИ ПРИ ВОЗВРАТЕ
-      if (mounted) {
-        _loadSavedPostsFromFirestore();
-        _loadLikedPostsFromFirestore();
-      }
-    });
+    );
   }
 
   Widget _buildPostsShimmer() {
@@ -1118,7 +998,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             number.toString(), 
             style: const TextStyle(
               fontSize: 18, 
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w700,
               color: Colors.black
             ),
           ),
@@ -1452,12 +1332,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       await _loadUserDetails();
       await _loadFollowingUsers();
       
-      await _loadLikedPosts(forceRefresh: true);
-      await _loadSavedPosts(forceRefresh: true);
-      
-      // 🔥 ПРИНУДИТЕЛЬНАЯ ПЕРЕЗАГРУЗКА СОХРАНЕНИЙ И ЛАЙКОВ ИЗ FIRESTORE
-      await _loadSavedPostsFromFirestore();
       await _loadLikedPostsFromFirestore();
+      await _loadSavedPostsFromFirestore();
       
       print('✅ Profile refresh completed');
       
@@ -1470,6 +1346,12 @@ class _ProfileScreenState extends State<ProfileScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    
+    // 🔥 ПРОВЕРКА ГОСТЯ (ДОБАВЛЕНО)
+    final authService = Get.find<AuthService>();
+    if (!authService.isLoggedIn) {
+      return const GuestProfileScreen();
+    }
     
     if (_isOffline) {
       return _buildOfflineWidget();

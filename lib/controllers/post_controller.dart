@@ -1,5 +1,3 @@
-// lib/controllers/post_controller.dart
-
 import 'dart:async';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,6 +5,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../extensions/safe_extensions.dart';
+import '../services/recommendation_service.dart';
+import '../services/auth_service.dart'; // 👈 ДОБАВИТЬ
 
 class PostController extends GetxController {
   static PostController get to => Get.find();
@@ -23,6 +23,10 @@ class PostController extends GetxController {
   // Состояния лайков/сохранений
   final RxMap<String, bool> likedPosts = <String, bool>{}.obs;
   final RxMap<String, bool> savedPosts = <String, bool>{}.obs;
+  
+  // 🔥 ДАТЫ ЛАЙКОВ И СОХРАНЕНИЙ ДЛЯ СОРТИРОВКИ
+  final RxMap<String, DateTime> likedDates = <String, DateTime>{}.obs;
+  final RxMap<String, DateTime> savedDates = <String, DateTime>{}.obs;
 
   // 🔥 КЭШИ
   final Map<String, Map<String, dynamic>> _authorCache = {};
@@ -97,8 +101,14 @@ class PostController extends GetxController {
 
       for (var doc in likesSnapshot.docs) {
         final postId = doc.data()['postId'] as String?;
+        final createdAt = doc.data()['createdAt'] as Timestamp?;
         if (postId != null) {
           likedPosts[postId] = true;
+          if (createdAt != null) {
+            likedDates[postId] = createdAt.toDate();
+          } else {
+            likedDates[postId] = DateTime.now();
+          }
         }
       }
 
@@ -106,13 +116,26 @@ class PostController extends GetxController {
           .collection('users')
           .doc(userId)
           .collection('savedPosts')
+          .orderBy('timestamp', descending: true)
           .get();
 
       for (var doc in savesSnapshot.docs) {
-        savedPosts[doc.id] = true;
+        final postId = doc.id;
+        final data = doc.data();
+        final timestamp = data['timestamp'] as Timestamp?;
+        if (postId != null) {
+          savedPosts[postId] = true;
+          if (timestamp != null) {
+            savedDates[postId] = timestamp.toDate();
+          } else {
+            savedDates[postId] = DateTime.now();
+          }
+        }
       }
       
       print('✅ Loaded ${likedPosts.length} liked posts and ${savedPosts.length} saved posts');
+      print('✅ Liked dates: ${likedDates.length}');
+      print('✅ Saved dates: ${savedDates.length}');
     } catch (e) {
       print('❌ Error loading user interactions: $e');
     }
@@ -433,6 +456,25 @@ class PostController extends GetxController {
       final String firstImageUrl = imageUrls.isNotEmpty ? imageUrls.first : '';
       final String firstUrl = imageUrls.isNotEmpty ? imageUrls.first : '';
 
+      List<Map<String, dynamic>> tags = [];
+      final dynamic tagsRaw = data['tags'];
+      if (tagsRaw is List) {
+        tags = tagsRaw.map((e) {
+          if (e is Map<String, dynamic>) {
+            return e;
+          }
+          return <String, dynamic>{};
+        }).where((e) => e.isNotEmpty).toList();
+      }
+      
+      print('🔥 [POST PROCESS] Tags for postId $postId: ${tags.length} tags found');
+
+      // 🔥 ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ДЛЯ РЕКОМЕНДАЦИЙ
+      final domainCategory = data['domainCategory']?.toString() ?? 'general';
+      final linkDomain = data['linkDomain']?.toString() ?? '';
+      final clicks = (data['clicks'] ?? 0) as int;
+      final hotScore = (data['hotScore'] ?? 0.0) as double;
+
       final result = {
         'id': postId,
         'userId': authorId,
@@ -450,11 +492,19 @@ class PostController extends GetxController {
         'saves': (data['saves'] ?? 0) as int,
         'createdAt': data['createdAt'],
         'hashtags': data['hashtags'] is List ? List<String>.from(data['hashtags']) : [],
+        'tags': tags,
         'isInFeed': false,
+        // 🔥 НОВЫЕ ПОЛЯ
+        'domainCategory': domainCategory,
+        'linkDomain': linkDomain,
+        'clicks': clicks,
+        'hotScore': hotScore,
       };
 
       _loadedPostIds.add(postId);
       print('✅ [POST PROCESS] Post processed and cached: $postId');
+      print('🔥 [POST PROCESS] Tags saved to cache: ${tags.length} tags');
+      print('🏷️ [POST PROCESS] Category: $domainCategory');
       return result;
 
     } catch (e) {
@@ -469,6 +519,10 @@ class PostController extends GetxController {
     final existingPost = posts[postId];
     if (existingPost != null && existingPost['fitModes'] != null) {
       updatedPost['fitModes'] = existingPost['fitModes'];
+    }
+    
+    if (existingPost != null && existingPost['tags'] != null) {
+      updatedPost['tags'] = existingPost['tags'];
     }
     
     final postCopy = Map<String, dynamic>.from(updatedPost);
@@ -592,6 +646,10 @@ class PostController extends GetxController {
         postCopy['fitModes'] = existingPost['fitModes'];
       }
       
+      if (existingPost != null && existingPost['tags'] != null && postCopy['tags'] == null) {
+        postCopy['tags'] = existingPost['tags'];
+      }
+      
       posts[postId] = postCopy;
       
       _syncPostToOriginalLists(postId, postCopy);
@@ -612,6 +670,9 @@ class PostController extends GetxController {
     final existingPost = posts[postId];
     if (existingPost != null && existingPost['fitModes'] != null && postCopy['fitModes'] == null) {
       postCopy['fitModes'] = existingPost['fitModes'];
+    }
+    if (existingPost != null && existingPost['tags'] != null && postCopy['tags'] == null) {
+      postCopy['tags'] = existingPost['tags'];
     }
     
     final feedIndex = feedPosts.indexWhere((p) => p['id'] == postId);
@@ -649,8 +710,27 @@ class PostController extends GetxController {
     return posts[postId];
   }
 
-  // ========== 🏠 ЗАГРУЗКА FEED ==========
+  // ========== 🏠 ЗАГРУЗКА FEED С РЕКОМЕНДАЦИЯМИ + ГОСТЕВОЙ РЕЖИМ ==========
 
+  Future<List<String>> _getFollowingUsers() async {
+    final currentUserId = _auth.currentUser?.uid;
+    if (currentUserId == null) return [];
+
+    try {
+      final snapshot = await _firestore
+          .collection('following')
+          .doc(currentUserId)
+          .collection('userFollowing')
+          .get();
+
+      return snapshot.docs.map((doc) => doc.id).toList();
+    } catch (e) {
+      print('❌ Error getting following: $e');
+      return [];
+    }
+  }
+
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД ЗАГРУЗКИ FEED С ГОСТЕВЫМ РЕЖИМОМ
   Future<void> loadFeedPosts({bool refresh = false}) async {
     if (_feedRequestActive) return;
     if (!refresh && !_hasMoreFeed) return;
@@ -661,43 +741,92 @@ class PostController extends GetxController {
     isLoadingFeed.value = true;
 
     try {
-      Query query = _firestore
-          .collection('posts')
-          .orderBy('createdAt', descending: true)
-          .limit(_pageSize);
+      final currentUser = _auth.currentUser;
 
-      if (!refresh && _lastFeedDoc != null) {
-        query = query.startAfterDocument(_lastFeedDoc!);
+      // 🔥 ГОСТЕВОЙ РЕЖИМ
+      if (currentUser == null) {
+        print('👤 [FEED] Guest mode - loading fresh posts');
+        
+        Query query = _firestore
+            .collection('posts')
+            .orderBy('createdAt', descending: true)
+            .limit(_pageSize);
+
+        if (!refresh && _lastFeedDoc != null) {
+          query = query.startAfterDocument(_lastFeedDoc!);
+        }
+
+        final snapshot = await query.get();
+
+        final List<Map<String, dynamic>> posts = [];
+        for (final doc in snapshot.docs) {
+          final processed = await _processPost(doc);
+          if (processed != null) posts.add(processed);
+        }
+
+        addPostsToStorage(posts, markAsInFeed: true);
+
+        if (refresh) {
+          feedPosts.clear();
+          _lastFeedDoc = null;
+          _hasMoreFeed = true;
+        }
+
+        final existingIds = feedPosts.map((p) => p['id']).toSet();
+        final newPosts = posts.where((p) => !existingIds.contains(p['id'])).toList();
+
+        if (refresh) {
+          feedPosts.assignAll(posts);
+        } else {
+          feedPosts.addAll(newPosts);
+        }
+
+        if (snapshot.docs.isNotEmpty) {
+          _lastFeedDoc = snapshot.docs.last;
+          _hasMoreFeed = snapshot.docs.length == _pageSize;
+        } else {
+          _hasMoreFeed = false;
+        }
+
+        print('✅ [FEED] Guest feed loaded: ${feedPosts.length} posts');
+        print('✅ [FEED] Has more: $_hasMoreFeed');
+        return;
       }
 
-      final snapshot = await query.get();
+      // 🔥 АВТОРИЗОВАННЫЙ ПОЛЬЗОВАТЕЛЬ
+      final followingUsers = await _getFollowingUsers();
+      final recommendationService = RecommendationService();
+      final recommendedPosts = await recommendationService.getPersonalizedFeed(
+        userId: currentUser.uid,
+        followingUsers: followingUsers,
+        lastDocument: refresh ? null : _lastFeedDoc,
+        refresh: refresh,
+      );
+
+      addPostsToStorage(recommendedPosts, markAsInFeed: true);
 
       if (refresh) {
-        for (var post in posts.values) post['isInFeed'] = false;
         feedPosts.clear();
         _lastFeedDoc = null;
         _hasMoreFeed = true;
       }
 
-      final newPosts = <Map<String, dynamic>>[];
-      for (var doc in snapshot.docs) {
-        final processedPost = await _processPost(doc);
-        if (processedPost != null) newPosts.add(processedPost);
-      }
+      final existingIds = feedPosts.map((p) => p['id']).toSet();
+      final newPosts = recommendedPosts.where((p) => !existingIds.contains(p['id'])).toList();
 
-      addPostsToStorage(newPosts, markAsInFeed: true);
-
-      if (snapshot.docs.isNotEmpty) {
-        _lastFeedDoc = snapshot.docs.last;
-        _hasMoreFeed = snapshot.docs.length == _pageSize;
+      if (refresh) {
+        feedPosts.assignAll(recommendedPosts);
       } else {
-        _hasMoreFeed = false;
+        feedPosts.addAll(newPosts);
       }
 
-      _subscribeToPostUpdates(newPosts.map((p) => p['id'] as String).toList());
+      _hasMoreFeed = recommendedPosts.length == RecommendationService.FETCH_LIMIT;
+
+      print('✅ [FEED] Feed loaded: ${feedPosts.length} posts');
+      print('✅ [FEED] Has more: $_hasMoreFeed');
 
     } catch (e) {
-      print('❌ Error loading feed: $e');
+      print('❌ [FEED] Error loading feed: $e');
     } finally {
       _feedRequestActive = false;
       isLoadingFeed.value = false;
@@ -800,7 +929,6 @@ class PostController extends GetxController {
           .orderBy('createdAt', descending: true)
           .limit(pageSize);
       
-      // Если есть последний документ - пагинация
       if (_lastUserDoc[userId] != null) {
         query = query.startAfterDocument(_lastUserDoc[userId]!);
       }
@@ -825,7 +953,6 @@ class PostController extends GetxController {
         _lastUserDoc[userId] = snapshot.docs.last;
         _hasMoreUserPosts[userId] = snapshot.docs.length == pageSize;
         
-        // Обновляем userPosts
         final currentList = userPosts[userId] ?? [];
         final existingIds = currentList.map((p) => p['id']).toSet();
         final postsToAdd = newPosts.where((p) => !existingIds.contains(p['id'])).toList();
@@ -893,7 +1020,19 @@ class PostController extends GetxController {
     updatedPost['likes'] = newLikedState ? oldLikesCount + 1 : (oldLikesCount - 1).clamp(0, 999999);
     
     _updatePostInAllLists(postId, updatedPost);
-    likedPosts[postId] = newLikedState;
+    
+    // 👇 ОБНОВЛЯЕМ ДАТУ ЛАЙКА
+    if (newLikedState) {
+      likedPosts[postId] = true;
+      likedDates[postId] = DateTime.now();
+    } else {
+      likedPosts[postId] = false;
+      likedDates.remove(postId);
+    }
+
+    // 🔥 ОБНОВЛЯЕМ ИНТЕРЕСЫ ПОЛЬЗОВАТЕЛЯ
+    final category = currentPost['domainCategory']?.toString() ?? 'general';
+    await RecommendationService().updateUserInterest(userId, category);
 
     try {
       final likeId = '${userId}_$postId';
@@ -924,6 +1063,11 @@ class PostController extends GetxController {
       print('❌ Error toggling like: $e');
       _updatePostInAllLists(postId, oldPost);
       likedPosts[postId] = currentlyLiked;
+      if (currentlyLiked) {
+        likedDates[postId] = DateTime.now();
+      } else {
+        likedDates.remove(postId);
+      }
     }
   }
 
@@ -946,7 +1090,15 @@ class PostController extends GetxController {
     updatedPost['saves'] = newSavedState ? oldSavesCount + 1 : (oldSavesCount - 1).clamp(0, 999999);
     
     _updatePostInAllLists(postId, updatedPost);
-    savedPosts[postId] = newSavedState;
+    
+    // 👇 ОБНОВЛЯЕМ ДАТУ СОХРАНЕНИЯ
+    if (newSavedState) {
+      savedPosts[postId] = true;
+      savedDates[postId] = DateTime.now();
+    } else {
+      savedPosts[postId] = false;
+      savedDates.remove(postId);
+    }
 
     try {
       final savedRef = _firestore
@@ -973,6 +1125,11 @@ class PostController extends GetxController {
       print('❌ Error toggling save: $e');
       _updatePostInAllLists(postId, oldPost);
       savedPosts[postId] = currentlySaved;
+      if (currentlySaved) {
+        savedDates[postId] = DateTime.now();
+      } else {
+        savedDates.remove(postId);
+      }
     }
   }
 

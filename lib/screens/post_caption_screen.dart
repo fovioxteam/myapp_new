@@ -1,5 +1,3 @@
-// lib/screens/post_caption_screen.dart
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,15 +11,20 @@ import 'package:path/path.dart' as path;
 import '../controllers/profile_controller.dart';
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
+import '../models/post_tag.dart';
+import '../services/recommendation_service.dart';
+import '../utils/image_compressor.dart';
 
 class PostCaptionScreen extends StatefulWidget {
   final List<File> selectedFiles;
   final List<String>? fitModes;
+  final List<PostTag> tags;
 
   const PostCaptionScreen({
     super.key,
     required this.selectedFiles,
     this.fitModes,
+    this.tags = const [],
   });
 
   @override
@@ -56,6 +59,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     print('🔥 [CAPTION] INITIALIZED');
     print('🔥 [CAPTION] Total images: ${widget.selectedFiles.length}');
     print('🔥 [CAPTION] FitModes: ${widget.fitModes}');
+    print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
+    for (var tag in widget.tags) {
+      print('   - ${tag.url} (${tag.platform}) at (${tag.x}, ${tag.y})');
+    }
   }
 
   @override
@@ -66,7 +73,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   void _updateRemainingChars() {
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
   int get _currentLength => _captionController.text.length;
@@ -84,7 +91,49 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     return caption;
   }
 
+  void _showErrorDialog(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text(
+          'Error',
+          style: TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              if (mounted) Navigator.pop(context);
+            },
+            child: const Text(
+              'OK',
+              style: TextStyle(color: Colors.blue),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   Future<void> _uploadPost() async {
+    if (!mounted) return;
     if (_isUploading) return;
     
     final user = _auth.currentUser;
@@ -108,12 +157,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
     try {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      if (!mounted) return;
+      
       final userData = userDoc.data() ?? {};
       
       final String userName = userData['username'] ?? user.displayName ?? 'User';
       final String userAvatar = userData['avatarUrl'] ?? user.photoURL ?? '';
 
-      // 🔥 СОХРАНЯЕМ ОРИГИНАЛЬНЫЕ fitModes (НЕ ОБРЕЗАЕМ)
       final List<String> fitModesToSave = widget.fitModes ?? 
           List.filled(widget.selectedFiles.length, 'contain');
 
@@ -122,13 +172,33 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       print('🔥 [CAPTION] Username: $userName');
       print('🔥 [CAPTION] Total images: ${widget.selectedFiles.length}');
       print('🔥 [CAPTION] fitModesToSave: $fitModesToSave');
+      print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
       print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       List<String> imageUrls = [];
       List<int> failedUploads = [];
       
+      // ============================================================
+      // 🔥 ЦИКЛ ЗАГРУЗКИ — С НОВЫМИ ПАРАМЕТРАМИ СЖАТИЯ
+      // ============================================================
       for (int i = 0; i < widget.selectedFiles.length; i++) {
-        final file = widget.selectedFiles[i];
+        if (!mounted) return;
+        
+        final originalFile = widget.selectedFiles[i];
+        
+        final beforeSize = await ImageCompressor.getFileSizeString(originalFile);
+        print('📸 [UPLOAD] Image $i: Before compression = $beforeSize');
+        
+        // 🔥 СЖИМАЕМ С НОВЫМИ ПАРАМЕТРАМИ (900px, качество 75)
+        final file = await ImageCompressor.compressImage(
+          originalFile,
+          maxWidth: 900,
+          maxHeight: 1600,
+          quality: 75,
+        );
+        
+        final afterSize = await ImageCompressor.getFileSizeString(file);
+        print('📸 [UPLOAD] Image $i: After compression = $afterSize');
         
         setState(() {
           _uploadStatus = 'Uploading image ${i + 1}/${widget.selectedFiles.length}...';
@@ -141,6 +211,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           final uploadTask = storageRef.putFile(file);
           
           uploadTask.snapshotEvents.listen((snapshot) {
+            if (!mounted) return;
             final progress = snapshot.bytesTransferred / snapshot.totalBytes;
             setState(() {
               _uploadProgress = (i + progress) / widget.selectedFiles.length;
@@ -148,6 +219,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           });
           
           await uploadTask;
+          
+          if (!mounted) return;
           
           String downloadUrl;
           try {
@@ -179,6 +252,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         }
       }
       
+      if (!mounted) return;
+      
       if (imageUrls.isEmpty) {
         print('❌ ALL IMAGES FAILED TO UPLOAD');
         
@@ -198,51 +273,24 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       
       if (failedUploads.isNotEmpty) {
         print('⚠️ Some images failed to upload: $failedUploads');
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('⚠️ ${failedUploads.length} image(s) failed to upload'),
-            backgroundColor: Colors.orange,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        
-        // Удаляем fitModes для failed изображений
-        final List<String> filteredFitModes = [];
-        for (int i = 0; i < widget.selectedFiles.length; i++) {
-          if (!failedUploads.contains(i)) {
-            filteredFitModes.add(fitModesToSave[i]);
-          }
-        }
-        fitModesToSave.clear();
-        fitModesToSave.addAll(filteredFitModes);
+        _showSnackBar('⚠️ ${failedUploads.length} image(s) failed to upload', Colors.orange);
       }
-
-      if (imageUrls.isEmpty) {
-        _showErrorDialog('No images were uploaded successfully');
-        setState(() {
-          _isUploading = false;
-        });
-        return;
-      }
-      
-      print('✅ Successfully uploaded ${imageUrls.length} images');
-      print('   - URLs: $imageUrls');
-      print('   - fitModesToSave: $fitModesToSave');
 
       setState(() {
         _uploadStatus = 'Saving post...';
         _uploadProgress = 0.95;
       });
 
-      // 🔥 СОХРАНЯЕМ fitModes КАК ЕСТЬ (разные для каждого фото)
-      final postData = {
+      final tagsJson = widget.tags.map((e) => e.toJson()).toList();
+      print('🔥 [CAPTION] Saving tags: $tagsJson');
+
+      Map<String, dynamic> postData = {
         'userId': user.uid,
         'userName': userName,
         'userAvatar': userAvatar,
         'imageUrls': imageUrls,
-        'fitModes': fitModesToSave,  // 🔥 ОРИГИНАЛЬНЫЕ
-        'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',  // для совместимости
+        'fitModes': fitModesToSave,
+        'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
         'caption': fullCaption,
         'hashtags': _selectedHashtags,
         'likes': 0,
@@ -255,11 +303,31 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         'avgWatchTime': 0.0,
         'newFollowers': 0,
         'testPool': [],
+        'tags': tagsJson,
+        'clicks': 0,
+        'hotScore': 0.0,
       };
 
+      String? link;
+      if (widget.tags.isNotEmpty) {
+        link = widget.tags.first.url;
+      }
+      
+      if (link != null && link.isNotEmpty) {
+        final domain = RecommendationService.extractDomain(link);
+        if (domain.isNotEmpty) {
+          final category = RecommendationService.getCategoryForDomain(domain);
+          postData['domainCategory'] = category;
+          postData['linkDomain'] = domain;
+          print('🏷️ [CAPTION] Post categorized: $domain -> $category');
+        } else {
+          postData['domainCategory'] = 'general';
+        }
+      } else {
+        postData['domainCategory'] = 'general';
+      }
+
       print('📦 Saving post to Firestore...');
-      print('   - imageUrls count: ${imageUrls.length}');
-      print('   - fitModes: $fitModesToSave');
       
       if (imageUrls.isEmpty) {
         throw Exception('Cannot save post: no image URLs');
@@ -270,29 +338,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       }
 
       final docRef = await _firestore.collection('posts').add(postData);
+      
+      if (!mounted) return;
+      
       await docRef.update({'id': docRef.id});
       
       print('✅ Post created with ID: ${docRef.id}');
-      print('✅ Saved fitModes: ${postData['fitModes']}');
       
-      final verifyDoc = await _firestore.collection('posts').doc(docRef.id).get();
-      final verifyData = verifyDoc.data();
-      
-      if (verifyData == null) {
-        throw Exception('Failed to verify post was saved');
-      }
-      
-      final savedImageUrls = verifyData['imageUrls'] as List?;
-      if (savedImageUrls == null || savedImageUrls.isEmpty) {
-        print('❌ CRITICAL: Post saved without imageUrls!');
-        await _firestore.collection('posts').doc(docRef.id).delete();
-        throw Exception('Post was saved without images. Please try again.');
-      }
-      
-      print('✅ Verified: post has ${savedImageUrls.length} image URLs');
-      print('✅ Verified fitModes in Firestore: ${verifyData['fitModes']}');
-      print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
       await _firestore
           .collection('users')
           .doc(user.uid)
@@ -312,6 +364,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       };
       _postController.addPostsToStorage([newPost], markAsInFeed: true);
 
+      if (!mounted) return;
+      
       setState(() {
         _uploadStatus = 'Success!';
         _uploadProgress = 1.0;
@@ -319,30 +373,36 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
       await Future.delayed(const Duration(milliseconds: 500));
 
-      if (mounted) {
-        // 🔥 НЕ ВЫЗЫВАЕМ refreshUserPosts - просто показываем успех
-        Navigator.popUntil(context, (route) {
-          return route.settings.name == '/feed' || route.isFirst;
-        });
-        
-        Get.find<ProfileController>().update();
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
+      if (!mounted) return;
+      
+      try {
+        if (mounted && context.mounted) {
+          Navigator.popUntil(context, (route) {
+            return route.settings.name == '/feed' || route.isFirst;
+          });
+          
+          if (mounted) {
+            Get.find<ProfileController>().update();
+          }
+          
+          if (mounted) {
+            _showSnackBar(
               failedUploads.isEmpty 
                   ? 'Post shared successfully!'
                   : 'Post shared (${failedUploads.length} image(s) failed)',
-            ),
-            backgroundColor: failedUploads.isEmpty ? Colors.green : Colors.orange,
-            behavior: SnackBarBehavior.floating,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+              failedUploads.isEmpty ? Colors.green : Colors.orange,
+            );
+          }
+        } else {
+          print('⚠️ [CAPTION] Widget not mounted, skipping navigation');
+        }
+      } catch (e) {
+        print('⚠️ [CAPTION] Navigation error (ignored): $e');
       }
 
     } catch (e) {
       print('❌ Error uploading post: $e');
+      if (!mounted) return;
       _showErrorDialog('Failed to upload post: $e');
     } finally {
       if (mounted) {
@@ -353,32 +413,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
   }
 
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.grey[900],
-        title: const Text(
-          'Error',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white70),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text(
-              'OK',
-              style: TextStyle(color: Colors.blue),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -387,7 +421,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         backgroundColor: Colors.black,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            if (mounted) Navigator.pop(context);
+          },
           icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
         ),
         title: const Text(
@@ -527,6 +563,34 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
                       ),
+
+                    if (widget.tags.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[900],
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.link, color: Colors.grey, size: 14),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${widget.tags.length} tags added',
+                                  style: const TextStyle(
+                                    color: Colors.grey,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     
                     const SizedBox(height: 24),
 
@@ -617,9 +681,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                                   const SizedBox(width: 4),
                                   GestureDetector(
                                     onTap: () {
-                                      setState(() {
-                                        _selectedHashtags.remove(tag);
-                                      });
+                                      if (mounted) {
+                                        setState(() {
+                                          _selectedHashtags.remove(tag);
+                                        });
+                                      }
                                     },
                                     child: const Icon(
                                       Icons.close,
@@ -644,9 +710,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                         
                         return GestureDetector(
                           onTap: () {
-                            setState(() {
-                              _selectedHashtags.add(tag);
-                            });
+                            if (mounted) {
+                              setState(() {
+                                _selectedHashtags.add(tag);
+                              });
+                            }
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(
