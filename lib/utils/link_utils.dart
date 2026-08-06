@@ -1,7 +1,9 @@
+// lib/utils/link_utils.dart
+
 // ============================================================
 // link_utils.dart
 // ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ ВСЕХ ДОМЕНОВ
-// ВКЛЮЧАЯ НОВЫЕ НИШИ: ЕДА, ФИТНЕС, ДЕТИ, ЗООТОВАРЫ, УКРАШЕНИЯ, ТЕХНИКА
+// ВКЛЮЧАЯ НОВЫЕ НИШИ: МОДА, КОСМЕТИКА, УКРАШЕНИЯ, ЖЕНСКИЕ СЕРВИСЫ
 // ============================================================
 
 class LinkUtils {
@@ -21,6 +23,10 @@ class LinkUtils {
     'vimeo.com',
     'twitch.tv',
     'bilibili.com',
+    'dailymotion.com',
+    'likee.com',
+    'kwai.com',
+    'mojo.com',
 
     // ===== СОЦСЕТИ =====
     'instagram.com',
@@ -40,6 +46,21 @@ class LinkUtils {
     'wechat.com',
     'line.me',
     'snapchat.com',
+    'threads.net',
+    'bluesky.social',
+    'mastodon.social',
+    'clubhouse.com',
+    'parler.com',
+    'gettr.com',
+    'weibo.com',
+    'weibo.cn',
+    'renren.com',
+    'qzone.qq.com',
+    'ok.ru',
+    'dzen.ru',
+    'vc.ru',
+    'habr.com',
+    'pikabu.ru',
 
     // ===== МАГАЗИНЫ (ГЛОБАЛЬНЫЕ) =====
     'amazon.com',
@@ -52,6 +73,22 @@ class LinkUtils {
     'walmart.com',
     'target.com',
     'wayfair.com',
+    'taobao.com',
+    'tmall.com',
+    'jd.com',
+    'pinduoduo.com',
+    'meituan.com',
+    'dianping.com',
+    'shein.com',
+    'romwe.com',
+    'cider.com',
+    'myntra.com',
+    'nykaa.com',
+    'ajio.com',
+    'snapdeal.com',
+    'souq.com',
+    'noon.com',
+    'namshi.com',
 
     // ===== МАГАЗИНЫ (СНГ) =====
     'ozon.ru',
@@ -61,12 +98,21 @@ class LinkUtils {
     '21vek.by',
     'lamoda.ru',
     'kaspi.kz',
-    'detmir.ru',              // Детские товары
-    'labirint.ru',            // Детские книги
-    'mvideo.ru',              // Техника
-    'eldorado.ru',            // Техника
-    'citilink.ru',            // Техника
-    'dns-shop.ru',            // Техника
+    'detmir.ru',
+    'labirint.ru',
+    'mvideo.ru',
+    'eldorado.ru',
+    'citilink.ru',
+    'dns-shop.ru',
+    'megamarket.ru',
+    'sbermarket.ru',
+    'market.yandex.ru',
+    'goods.ru',
+    'perekrestok.ru',
+    'utkonos.ru',
+    'samokat.ru',
+    'kurer.ru',
+    'lenta.com',
 
     // ===== МАГАЗИНЫ (АЗИЯ) =====
     'shopee.com',
@@ -139,15 +185,75 @@ class LinkUtils {
     'gap.com',
     'oldnavy.com',
     'ae.com',
+    'massimodutti.com',
+    'oysho.com',
+    'reiss.com',
+    'karenmillen.com',
+    'hobbs.com',
+    'coastfashion.com',
+    'whistles.com',
+    'phase-eight.com',
+    'lkbennett.com',
+    'tedbaker.com',
+    'kurtgeiger.com',
+    'sandro-paris.com',
+    'maje.com',
+    'claudiepierlot.com',
+    'ba&sh.com',
+    'zadig-et-voltaire.com',
+    'moncler.com',
+
+    // Джинсовая одежда
+    'levi.com',
+    'wrangler.com',
+    'lee.com',
+    'diesel.com',
+    'g-star.com',
+    '7forallmankind.com',
+    'true-religion.com',
+    'joesjeans.com',
+    'paige.com',
+    'frame-la.com',
+    'motherdenim.com',
+    'agolde.com',
+    'citizensofhumanity.com',
+    'madewell.com',
+
+    // Белье
+    'victoriassecret.com',
+    'agentprovocateur.com',
+    'laperla.com',
+    'chantelle.com',
+    'simoneperele.com',
+    'prima-donna.eu',
+    'triumph.com',
+    'wacaolingerie.com',
+    'caresse.fr',
 
     // Премиум
     'tommy.com',
     'calvinklein.com',
     'lacoste.com',
     'ralphlauren.com',
-
-    // Джинсовая одежда
-    'levi.com',  // 👈 ДОБАВЛЕНО
+    'chanel.com',
+    'dior.com',
+    'gucci.com',
+    'prada.com',
+    'versace.com',
+    'armani.com',
+    'burberry.com',
+    'fendi.com',
+    'loewe.com',
+    'bottegaveneta.com',
+    'balenciaga.com',
+    'saintlaurent.com',
+    'givenchy.com',
+    'valentino.com',
+    'miumiu.com',
+    'lanvin.com',
+    'celine.com',
+    'hermes.com',
+    'louisvuitton.com',
 
     // Обувь
     'converse.com',
@@ -156,6 +262,29 @@ class LinkUtils {
     'drmartens.com',
     'skechers.com',
     'crocs.com',
+    'christianlouboutin.com',
+    'manoloblahnik.com',
+    'jimmychoo.com',
+    'gianvitorossi.com',
+    'aquazzura.com',
+    'roger-vivier.com',
+    'sergio-rossi.com',
+    'renzocaovilla.com',
+    'giuseppezanotti.com',
+    'prives.com',
+
+    // Сумки и аксессуары
+    'mulberry.com',
+    'strathberry.com',
+    'polene-paris.com',
+    'mansurgavriel.com',
+    'demellier.com',
+    'staud.co',
+    'byfar.com',
+    'jwpei.com',
+    'auper.com',
+    'cuyana.com',
+    'everlane.com',
 
     // ===== ДОМ И ДЕКОР =====
     'ikea.com',
@@ -165,14 +294,18 @@ class LinkUtils {
     'anthropologie.com',
     'urbanoutfitters.com',
     'zarahome.com',
-    'leroymerlin.ru',          // Стройматериалы
-    'obi.ru',                  // Стройматериалы
-    'petrovich.ru',            // Стройматериалы
-    'vseinstrumenti.ru',       // Инструменты
-    '220-volt.ru',             // Инструменты
-    'tvoi-dom.ru',             // Стройматериалы
+    'leroymerlin.ru',
+    'obi.ru',
+    'petrovich.ru',
+    'vseinstrumenti.ru',
+    '220-volt.ru',
+    'tvoi-dom.ru',
+    'stroyka.by',
+    'krysha.by',
+    'realt.by',
+    'metrika.by',
 
-    // ===== КОСМЕТИКА =====
+    // ===== КОСМЕТИКА И ПАРФЮМ =====
     'sephora.com',
     'ulta.com',
     'nyxcosmetics.com',
@@ -182,6 +315,35 @@ class LinkUtils {
     'kiehls.com',
     'glossier.com',
     'fentybeauty.com',
+    'esteelauder.com',
+    'clinique.com',
+    'lancome.com',
+    'lamer.com',
+    'bobbibrown.com',
+    'shuuemura.com',
+    'makeupforever.com',
+    'urban-decay.com',
+    'toofaced.com',
+    'tartecosmetics.com',
+    'nars.com',
+    'benefitcosmetics.com',
+    'smashbox.com',
+    'itcosmetics.com',
+    'innisfree.com',
+    'etudehouse.com',
+    'cosrx.com',
+    'klairs.com',
+    'purito.com',
+    'sokoglam.com',
+    'yesstyle.com',
+    'stylekorean.com',
+    'oliveyoung.com',
+    'letual.ru',
+    'rivgosh.ru',
+    'goldapple.ru',
+    'domkosmetiki.ru',
+    'cosmetique.ru',
+    'rosebeauty.ru',
 
     // ===== УКРАШЕНИЯ =====
     'pandora.net',
@@ -191,6 +353,25 @@ class LinkUtils {
     'sunlight.net',
     '585zolotoy.ru',
     'yashma.ru',
+    'chopard.com',
+    'bulgari.com',
+    'van-cleef-arpels.com',
+    'piaget.com',
+    'jaeger-lecoultre.com',
+    'omega.com',
+    'rolex.com',
+    'tagheuer.com',
+    'longines.com',
+    'breitling.com',
+    'seikowatches.com',
+    'citizenwatch.com',
+    'fossil.com',
+    'danielwellington.com',
+    'adamas.ru',
+    'sokolov.ru',
+    'brilliant.ru',
+    'alrosa.ru',
+    'korloff.ru',
 
     // ===== СТРИМИНГ =====
     'netflix.com',
@@ -224,6 +405,23 @@ class LinkUtils {
     'xbox.com',
     'nintendo.com',
     'battle.net',
+    'ubisoft.com',
+    'ea.com',
+    'rockstargames.com',
+    'blizzard.com',
+    'riotgames.com',
+    'valvesoftware.com',
+    'cdprojektred.com',
+    'bandainamco.com',
+    'sega.com',
+    'capcom.com',
+    'square-enix.com',
+    'konami.com',
+    'eslgaming.com',
+    'dreamhack.com',
+    'faceit.com',
+    'gosugamers.com',
+    'cybersport.ru',
 
     // ===== КНИГИ / ОБРАЗОВАНИЕ =====
     'books.google.com',
@@ -236,11 +434,37 @@ class LinkUtils {
     'skillshare.com',
     'khanacademy.org',
     'wikipedia.org',
+    'sciencedirect.com',
+    'jstor.org',
+    'academia.edu',
+    'researchgate.net',
+    'ieee.org',
+    'springer.com',
+    'elsevier.com',
+    'wiley.com',
+    'domashka.ru',
+    'znanija.com',
+    'multiurok.ru',
+    'infourok.ru',
+    'proshkolu.ru',
+    'logiclike.com',
+    'brainpop.com',
+    'abcmouse.com',
+    'starfall.com',
+    'pbskids.org',
 
     // ===== ФОТО =====
     'unsplash.com',
     'pexels.com',
     'shutterstock.com',
+    '500px.com',
+    'flickr.com',
+    'vsco.co',
+    'smugmug.com',
+    'photobucket.com',
+    'imgur.com',
+    'giphy.com',
+    'tenor.com',
 
     // ===== ДРУГОЕ =====
     'notion.so',
@@ -252,7 +476,6 @@ class LinkUtils {
     // ===== ПОИСКОВИКИ И КАРТЫ =====
     'yandex.com',
     'yandex.ru',
-    'yandex.by',
     'yandex.kz',
     '2gis.ru',
     '2gis.kz',
@@ -302,8 +525,15 @@ class LinkUtils {
     'couchsurfing.com',
     'aviasales.ru',
     'tutu.ru',
-    'rzd.ru',
     'blablacar.ru',
+    'trivago.com',
+    'one-two-trip.ru',
+    'travelata.ru',
+    'poezd.ru',
+    'busfor.ru',
+    'flixbus.com',
+    'omio.com',
+    'rome2rio.com',
 
     // ===== ЗДОРОВЬЕ И АПТЕКИ =====
     'webmd.com',
@@ -315,6 +545,11 @@ class LinkUtils {
     'docdoc.ru',
     'onlinemedicine.ru',
     'medicalnewstoday.com',
+    'yandex.health',
+    'medsi.ru',
+    'mosgorzdrav.ru',
+    'doctor.rf',
+    'sberhealth.ru',
 
     // ===== ФИТНЕС =====
     'fitstars.ru',
@@ -327,6 +562,15 @@ class LinkUtils {
     'garmin.com',
     'polar.com',
     'suunto.com',
+    'strava.com',
+    'myfitnesspal.com',
+    'fatsecret.ru',
+    'healthline.com',
+    'bodybuilding.com',
+    'muscleandfitness.com',
+    'citysport.ru',
+    'goldsgym.com',
+    'fitness24.ru',
 
     // ===== ДЕТСКИЕ ТОВАРЫ =====
     'pocemu4ek.ru',
@@ -334,6 +578,19 @@ class LinkUtils {
     'mothercare.com',
     'hamleys.com',
     'mirkubikov.ru',
+    'babyzzz.ru',
+    'detskayaliniya.ru',
+    'detskaya-mechta.ru',
+    'mamashop.ru',
+    'pampers.ru',
+    'huggies.ru',
+    'babylove.ru',
+    'baby.ru',
+    'mamaclub.ru',
+    'beremennost.com',
+    'pregnancy.com',
+    'whattoexpect.com',
+    'parents.com',
 
     // ===== ЗООТОВАРЫ =====
     'zoomagazin.ru',
@@ -342,6 +599,21 @@ class LinkUtils {
     'chewy.com',
     'petco.com',
     'petsmart.com',
+    'zoopassage.ru',
+    'zoobazar.ru',
+    'zoogurman.ru',
+    'zoobonus.ru',
+    'kormushka.ru',
+    'vetclinic.ru',
+    'zoovet.ru',
+    'vetcity.ru',
+    'vetdoctor.ru',
+    'petmd.com',
+    'vetstreet.com',
+    'pawshake.com',
+    'bringfido.com',
+    'rover.com',
+    'wagwalking.com',
 
     // ===== ЕДА И РЕЦЕПТЫ =====
     'lavka.yandex.ru',
@@ -356,11 +628,47 @@ class LinkUtils {
     'patee.ru',
     'eda.ru',
     'gastronom.ru',
+    'foodgawker.com',
+    'taste.com.au',
+    'bbcgoodfood.com',
+    'delish.com',
+    'bonappetit.com',
+    'epicurious.com',
+    'seriouseats.com',
+    'smittenkitchen.com',
 
     // ===== ТВОРЧЕСТВО =====
     'leonardo.ru',
     'peredvizhnik.ru',
     'artfox.ru',
+    'craftsy.com',
+    'lovecrafts.com',
+    'purlsoho.com',
+    'weareknitters.com',
+    'woolwarehouse.co.uk',
+    'deramores.com',
+    'sheepandstitch.com',
+    'beadworld.ru',
+    'biserok.ru',
+
+    // ===== ЖЕНСКИЕ СЕРВИСЫ И МЕДИА =====
+    'cosmopolitan.ru',
+    'elle.ru',
+    'vogue.ru',
+    'tatler.ru',
+    'harpersbazaar.ru',
+    'grazia.ru',
+    'glamour.ru',
+    'marieclaire.ru',
+    'instyle.ru',
+    'makeup.ru',
+    'beautyinsider.ru',
+    'wedding.ru',
+    'svadba-online.ru',
+    'wedding.com',
+    'theknot.com',
+    'brides.com',
+    'weddingwire.com',
 
     // ===== НОВОСТИ =====
     'weather.com',
@@ -426,6 +734,7 @@ class LinkUtils {
     'harvard.edu',
     'ox.ac.uk',
     'cambridge.org',
+    'womansworld.com',
 
     // ===== АВИАКОМПАНИИ =====
     'aeroflot.ru',
@@ -501,6 +810,12 @@ class LinkUtils {
     'freelancer.com',
     'fiverr.com',
     'toptal.com',
+    'glassdoor.com',
+    'indeed.com',
+    'monster.com',
+    'careerbuilder.com',
+    'simplyhired.com',
+    'ziprecruiter.com',
 
     // ===== ОНЛАЙН-ОБРАЗОВАНИЕ =====
     'skillbox.ru',
@@ -518,9 +833,9 @@ class LinkUtils {
     'auto.ru',
     'avtorun.ru',
     'drive2.ru',
-    'avtopro.ru',             // Автотовары
-    'exist.ru',               // Автозапчасти
-    'emex.ru',                // Автозапчасти
+    'avtopro.ru',
+    'exist.ru',
+    'emex.ru',
 
     // ===== НЕДВИЖИМОСТЬ =====
     'domofond.ru',
@@ -532,6 +847,10 @@ class LinkUtils {
     'bilet.ru',
     'karabas.com',
     'kinoteatr.ru',
+    'ticketco.ru',
+    'teatr.ru',
+    'museum.ru',
+    'kino-teatr.ru',
 
     // ===== СПОРТ И ФИТНЕС =====
     'fitnessfirst.ru',
@@ -569,6 +888,29 @@ class LinkUtils {
     // ===== ЗНАКОМСТВА =====
     'tinder.com',
     'bumble.com',
+
+    // ===== БРЕНДЫ ТЕХНИКИ =====
+    'samsung.com',
+    'xiaomi.com',
+    'huawei.com',
+    'sony.com',
+    'lg.com',
+    'philips.com',
+    'panasonic.com',
+    'canon.com',
+    'nikon.com',
+    'gopro.com',
+    'dji.com',
+    'insta360.com',
+
+    // ===== МОБИЛЬНЫЕ ПЛАТФОРМЫ =====
+    'appstore.com',
+    'play.google.com',
+    'appgallery.com',
+    'galaxystore.com',
+    'appadvice.com',
+    'sensortower.com',
+    'appannie.com',
   ];
 
   // ========== ДИНАМИЧЕСКАЯ ПРОВЕРКА ==========
@@ -814,6 +1156,87 @@ class LinkUtils {
         'dns-shop.',
         'mvideo.',
         'eldorado.',
+        'chanel.',
+        'dior.',
+        'gucci.',
+        'prada.',
+        'versace.',
+        'armani.',
+        'burberry.',
+        'fendi.',
+        'loewe.',
+        'bottegaveneta.',
+        'balenciaga.',
+        'saintlaurent.',
+        'givenchy.',
+        'valentino.',
+        'miumiu.',
+        'lanvin.',
+        'celine.',
+        'hermes.',
+        'louisvuitton.',
+        'christianlouboutin.',
+        'manoloblahnik.',
+        'jimmychoo.',
+        'gianvitorossi.',
+        'aquazzura.',
+        'roger-vivier.',
+        'sergio-rossi.',
+        'renzocaovilla.',
+        'giuseppezanotti.',
+        'mulberry.',
+        'strathberry.',
+        'polene-paris.',
+        'mansurgavriel.',
+        'demellier.',
+        'estee',
+        'clinique.',
+        'lancome.',
+        'lamer.',
+        'bobbibrown.',
+        'shuuemura.',
+        'makeupforever.',
+        'urban-decay.',
+        'toofaced.',
+        'tartecosmetics.',
+        'nars.',
+        'benefitcosmetics.',
+        'smashbox.',
+        'itcosmetics.',
+        'innisfree.',
+        'etudehouse.',
+        'cosrx.',
+        'klairs.',
+        'purito.',
+        'sokoglam.',
+        'yesstyle.',
+        'stylekorean.',
+        'oliveyoung.',
+        'letual.',
+        'rivgosh.',
+        'goldapple.',
+        'domkosmetiki.',
+        'cosmetique.',
+        'rosebeauty.',
+        'chopard.',
+        'bulgari.',
+        'van-cleef-arpels.',
+        'piaget.',
+        'jaeger-lecoultre.',
+        'omega.',
+        'rolex.',
+        'tagheuer.',
+        'longines.',
+        'breitling.',
+        'seikowatches.',
+        'citizenwatch.',
+        'fossil.',
+        'danielwellington.',
+        'adamas.',
+        'sokolov.',
+        'brilliant.',
+        'alrosa.',
+        'korloff.',
       ];
 
       for (final pattern in patterns) {
@@ -826,7 +1249,7 @@ class LinkUtils {
     }
   }
 
-  // ========== ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ ==========
+  // ========== ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ =====Қ=========
   static String detectPlatform(String url) {
     final lower = url.toLowerCase();
 
@@ -843,6 +1266,10 @@ class LinkUtils {
     if (lower.contains('vimeo.com')) return 'vimeo';
     if (lower.contains('twitch.tv')) return 'twitch';
     if (lower.contains('bilibili.com')) return 'bilibili';
+    if (lower.contains('dailymotion.com')) return 'dailymotion';
+    if (lower.contains('likee.com')) return 'likee';
+    if (lower.contains('kwai.com')) return 'kwai';
+    if (lower.contains('mojo.com')) return 'mojo';
 
     // ---- СОЦСЕТИ ----
     if (lower.contains('instagram.com')) return 'instagram';
@@ -860,6 +1287,13 @@ class LinkUtils {
     if (lower.contains('signal.org')) return 'signal';
     if (lower.contains('wechat.com')) return 'wechat';
     if (lower.contains('line.me')) return 'line';
+    if (lower.contains('threads.net')) return 'threads';
+    if (lower.contains('bluesky.social')) return 'bluesky';
+    if (lower.contains('mastodon.social')) return 'mastodon';
+    if (lower.contains('clubhouse.com')) return 'clubhouse';
+    if (lower.contains('ok.ru')) return 'ok';
+    if (lower.contains('dzen.ru')) return 'dzen';
+    if (lower.contains('habr.com')) return 'habr';
 
     // ---- МАГАЗИНЫ ----
     if (lower.contains('amazon.com') || lower.contains('amazon.')) return 'amazon';
@@ -891,6 +1325,9 @@ class LinkUtils {
     if (lower.contains('eldorado.ru')) return 'eldorado';
     if (lower.contains('citilink.ru')) return 'citilink';
     if (lower.contains('dns-shop.ru')) return 'dns';
+    if (lower.contains('megamarket.ru')) return 'megamarket';
+    if (lower.contains('market.yandex.ru')) return 'yandex_market';
+    if (lower.contains('goods.ru')) return 'goods';
 
     // ---- БРЕНДЫ (ОДЕЖДА) ----
     if (lower.contains('nike.com')) return 'nike';
@@ -911,9 +1348,6 @@ class LinkUtils {
     if (lower.contains('columbia.com')) return 'columbia';
     if (lower.contains('arcteryx.com')) return 'arcteryx';
     if (lower.contains('mammut.com')) return 'mammut';
-    if (lower.contains('montbell.com')) return 'montbell';
-    if (lower.contains('millet.com')) return 'millet';
-    if (lower.contains('eider.com')) return 'eider';
     if (lower.contains('zara.com')) return 'zara';
     if (lower.contains('hm.com')) return 'hm';
     if (lower.contains('uniqlo.com')) return 'uniqlo';
@@ -932,13 +1366,63 @@ class LinkUtils {
     if (lower.contains('calvinklein.com')) return 'calvinklein';
     if (lower.contains('lacoste.com')) return 'lacoste';
     if (lower.contains('ralphlauren.com')) return 'ralphlauren';
-    if (lower.contains('levi.com')) return 'levi';  // 👈 ДОБАВЛЕНО
+    if (lower.contains('levi.com')) return 'levi';
     if (lower.contains('converse.com')) return 'converse';
     if (lower.contains('vans.com')) return 'vans';
     if (lower.contains('timberland.com')) return 'timberland';
     if (lower.contains('drmartens.com')) return 'drmartens';
     if (lower.contains('skechers.com')) return 'skechers';
     if (lower.contains('crocs.com')) return 'crocs';
+    if (lower.contains('massimodutti.com')) return 'massimodutti';
+    if (lower.contains('oysho.com')) return 'oysho';
+    if (lower.contains('reiss.com')) return 'reiss';
+    if (lower.contains('tedbaker.com')) return 'tedbaker';
+    if (lower.contains('sandro-paris.com')) return 'sandro';
+    if (lower.contains('maje.com')) return 'maje';
+    if (lower.contains('moncler.com')) return 'moncler';
+    if (lower.contains('victoriassecret.com')) return 'victoriassecret';
+    if (lower.contains('agentprovocateur.com')) return 'agentprovocateur';
+    if (lower.contains('laperla.com')) return 'laperla';
+
+    // ---- ПРЕМИУМ БРЕНДЫ ----
+    if (lower.contains('chanel.com')) return 'chanel';
+    if (lower.contains('dior.com')) return 'dior';
+    if (lower.contains('gucci.com')) return 'gucci';
+    if (lower.contains('prada.com')) return 'prada';
+    if (lower.contains('versace.com')) return 'versace';
+    if (lower.contains('armani.com')) return 'armani';
+    if (lower.contains('burberry.com')) return 'burberry';
+    if (lower.contains('fendi.com')) return 'fendi';
+    if (lower.contains('loewe.com')) return 'loewe';
+    if (lower.contains('bottegaveneta.com')) return 'bottega';
+    if (lower.contains('balenciaga.com')) return 'balenciaga';
+    if (lower.contains('saintlaurent.com')) return 'saintlaurent';
+    if (lower.contains('givenchy.com')) return 'givenchy';
+    if (lower.contains('valentino.com')) return 'valentino';
+    if (lower.contains('miumiu.com')) return 'miumiu';
+    if (lower.contains('celine.com')) return 'celine';
+    if (lower.contains('hermes.com')) return 'hermes';
+    if (lower.contains('louisvuitton.com')) return 'louisvuitton';
+
+    // ---- ОБУВЬ ----
+    if (lower.contains('christianlouboutin.com')) return 'louboutin';
+    if (lower.contains('manoloblahnik.com')) return 'manoloblahnik';
+    if (lower.contains('jimmychoo.com')) return 'jimmychoo';
+    if (lower.contains('gianvitorossi.com')) return 'gianvitorossi';
+    if (lower.contains('aquazzura.com')) return 'aquazzura';
+    if (lower.contains('roger-vivier.com')) return 'rogervivier';
+    if (lower.contains('sergio-rossi.com')) return 'sergiorossi';
+    if (lower.contains('giuseppezanotti.com')) return 'giuseppezanotti';
+
+    // ---- СУМКИ И АКСЕССУАРЫ ----
+    if (lower.contains('mulberry.com')) return 'mulberry';
+    if (lower.contains('strathberry.com')) return 'strathberry';
+    if (lower.contains('polene-paris.com')) return 'polene';
+    if (lower.contains('mansurgavriel.com')) return 'mansurgavriel';
+    if (lower.contains('demellier.com')) return 'demellier';
+    if (lower.contains('staud.co')) return 'staud';
+    if (lower.contains('cuyana.com')) return 'cuyana';
+    if (lower.contains('everlane.com')) return 'everlane';
 
     // ---- ДОМ И ДЕКОР ----
     if (lower.contains('ikea.com')) return 'ikea';
@@ -965,6 +1449,26 @@ class LinkUtils {
     if (lower.contains('kiehls.com')) return 'kiehls';
     if (lower.contains('glossier.com')) return 'glossier';
     if (lower.contains('fentybeauty.com')) return 'fentybeauty';
+    if (lower.contains('esteelauder.com')) return 'esteelauder';
+    if (lower.contains('clinique.com')) return 'clinique';
+    if (lower.contains('lancome.com')) return 'lancome';
+    if (lower.contains('lamer.com')) return 'lamer';
+    if (lower.contains('bobbibrown.com')) return 'bobbibrown';
+    if (lower.contains('shuuemura.com')) return 'shuuemura';
+    if (lower.contains('makeupforever.com')) return 'makeupforever';
+    if (lower.contains('urban-decay.com')) return 'urbandecay';
+    if (lower.contains('toofaced.com')) return 'toofaced';
+    if (lower.contains('tartecosmetics.com')) return 'tarte';
+    if (lower.contains('nars.com')) return 'nars';
+    if (lower.contains('benefitcosmetics.com')) return 'benefit';
+    if (lower.contains('innisfree.com')) return 'innisfree';
+    if (lower.contains('etudehouse.com')) return 'etudehouse';
+    if (lower.contains('cosrx.com')) return 'cosrx';
+    if (lower.contains('sokoglam.com')) return 'sokoglam';
+    if (lower.contains('yesstyle.com')) return 'yesstyle';
+    if (lower.contains('letual.ru')) return 'letual';
+    if (lower.contains('rivgosh.ru')) return 'rivgosh';
+    if (lower.contains('goldapple.ru')) return 'goldapple';
 
     // ---- УКРАШЕНИЯ ----
     if (lower.contains('pandora.net')) return 'pandora';
@@ -974,6 +1478,11 @@ class LinkUtils {
     if (lower.contains('sunlight.net')) return 'sunlight';
     if (lower.contains('585zolotoy.ru')) return 'zolotoy585';
     if (lower.contains('yashma.ru')) return 'yashma';
+    if (lower.contains('chopard.com')) return 'chopard';
+    if (lower.contains('bulgari.com')) return 'bulgari';
+    if (lower.contains('van-cleef-arpels.com')) return 'vancleef';
+    if (lower.contains('adamas.ru')) return 'adamas';
+    if (lower.contains('sokolov.ru')) return 'sokolov';
 
     // ---- ЕДА ----
     if (lower.contains('lavka.yandex.ru')) return 'yandex_lavka';
@@ -984,10 +1493,11 @@ class LinkUtils {
     if (lower.contains('sushiwok.ru')) return 'sushiwok';
     if (lower.contains('tanuki.ru')) return 'tanuki';
     if (lower.contains('yakitoriya.ru')) return 'yakitoriya';
-    if (lower.contains('1000.menu')) return 'menu1000';
-    if (lower.contains('patee.ru')) return 'patee';
     if (lower.contains('eda.ru')) return 'eda';
-    if (lower.contains('gastronom.ru')) return 'gastronom';
+    if (lower.contains('delish.com')) return 'delish';
+    if (lower.contains('bonappetit.com')) return 'bonappetit';
+    if (lower.contains('epicurious.com')) return 'epicurious';
+    if (lower.contains('seriouseats.com')) return 'seriouseats';
 
     // ---- ФИТНЕС ----
     if (lower.contains('fitstars.ru')) return 'fitstars';
@@ -1000,6 +1510,8 @@ class LinkUtils {
     if (lower.contains('garmin.com')) return 'garmin';
     if (lower.contains('polar.com')) return 'polar';
     if (lower.contains('suunto.com')) return 'suunto';
+    if (lower.contains('strava.com')) return 'strava';
+    if (lower.contains('myfitnesspal.com')) return 'myfitnesspal';
 
     // ---- ДЕТСКИЕ ТОВАРЫ ----
     if (lower.contains('pocemu4ek.ru')) return 'pocemu4ek';
@@ -1007,6 +1519,10 @@ class LinkUtils {
     if (lower.contains('mothercare.com')) return 'mothercare';
     if (lower.contains('hamleys.com')) return 'hamleys';
     if (lower.contains('mirkubikov.ru')) return 'mirkubikov';
+    if (lower.contains('baby.ru')) return 'babyru';
+    if (lower.contains('mamaclub.ru')) return 'mamaclub';
+    if (lower.contains('whattoexpect.com')) return 'whattoexpect';
+    if (lower.contains('parents.com')) return 'parents';
 
     // ---- ЗООТОВАРЫ ----
     if (lower.contains('zoomagazin.ru')) return 'zoomagazin';
@@ -1015,11 +1531,27 @@ class LinkUtils {
     if (lower.contains('chewy.com')) return 'chewy';
     if (lower.contains('petco.com')) return 'petco';
     if (lower.contains('petsmart.com')) return 'petsmart';
+    if (lower.contains('petmd.com')) return 'petmd';
 
     // ---- ТВОРЧЕСТВО ----
     if (lower.contains('leonardo.ru')) return 'leonardo';
     if (lower.contains('peredvizhnik.ru')) return 'peredvizhnik';
     if (lower.contains('artfox.ru')) return 'artfox';
+    if (lower.contains('craftsy.com')) return 'craftsy';
+    if (lower.contains('lovecrafts.com')) return 'lovecrafts';
+
+    // ---- ЖЕНСКИЕ СЕРВИСЫ ----
+    if (lower.contains('cosmopolitan.ru')) return 'cosmopolitan';
+    if (lower.contains('elle.ru')) return 'elle';
+    if (lower.contains('vogue.ru')) return 'vogue';
+    if (lower.contains('harpersbazaar.ru')) return 'harpersbazaar';
+    if (lower.contains('grazia.ru')) return 'grazia';
+    if (lower.contains('glamour.ru')) return 'glamour';
+    if (lower.contains('marieclaire.ru')) return 'marieclaire';
+    if (lower.contains('instyle.ru')) return 'instyle';
+    if (lower.contains('wedding.ru')) return 'weddingru';
+    if (lower.contains('theknot.com')) return 'theknot';
+    if (lower.contains('brides.com')) return 'brides';
 
     // ---- СТРИМИНГ ----
     if (lower.contains('netflix.com')) return 'netflix';
@@ -1051,6 +1583,11 @@ class LinkUtils {
     if (lower.contains('xbox.com')) return 'xbox';
     if (lower.contains('nintendo.com')) return 'nintendo';
     if (lower.contains('battle.net')) return 'battlenet';
+    if (lower.contains('ubisoft.com')) return 'ubisoft';
+    if (lower.contains('ea.com')) return 'ea';
+    if (lower.contains('rockstargames.com')) return 'rockstar';
+    if (lower.contains('riotgames.com')) return 'riot';
+    if (lower.contains('cybersport.ru')) return 'cybersport';
 
     // ---- КНИГИ / ОБРАЗОВАНИЕ ----
     if (lower.contains('books.google.com') || lower.contains('play.google.com')) return 'google_books';
@@ -1062,11 +1599,25 @@ class LinkUtils {
     if (lower.contains('skillshare.com')) return 'skillshare';
     if (lower.contains('khanacademy.org')) return 'khanacademy';
     if (lower.contains('wikipedia.org')) return 'wikipedia';
+    if (lower.contains('sciencedirect.com')) return 'sciencedirect';
+    if (lower.contains('jstor.org')) return 'jstor';
+    if (lower.contains('academia.edu')) return 'academia';
+    if (lower.contains('researchgate.net')) return 'researchgate';
+    if (lower.contains('domashka.ru')) return 'domashka';
+    if (lower.contains('znanija.com')) return 'znanija';
+    if (lower.contains('logiclike.com')) return 'logiclike';
+    if (lower.contains('brainpop.com')) return 'brainpop';
+    if (lower.contains('abcmouse.com')) return 'abcmouse';
 
     // ---- ФОТО ----
     if (lower.contains('unsplash.com')) return 'unsplash';
     if (lower.contains('pexels.com')) return 'pexels';
     if (lower.contains('shutterstock.com')) return 'shutterstock';
+    if (lower.contains('500px.com')) return '500px';
+    if (lower.contains('flickr.com')) return 'flickr';
+    if (lower.contains('vsco.co')) return 'vsco';
+    if (lower.contains('imgur.com')) return 'imgur';
+    if (lower.contains('giphy.com')) return 'giphy';
 
     // ---- ДРУГОЕ ----
     if (lower.contains('notion.so')) return 'notion';
@@ -1106,10 +1657,6 @@ class LinkUtils {
     if (lower.contains('gazprombank.ru')) return 'gazprombank';
     if (lower.contains('open.ru')) return 'open';
     if (lower.contains('tochka.com')) return 'tochka';
-    if (lower.contains('modulbank.ru')) return 'modulbank';
-    if (lower.contains('promsvyazbank.ru')) return 'psb';
-    if (lower.contains('absolutbank.ru')) return 'absolutbank';
-    if (lower.contains('uniastrum.ru')) return 'uniastrum';
 
     // ---- БРОНИРОВАНИЕ И ПУТЕШЕСТВИЯ ----
     if (lower.contains('booking.com')) return 'booking';
@@ -1121,11 +1668,14 @@ class LinkUtils {
     if (lower.contains('expedia.com')) return 'expedia';
     if (lower.contains('kayak.com')) return 'kayak';
     if (lower.contains('hostelworld.com')) return 'hostelworld';
-    if (lower.contains('couchsurfing.com')) return 'couchsurfing';
     if (lower.contains('aviasales.ru')) return 'aviasales';
     if (lower.contains('tutu.ru')) return 'tutu';
-    if (lower.contains('rzd.ru')) return 'rzd';
     if (lower.contains('blablacar.ru')) return 'blablacar';
+    if (lower.contains('trivago.com')) return 'trivago';
+    if (lower.contains('one-two-trip.ru')) return 'onetwotrip';
+    if (lower.contains('poezd.ru')) return 'poezd';
+    if (lower.contains('flixbus.com')) return 'flixbus';
+    if (lower.contains('omio.com')) return 'omio';
 
     // ---- ЗДОРОВЬЕ ----
     if (lower.contains('webmd.com')) return 'webmd';
@@ -1135,8 +1685,7 @@ class LinkUtils {
     if (lower.contains('zdravcity.ru')) return 'zdravcity';
     if (lower.contains('iherb.com')) return 'iherb';
     if (lower.contains('docdoc.ru')) return 'docdoc';
-    if (lower.contains('onlinemedicine.ru')) return 'onlinemedicine';
-    if (lower.contains('medicalnewstoday.com')) return 'medicalnewstoday';
+    if (lower.contains('yandex.health')) return 'yandex_health';
 
     // ---- АВИАКОМПАНИИ ----
     if (lower.contains('aeroflot.ru')) return 'aeroflot';
@@ -1156,14 +1705,6 @@ class LinkUtils {
     if (lower.contains('ryanair.com')) return 'ryanair';
     if (lower.contains('easyjet.com')) return 'easyjet';
     if (lower.contains('wizzair.com')) return 'wizzair';
-    if (lower.contains('flydubai.com')) return 'flydubai';
-    if (lower.contains('etihad.com')) return 'etihad';
-    if (lower.contains('jetblue.com')) return 'jetblue';
-    if (lower.contains('southwest.com')) return 'southwest';
-    if (lower.contains('alaskaair.com')) return 'alaskaair';
-    if (lower.contains('aircanada.com')) return 'aircanada';
-    if (lower.contains('ana.co.jp')) return 'ana';
-    if (lower.contains('jal.co.jp')) return 'jal';
 
     // ---- ДОСТАВКА ЕДЫ ----
     if (lower.contains('delivery-club.ru')) return 'deliveryclub';
@@ -1176,7 +1717,6 @@ class LinkUtils {
     if (lower.contains('grubhub.com')) return 'grubhub';
     if (lower.contains('postmates.com')) return 'postmates';
     if (lower.contains('wolt.com')) return 'wolt';
-    if (lower.contains('bolt.eu')) return 'bolt';
     if (lower.contains('foodpanda.com')) return 'foodpanda';
     if (lower.contains('talabat.com')) return 'talabat';
     if (lower.contains('zomato.com')) return 'zomato';
@@ -1188,7 +1728,6 @@ class LinkUtils {
     if (lower.contains('gett.com')) return 'gett';
     if (lower.contains('getaround.com')) return 'getaround';
     if (lower.contains('sharenow.com')) return 'sharenow';
-    if (lower.contains('car2go.com')) return 'car2go';
     if (lower.contains('citymobil.ru')) return 'citymobil';
 
     // ---- РАБОТА И УСЛУГИ ----
@@ -1202,11 +1741,13 @@ class LinkUtils {
     if (lower.contains('fl.ru')) return 'fl';
     if (lower.contains('rabota.ru')) return 'rabota';
     if (lower.contains('superjob.ru')) return 'superjob';
-    if (lower.contains('zarplata.ru')) return 'zarplata';
     if (lower.contains('upwork.com')) return 'upwork';
     if (lower.contains('freelancer.com')) return 'freelancer';
     if (lower.contains('fiverr.com')) return 'fiverr';
     if (lower.contains('toptal.com')) return 'toptal';
+    if (lower.contains('glassdoor.com')) return 'glassdoor';
+    if (lower.contains('indeed.com')) return 'indeed';
+    if (lower.contains('monster.com')) return 'monster';
 
     // ---- АВТО ----
     if (lower.contains('avtocod.ru')) return 'avtocod';
@@ -1218,10 +1759,97 @@ class LinkUtils {
     if (lower.contains('exist.ru')) return 'exist';
     if (lower.contains('emex.ru')) return 'emex';
 
+    // ---- ТЕХНИКА ----
+    if (lower.contains('samsung.com')) return 'samsung';
+    if (lower.contains('xiaomi.com')) return 'xiaomi';
+    if (lower.contains('huawei.com')) return 'huawei';
+    if (lower.contains('sony.com')) return 'sony';
+    if (lower.contains('lg.com')) return 'lg';
+    if (lower.contains('philips.com')) return 'philips';
+    if (lower.contains('canon.com')) return 'canon';
+    if (lower.contains('nikon.com')) return 'nikon';
+    if (lower.contains('gopro.com')) return 'gopro';
+    if (lower.contains('dji.com')) return 'dji';
+
     // ---- ЯНДЕКС-СЕРВИСЫ ----
     if (lower.contains('eda.yandex.ru') || lower.contains('food.yandex.ru')) return 'yandex_eda';
     if (lower.contains('taxi.yandex.ru')) return 'yandex_taxi';
     if (lower.contains('drive.yandex.ru')) return 'yandex_drive';
+
+    // ---- ФОТОГРАФИЯ ----
+    if (lower.contains('500px.com')) return '500px';
+    if (lower.contains('flickr.com')) return 'flickr';
+    if (lower.contains('vsco.co')) return 'vsco';
+    if (lower.contains('smugmug.com')) return 'smugmug';
+    if (lower.contains('photobucket.com')) return 'photobucket';
+
+    // ---- ФАЙЛООБМЕННИКИ ----
+    if (lower.contains('mediafire.com')) return 'mediafire';
+    if (lower.contains('4shared.com')) return '4shared';
+    if (lower.contains('depositfiles.com')) return 'depositfiles';
+    if (lower.contains('turbobit.net')) return 'turbobit';
+
+    // ---- ЗНАКОМСТВА ----
+    if (lower.contains('tinder.com')) return 'tinder';
+    if (lower.contains('bumble.com')) return 'bumble';
+
+    // ---- ВИДЕОКОНФЕРЕНЦИИ ----
+    if (lower.contains('zoom.us')) return 'zoom';
+    if (lower.contains('webex.com')) return 'webex';
+
+    // ---- НОВОСТИ ----
+    if (lower.contains('bbc.com') || lower.contains('bbc.co.uk')) return 'bbc';
+    if (lower.contains('cnn.com')) return 'cnn';
+    if (lower.contains('nytimes.com')) return 'nytimes';
+    if (lower.contains('wsj.com')) return 'wsj';
+    if (lower.contains('forbes.com') || lower.contains('forbes.ru')) return 'forbes';
+    if (lower.contains('bloomberg.com')) return 'bloomberg';
+    if (lower.contains('ft.com')) return 'ft';
+    if (lower.contains('economist.com')) return 'economist';
+    if (lower.contains('wired.com')) return 'wired';
+    if (lower.contains('techcrunch.com')) return 'techcrunch';
+    if (lower.contains('theverge.com')) return 'theverge';
+    if (lower.contains('cnet.com')) return 'cnet';
+    if (lower.contains('gizmodo.com')) return 'gizmodo';
+    if (lower.contains('mashable.com')) return 'mashable';
+    if (lower.contains('buzzfeed.com')) return 'buzzfeed';
+    if (lower.contains('huffpost.com')) return 'huffpost';
+    if (lower.contains('vox.com')) return 'vox';
+    if (lower.contains('politico.com')) return 'politico';
+    if (lower.contains('axios.com')) return 'axios';
+    if (lower.contains('businessinsider.com')) return 'businessinsider';
+    if (lower.contains('fastcompany.com')) return 'fastcompany';
+    if (lower.contains('inc.com')) return 'inc';
+    if (lower.contains('entrepreneur.com')) return 'entrepreneur';
+    if (lower.contains('hbr.org')) return 'hbr';
+    if (lower.contains('nationalgeographic.com')) return 'natgeo';
+    if (lower.contains('nature.com')) return 'nature';
+    if (lower.contains('sciencemag.org')) return 'sciencemag';
+    if (lower.contains('pnas.org')) return 'pnas';
+    if (lower.contains('sciencedaily.com')) return 'sciencedaily';
+    if (lower.contains('livescience.com')) return 'livescience';
+    if (lower.contains('phys.org')) return 'phys';
+    if (lower.contains('popularmechanics.com')) return 'popularmechanics';
+    if (lower.contains('engadget.com')) return 'engadget';
+    if (lower.contains('arstechnica.com')) return 'arstechnica';
+    if (lower.contains('zdnet.com')) return 'zdnet';
+    if (lower.contains('rt.com')) return 'rt';
+    if (lower.contains('tass.ru')) return 'tass';
+    if (lower.contains('ria.ru')) return 'ria';
+    if (lower.contains('lenta.ru')) return 'lenta';
+    if (lower.contains('gazeta.ru')) return 'gazeta';
+    if (lower.contains('kommersant.ru')) return 'kommersant';
+    if (lower.contains('vedomosti.ru')) return 'vedomosti';
+    if (lower.contains('womansworld.com')) return 'womansworld';
+
+    // ---- ЧАСЫ ----
+    if (lower.contains('danielwellington.com')) return 'danielwellington';
+    if (lower.contains('fossil.com')) return 'fossil';
+    if (lower.contains('seikowatches.com')) return 'seiko';
+    if (lower.contains('citizenwatch.com')) return 'citizen';
+    if (lower.contains('omega.com')) return 'omega';
+    if (lower.contains('rolex.com')) return 'rolex';
+    if (lower.contains('tagheuer.com')) return 'tagheuer';
 
     return 'link';
   }
@@ -1249,6 +1877,10 @@ class LinkUtils {
       case 'vimeo': return 'Vimeo';
       case 'twitch': return 'Twitch';
       case 'bilibili': return 'Bilibili';
+      case 'dailymotion': return 'Dailymotion';
+      case 'likee': return 'Likee';
+      case 'kwai': return 'Kwai';
+      case 'mojo': return 'Mojo';
 
       // ---- СОЦСЕТИ ----
       case 'instagram': return 'Instagram';
@@ -1266,6 +1898,13 @@ class LinkUtils {
       case 'signal': return 'Signal';
       case 'wechat': return 'WeChat';
       case 'line': return 'LINE';
+      case 'threads': return 'Threads';
+      case 'bluesky': return 'Bluesky';
+      case 'mastodon': return 'Mastodon';
+      case 'clubhouse': return 'Clubhouse';
+      case 'ok': return 'Одноклассники';
+      case 'dzen': return 'Яндекс Дзен';
+      case 'habr': return 'Habr';
 
       // ---- МАГАЗИНЫ ----
       case 'amazon': return 'Amazon';
@@ -1297,6 +1936,9 @@ class LinkUtils {
       case 'eldorado': return 'Эльдорадо';
       case 'citilink': return 'Ситилинк';
       case 'dns': return 'DNS';
+      case 'megamarket': return 'Мегамаркет';
+      case 'yandex_market': return 'Яндекс Маркет';
+      case 'goods': return 'Goods';
 
       // ---- БРЕНДЫ (ОДЕЖДА) ----
       case 'nike': return 'Nike';
@@ -1317,9 +1959,6 @@ class LinkUtils {
       case 'columbia': return 'Columbia';
       case 'arcteryx': return 'Arc\'teryx';
       case 'mammut': return 'Mammut';
-      case 'montbell': return 'Montbell';
-      case 'millet': return 'Millet';
-      case 'eider': return 'Eider';
       case 'zara': return 'Zara';
       case 'hm': return 'H&M';
       case 'uniqlo': return 'UNIQLO';
@@ -1338,13 +1977,63 @@ class LinkUtils {
       case 'calvinklein': return 'Calvin Klein';
       case 'lacoste': return 'Lacoste';
       case 'ralphlauren': return 'Ralph Lauren';
-      case 'levi': return 'Levi\'s';  // 👈 ДОБАВЛЕНО
+      case 'levi': return 'Levi\'s';
       case 'converse': return 'Converse';
       case 'vans': return 'Vans';
       case 'timberland': return 'Timberland';
       case 'drmartens': return 'Dr. Martens';
       case 'skechers': return 'Skechers';
       case 'crocs': return 'Crocs';
+      case 'massimodutti': return 'Massimo Dutti';
+      case 'oysho': return 'Oysho';
+      case 'reiss': return 'Reiss';
+      case 'tedbaker': return 'Ted Baker';
+      case 'sandro': return 'Sandro';
+      case 'maje': return 'Maje';
+      case 'moncler': return 'Moncler';
+      case 'victoriassecret': return 'Victoria\'s Secret';
+      case 'agentprovocateur': return 'Agent Provocateur';
+      case 'laperla': return 'La Perla';
+
+      // ---- ПРЕМИУМ БРЕНДЫ ----
+      case 'chanel': return 'Chanel';
+      case 'dior': return 'Dior';
+      case 'gucci': return 'Gucci';
+      case 'prada': return 'Prada';
+      case 'versace': return 'Versace';
+      case 'armani': return 'Giorgio Armani';
+      case 'burberry': return 'Burberry';
+      case 'fendi': return 'Fendi';
+      case 'loewe': return 'Loewe';
+      case 'bottega': return 'Bottega Veneta';
+      case 'balenciaga': return 'Balenciaga';
+      case 'saintlaurent': return 'Saint Laurent';
+      case 'givenchy': return 'Givenchy';
+      case 'valentino': return 'Valentino';
+      case 'miumiu': return 'Miu Miu';
+      case 'celine': return 'Celine';
+      case 'hermes': return 'Hermès';
+      case 'louisvuitton': return 'Louis Vuitton';
+
+      // ---- ОБУВЬ ----
+      case 'louboutin': return 'Christian Louboutin';
+      case 'manoloblahnik': return 'Manolo Blahnik';
+      case 'jimmychoo': return 'Jimmy Choo';
+      case 'gianvitorossi': return 'Gianvito Rossi';
+      case 'aquazzura': return 'Aquazzura';
+      case 'rogervivier': return 'Roger Vivier';
+      case 'sergiorossi': return 'Sergio Rossi';
+      case 'giuseppezanotti': return 'Giuseppe Zanotti';
+
+      // ---- СУМКИ И АКСЕССУАРЫ ----
+      case 'mulberry': return 'Mulberry';
+      case 'strathberry': return 'Strathberry';
+      case 'polene': return 'Polène Paris';
+      case 'mansurgavriel': return 'Mansur Gavriel';
+      case 'demellier': return 'DeMellier';
+      case 'staud': return 'Staud';
+      case 'cuyana': return 'Cuyana';
+      case 'everlane': return 'Everlane';
 
       // ---- ДОМ И ДЕКОР ----
       case 'ikea': return 'IKEA';
@@ -1371,6 +2060,26 @@ class LinkUtils {
       case 'kiehls': return 'Kiehl\'s';
       case 'glossier': return 'Glossier';
       case 'fentybeauty': return 'Fenty Beauty';
+      case 'esteelauder': return 'Estée Lauder';
+      case 'clinique': return 'Clinique';
+      case 'lancome': return 'Lancôme';
+      case 'lamer': return 'La Mer';
+      case 'bobbibrown': return 'Bobbi Brown';
+      case 'shuuemura': return 'Shu Uemura';
+      case 'makeupforever': return 'Make Up For Ever';
+      case 'urbandecay': return 'Urban Decay';
+      case 'toofaced': return 'Too Faced';
+      case 'tarte': return 'Tarte';
+      case 'nars': return 'NARS';
+      case 'benefit': return 'Benefit Cosmetics';
+      case 'innisfree': return 'Innisfree';
+      case 'etudehouse': return 'Etude House';
+      case 'cosrx': return 'COSRX';
+      case 'sokoglam': return 'Soko Glam';
+      case 'yesstyle': return 'YesStyle';
+      case 'letual': return 'Л\'Этуаль';
+      case 'rivgosh': return 'Рив Гош';
+      case 'goldapple': return 'Золотое Яблоко';
 
       // ---- УКРАШЕНИЯ ----
       case 'pandora': return 'Pandora';
@@ -1380,6 +2089,11 @@ class LinkUtils {
       case 'sunlight': return 'Sunlight';
       case 'zolotoy585': return '585 Золотой';
       case 'yashma': return 'Яшма Золото';
+      case 'chopard': return 'Chopard';
+      case 'bulgari': return 'Bvlgari';
+      case 'vancleef': return 'Van Cleef & Arpels';
+      case 'adamas': return 'Адамас';
+      case 'sokolov': return 'Соколов';
 
       // ---- ЕДА ----
       case 'yandex_lavka': return 'Яндекс Лавка';
@@ -1390,10 +2104,11 @@ class LinkUtils {
       case 'sushiwok': return 'Суши Wok';
       case 'tanuki': return 'Тануки';
       case 'yakitoriya': return 'Якитория';
-      case 'menu1000': return '1000 меню';
-      case 'patee': return 'Patee';
       case 'eda': return 'Eda.ru';
-      case 'gastronom': return 'Gastronom';
+      case 'delish': return 'Delish';
+      case 'bonappetit': return 'Bon Appétit';
+      case 'epicurious': return 'Epicurious';
+      case 'seriouseats': return 'Serious Eats';
 
       // ---- ФИТНЕС ----
       case 'fitstars': return 'FitStars';
@@ -1406,6 +2121,8 @@ class LinkUtils {
       case 'garmin': return 'Garmin';
       case 'polar': return 'Polar';
       case 'suunto': return 'Suunto';
+      case 'strava': return 'Strava';
+      case 'myfitnesspal': return 'MyFitnessPal';
 
       // ---- ДЕТСКИЕ ТОВАРЫ ----
       case 'pocemu4ek': return 'Почемучек';
@@ -1413,6 +2130,10 @@ class LinkUtils {
       case 'mothercare': return 'Mothercare';
       case 'hamleys': return 'Hamleys';
       case 'mirkubikov': return 'Мир кубиков';
+      case 'babyru': return 'Baby.ru';
+      case 'mamaclub': return 'Mama Club';
+      case 'whattoexpect': return 'What to Expect';
+      case 'parents': return 'Parents';
 
       // ---- ЗООТОВАРЫ ----
       case 'zoomagazin': return 'Зоомагазин';
@@ -1421,11 +2142,27 @@ class LinkUtils {
       case 'chewy': return 'Chewy';
       case 'petco': return 'Petco';
       case 'petsmart': return 'Petsmart';
+      case 'petmd': return 'PetMD';
 
       // ---- ТВОРЧЕСТВО ----
       case 'leonardo': return 'Леонардо';
       case 'peredvizhnik': return 'Передвижник';
       case 'artfox': return 'ArtFox';
+      case 'craftsy': return 'Craftsy';
+      case 'lovecrafts': return 'LoveCrafts';
+
+      // ---- ЖЕНСКИЕ СЕРВИСЫ ----
+      case 'cosmopolitan': return 'Cosmopolitan';
+      case 'elle': return 'Elle';
+      case 'vogue': return 'Vogue';
+      case 'harpersbazaar': return 'Harper\'s Bazaar';
+      case 'grazia': return 'Grazia';
+      case 'glamour': return 'Glamour';
+      case 'marieclaire': return 'Marie Claire';
+      case 'instyle': return 'InStyle';
+      case 'weddingru': return 'Wedding.ru';
+      case 'theknot': return 'The Knot';
+      case 'brides': return 'Brides';
 
       // ---- СТРИМИНГ ----
       case 'netflix': return 'Netflix';
@@ -1457,6 +2194,11 @@ class LinkUtils {
       case 'xbox': return 'Xbox';
       case 'nintendo': return 'Nintendo';
       case 'battlenet': return 'Battle.net';
+      case 'ubisoft': return 'Ubisoft';
+      case 'ea': return 'EA';
+      case 'rockstar': return 'Rockstar';
+      case 'riot': return 'Riot Games';
+      case 'cybersport': return 'Киберспорт.ру';
 
       // ---- КНИГИ / ОБРАЗОВАНИЕ ----
       case 'google_books': return 'Google Books';
@@ -1468,11 +2210,25 @@ class LinkUtils {
       case 'skillshare': return 'Skillshare';
       case 'khanacademy': return 'Khan Academy';
       case 'wikipedia': return 'Wikipedia';
+      case 'sciencedirect': return 'ScienceDirect';
+      case 'jstor': return 'JSTOR';
+      case 'academia': return 'Academia';
+      case 'researchgate': return 'ResearchGate';
+      case 'domashka': return 'Домашка';
+      case 'znanija': return 'Знания';
+      case 'logiclike': return 'LogicLike';
+      case 'brainpop': return 'BrainPOP';
+      case 'abcmouse': return 'ABCmouse';
 
       // ---- ФОТО ----
       case 'unsplash': return 'Unsplash';
       case 'pexels': return 'Pexels';
       case 'shutterstock': return 'Shutterstock';
+      case '500px': return '500px';
+      case 'flickr': return 'Flickr';
+      case 'vsco': return 'VSCO';
+      case 'imgur': return 'Imgur';
+      case 'giphy': return 'GIPHY';
 
       // ---- ДРУГОЕ ----
       case 'notion': return 'Notion';
@@ -1512,10 +2268,6 @@ class LinkUtils {
       case 'gazprombank': return 'Газпромбанк';
       case 'open': return 'Открытие';
       case 'tochka': return 'Точка';
-      case 'modulbank': return 'Модульбанк';
-      case 'psb': return 'Промсвязьбанк';
-      case 'absolutbank': return 'Абсолют Банк';
-      case 'uniastrum': return 'Юниаструм Банк';
 
       // ---- БРОНИРОВАНИЕ И ПУТЕШЕСТВИЯ ----
       case 'booking': return 'Booking.com';
@@ -1527,11 +2279,14 @@ class LinkUtils {
       case 'expedia': return 'Expedia';
       case 'kayak': return 'Kayak';
       case 'hostelworld': return 'Hostelworld';
-      case 'couchsurfing': return 'Couchsurfing';
       case 'aviasales': return 'Aviasales';
       case 'tutu': return 'Туту.ру';
-      case 'rzd': return 'РЖД';
       case 'blablacar': return 'BlaBlaCar';
+      case 'trivago': return 'Trivago';
+      case 'onetwotrip': return 'OneTwoTrip';
+      case 'poezd': return 'Поезд.ру';
+      case 'flixbus': return 'FlixBus';
+      case 'omio': return 'Omio';
 
       // ---- ЗДОРОВЬЕ ----
       case 'webmd': return 'WebMD';
@@ -1541,8 +2296,7 @@ class LinkUtils {
       case 'zdravcity': return 'ЗдравСити';
       case 'iherb': return 'iHerb';
       case 'docdoc': return 'DocDoc';
-      case 'onlinemedicine': return 'OnlineMedicine';
-      case 'medicalnewstoday': return 'Medical News Today';
+      case 'yandex_health': return 'Яндекс Здоровье';
 
       // ---- АВИАКОМПАНИИ ----
       case 'aeroflot': return 'Аэрофлот';
@@ -1562,14 +2316,6 @@ class LinkUtils {
       case 'ryanair': return 'Ryanair';
       case 'easyjet': return 'easyJet';
       case 'wizzair': return 'Wizz Air';
-      case 'flydubai': return 'Flydubai';
-      case 'etihad': return 'Etihad Airways';
-      case 'jetblue': return 'JetBlue';
-      case 'southwest': return 'Southwest Airlines';
-      case 'alaskaair': return 'Alaska Airlines';
-      case 'aircanada': return 'Air Canada';
-      case 'ana': return 'ANA';
-      case 'jal': return 'Japan Airlines';
 
       // ---- ДОСТАВКА ЕДЫ ----
       case 'deliveryclub': return 'Delivery Club';
@@ -1582,7 +2328,6 @@ class LinkUtils {
       case 'grubhub': return 'Grubhub';
       case 'postmates': return 'Postmates';
       case 'wolt': return 'Wolt';
-      case 'bolt': return 'Bolt';
       case 'foodpanda': return 'Foodpanda';
       case 'talabat': return 'Talabat';
       case 'zomato': return 'Zomato';
@@ -1594,7 +2339,6 @@ class LinkUtils {
       case 'gett': return 'Gett';
       case 'getaround': return 'Getaround';
       case 'sharenow': return 'Share Now';
-      case 'car2go': return 'Car2Go';
       case 'citymobil': return 'Ситимобил';
 
       // ---- РАБОТА И УСЛУГИ ----
@@ -1608,21 +2352,13 @@ class LinkUtils {
       case 'fl': return 'FL.ru';
       case 'rabota': return 'Работа.ру';
       case 'superjob': return 'SuperJob';
-      case 'zarplata': return 'Зарплата.ру';
       case 'upwork': return 'Upwork';
       case 'freelancer': return 'Freelancer';
       case 'fiverr': return 'Fiverr';
       case 'toptal': return 'Toptal';
-
-      // ---- ОНЛАЙН-ОБРАЗОВАНИЕ ----
-      case 'skillbox': return 'Skillbox';
-      case 'geekbrains': return 'GeekBrains';
-      case 'netology': return 'Нетология';
-      case 'stepik': return 'Stepik';
-      case 'codecademy': return 'Codecademy';
-      case 'pluralsight': return 'Pluralsight';
-      case 'lynda': return 'LinkedIn Learning';
-      case 'udacity': return 'Udacity';
+      case 'glassdoor': return 'Glassdoor';
+      case 'indeed': return 'Indeed';
+      case 'monster': return 'Monster';
 
       // ---- АВТО ----
       case 'avtocod': return 'Автокод';
@@ -1634,10 +2370,94 @@ class LinkUtils {
       case 'exist': return 'Exist';
       case 'emex': return 'Emex';
 
+      // ---- ТЕХНИКА ----
+      case 'samsung': return 'Samsung';
+      case 'xiaomi': return 'Xiaomi';
+      case 'huawei': return 'Huawei';
+      case 'sony': return 'Sony';
+      case 'lg': return 'LG';
+      case 'philips': return 'Philips';
+      case 'canon': return 'Canon';
+      case 'nikon': return 'Nikon';
+      case 'gopro': return 'GoPro';
+      case 'dji': return 'DJI';
+
       // ---- ЯНДЕКС-СЕРВИСЫ ----
       case 'yandex_eda': return 'Яндекс Еда';
       case 'yandex_taxi': return 'Яндекс Такси';
       case 'yandex_drive': return 'Яндекс Драйв';
+
+      // ---- ФОТОГРАФИЯ ----
+      case 'smugmug': return 'SmugMug';
+      case 'photobucket': return 'Photobucket';
+
+      // ---- ФАЙЛООБМЕННИКИ ----
+      case 'mediafire': return 'MediaFire';
+      case '4shared': return '4shared';
+      case 'depositfiles': return 'DepositFiles';
+      case 'turbobit': return 'Turbobit';
+
+      // ---- ЗНАКОМСТВА ----
+      case 'tinder': return 'Tinder';
+      case 'bumble': return 'Bumble';
+
+      // ---- ВИДЕОКОНФЕРЕНЦИИ ----
+      case 'zoom': return 'Zoom';
+      case 'webex': return 'Webex';
+
+      // ---- НОВОСТИ ----
+      case 'bbc': return 'BBC';
+      case 'cnn': return 'CNN';
+      case 'nytimes': return 'The New York Times';
+      case 'wsj': return 'The Wall Street Journal';
+      case 'forbes': return 'Forbes';
+      case 'bloomberg': return 'Bloomberg';
+      case 'ft': return 'Financial Times';
+      case 'economist': return 'The Economist';
+      case 'wired': return 'Wired';
+      case 'techcrunch': return 'TechCrunch';
+      case 'theverge': return 'The Verge';
+      case 'cnet': return 'CNET';
+      case 'gizmodo': return 'Gizmodo';
+      case 'mashable': return 'Mashable';
+      case 'buzzfeed': return 'BuzzFeed';
+      case 'huffpost': return 'HuffPost';
+      case 'vox': return 'Vox';
+      case 'politico': return 'Politico';
+      case 'axios': return 'Axios';
+      case 'businessinsider': return 'Business Insider';
+      case 'fastcompany': return 'Fast Company';
+      case 'inc': return 'Inc.';
+      case 'entrepreneur': return 'Entrepreneur';
+      case 'hbr': return 'Harvard Business Review';
+      case 'natgeo': return 'National Geographic';
+      case 'nature': return 'Nature';
+      case 'sciencemag': return 'Science';
+      case 'pnas': return 'PNAS';
+      case 'sciencedaily': return 'ScienceDaily';
+      case 'livescience': return 'LiveScience';
+      case 'phys': return 'Phys.org';
+      case 'popularmechanics': return 'Popular Mechanics';
+      case 'engadget': return 'Engadget';
+      case 'arstechnica': return 'Ars Technica';
+      case 'zdnet': return 'ZDNet';
+      case 'rt': return 'RT';
+      case 'tass': return 'ТАСС';
+      case 'ria': return 'РИА Новости';
+      case 'lenta': return 'Lenta.ru';
+      case 'gazeta': return 'Газета.ру';
+      case 'kommersant': return 'Коммерсантъ';
+      case 'vedomosti': return 'Ведомости';
+      case 'womansworld': return 'Woman\'s World';
+
+      // ---- ЧАСЫ ----
+      case 'danielwellington': return 'Daniel Wellington';
+      case 'fossil': return 'Fossil';
+      case 'seiko': return 'Seiko';
+      case 'citizen': return 'Citizen';
+      case 'omega': return 'Omega';
+      case 'rolex': return 'Rolex';
+      case 'tagheuer': return 'TAG Heuer';
 
       default:
         try {

@@ -1,6 +1,4 @@
-﻿// lib/controllers/profile_controller.dart
-
-import 'dart:async';
+﻿import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -45,7 +43,6 @@ class ProfileController extends ProfileBaseController {
   @override
   void onInit() {
     super.onInit();
-    // 🔥 ПОДПИСКА УДАЛЕНА!
   }
   
   @override
@@ -91,7 +88,7 @@ class ProfileController extends ProfileBaseController {
         }
         
         _setupCountersListeners(userId);
-        await _loadUserPostsViaPostController(userId);
+        await _loadUserPostsViaPostController(userId, isInitial: true);
         
       } else {
         username.value = 'User';
@@ -126,6 +123,9 @@ class ProfileController extends ProfileBaseController {
     }
   }
   
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД - ИСПОЛЬЗУЕТ _processPost
+  // ============================================================
   Future<void> _loadUserPostsViaPostController(String userId, {bool isInitial = false}) async {
     try {
       if (isInitial) {
@@ -157,40 +157,51 @@ class ProfileController extends ProfileBaseController {
         final newPosts = <Map<String, dynamic>>[];
         
         for (final doc in postsQuery.docs) {
-          final postData = doc.data() as Map<String, dynamic>;
+          // ============================================================
+          // 🔥 ИСПОЛЬЗУЕМ _processPost ЧЕРЕЗ getProcessedPost
+          // ============================================================
+          final processedPost = await _postController.getProcessedPost(doc);
           
-          final imageUrls = postData['imageUrls'] as List<dynamic>?;
-          if (imageUrls == null || imageUrls.isEmpty) {
-            continue;
+          if (processedPost != null) {
+            print('📦 [PROFILE-LOAD] Post ${processedPost['id']}: mediaType=${processedPost['mediaType']}, videoUrl=${processedPost['videoUrl']}');
+            newPosts.add(processedPost);
+          } else {
+            // Fallback - если _processPost вернул null (например, нет imageUrls)
+            final postData = doc.data() as Map<String, dynamic>;
+            final imageUrls = postData['imageUrls'] as List<dynamic>?;
+            if (imageUrls != null && imageUrls.isNotEmpty) {
+              final imageUrl = imageUrls.first.toString();
+              if (!_isMockUrl(imageUrl)) {
+                final fallbackPost = {
+                  'id': doc.id,
+                  'imageUrl': imageUrl,
+                  'url': imageUrl,
+                  'imageUrls': imageUrls.cast<String>(),
+                  'imageCount': imageUrls.length,
+                  'userId': postData['userId'],
+                  'userName': postData['userName'] ?? 'User',
+                  'userAvatar': postData['userAvatar'] ?? '',
+                  'caption': postData['caption']?.toString() ?? '',
+                  'likes': (postData['likes'] as int?) ?? 0,
+                  'comments': (postData['comments'] as int?) ?? 0,
+                  'saves': (postData['saves'] as int?) ?? 0,
+                  'createdAt': postData['createdAt'],
+                  'hashtags': postData['hashtags'] ?? [],
+                  'mediaType': postData['mediaType']?.toString() ?? 'photo',
+                  'videoUrl': postData['videoUrl']?.toString(),
+                  'thumbnailUrl': postData['thumbnailUrl']?.toString(),
+                };
+                newPosts.add(fallbackPost);
+              }
+            }
           }
-          
-          final imageUrl = imageUrls.isNotEmpty ? imageUrls.first.toString() : '';
-          
-          if (_isMockUrl(imageUrl)) {
-            continue;
-          }
-          
-          final post = {
-            'id': doc.id,
-            'imageUrl': imageUrl,
-            'url': imageUrl,
-            'imageUrls': imageUrls.cast<String>(),
-            'imageCount': imageUrls.length,
-            'userId': postData['userId'],
-            'userName': postData['userName'] ?? 'User',
-            'userAvatar': postData['userAvatar'] ?? '',
-            'caption': postData['caption']?.toString() ?? '',
-            'likes': (postData['likes'] as int?) ?? 0,
-            'comments': (postData['comments'] as int?) ?? 0,
-            'saves': (postData['saves'] as int?) ?? 0,
-            'createdAt': postData['createdAt'],
-            'hashtags': postData['hashtags'] ?? [],
-          };
-          
-          newPosts.add(post);
-          _postController.addPostsToStorage([post]);
-          
-          print('✅ Added post: ${doc.id}');
+        }
+        
+        // ============================================================
+        // 🔥 ДОБАВЛЯЕМ В POSTCONTROLLER ЧЕРЕЗ addPostsToStorage
+        // ============================================================
+        if (newPosts.isNotEmpty) {
+          _postController.addPostsToStorage(newPosts);
         }
         
         if (isInitial) {
@@ -239,6 +250,7 @@ class ProfileController extends ProfileBaseController {
         .toList()
         .cast<Map<String, dynamic>>();
     
+    // 🔥 СОРТИРУЕМ ПО ДАТЕ
     myPosts.sort((a, b) {
       final aDate = a['createdAt'] is Timestamp 
           ? (a['createdAt'] as Timestamp).toDate() 

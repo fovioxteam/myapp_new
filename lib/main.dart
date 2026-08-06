@@ -1,3 +1,5 @@
+// lib/main.dart
+
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
@@ -157,7 +159,7 @@ Future<void> _initializeServices() async {
   Get.put(UploadController(), permanent: true);
   Get.put(MetricsService(), permanent: true);
   Get.put(UnreadService(), permanent: true);
-  Get.put(AuthService(), permanent: true); // 👈 ДОБАВЛЯЕМ
+  Get.put(AuthService(), permanent: true);
   
   await PushNotificationsService().init();
   
@@ -414,7 +416,7 @@ class _ConnectivityWrapper extends StatelessWidget {
   }
 }
 
-// ========== 🔥 ИСПРАВЛЕННЫЙ AUTH WRAPPER ==========
+// ========== AUTH WRAPPER ==========
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -439,8 +441,6 @@ class AuthWrapper extends StatelessWidget {
         );
       }
       
-      // 🔥 ВСЕГДА ПОКАЗЫВАЕМ ГЛАВНЫЙ ЭКРАН
-      // Экран входа (WelcomeScreen) показывается только через AuthService.requireAuth()
       return const MainApp();
     });
   }
@@ -678,7 +678,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       return;
     }
     
-    // 🔥 Двойное нажатие на профиль (индекс 4) — обновить профиль
+    // Двойное нажатие на профиль (индекс 4) — обновить профиль
     if (index == 4 && _selectedIndex == 4) {
       _refreshProfile();
       return;
@@ -698,7 +698,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     if (mounted) setState(() => _isRefreshingFeed = false);
   }
   
-  // 🔥 МЕТОД ДЛЯ ОБНОВЛЕНИЯ ПРОФИЛЯ
   Future<void> _refreshProfile() async {
     if (_isRefreshingProfile) return;
     setState(() => _isRefreshingProfile = true);
@@ -709,8 +708,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     // Обновляем данные профиля через контроллер
     final userId = _authController.firebaseUser.value?.uid;
     if (userId != null && userId.isNotEmpty) {
-      // loadUserData обновляет данные пользователя (аватар, имя, био)
-      // refreshPosts обновляет посты пользователя
       await Future.wait([
         _profileController.loadUserData(userId),
         _profileController.refreshPosts(userId),
@@ -726,7 +723,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
     final double screenWidth = MediaQuery.of(context).size.width - 32;
     final double itemWidth = screenWidth / 5;
-    const double baseCircleWidth = 56; // 👈 УМЕНЬШИЛИ С 72 ДО 56
+    const double baseCircleWidth = 56;
     const double baseCircleHeight = 50;
     final double circleLeft = itemWidth * _selectedIndex + (itemWidth - baseCircleWidth) / 2;
     

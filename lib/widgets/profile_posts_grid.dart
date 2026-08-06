@@ -1,6 +1,5 @@
-// lib/widgets/profile_posts_grid.dart
-
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -58,7 +57,21 @@ class ProfilePostsGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final posts = customPosts ?? (postController.userPosts[userId] ?? []);
+    List<Map<String, dynamic>> rawPosts;
+    
+    if (customPosts != null) {
+      rawPosts = customPosts!;
+    } else {
+      rawPosts = postController.userPosts[userId] ?? [];
+    }
+
+    final posts = rawPosts.map((post) {
+      final postId = post['id']?.toString() ?? '';
+      if (postId.isEmpty) return post;
+      
+      final cachedPost = postController.getPostFromStorage(postId);
+      return cachedPost ?? post;
+    }).toList();
 
     if (posts.isEmpty) {
       return const Center(
@@ -98,14 +111,21 @@ class ProfilePostsGrid extends StatelessWidget {
         final post = posts[index];
         final imageUrl = _getThumbnailUrl(post);
         final postId = post['id']?.toString() ?? '';
+        
+        final isVideo = post['mediaType']?.toString() == 'video' || 
+                       (post['videoUrl'] != null && post['videoUrl'].toString().isNotEmpty);
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: () => onPostTap(postId),
           child: Container(
             color: Colors.grey[200],
-            child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
-                ? CachedNetworkImage(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // ИЗОБРАЖЕНИЕ
+                if (imageUrl.isNotEmpty && imageUrl.startsWith('http'))
+                  CachedNetworkImage(
                     key: ValueKey('grid_${post['id']}_$imageUrl'),
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
@@ -127,12 +147,29 @@ class ProfilePostsGrid extends StatelessWidget {
                       );
                     },
                   )
-                : Container(
+                else
+                  Container(
                     color: Colors.grey[300],
                     child: const Center(
                       child: Icon(Icons.image_not_supported_outlined),
                     ),
                   ),
+
+                // ============================================================
+                // 🔥 ИКОНКА ТОЛЬКО ДЛЯ ФОТО (ВИДЕО - БЕЗ ИКОНКИ)
+                // ============================================================
+                if (!isVideo)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: const Icon(
+                      CupertinoIcons.square_on_square,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },

@@ -3,10 +3,9 @@ import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import '../extensions/safe_extensions.dart';
 import '../services/recommendation_service.dart';
-import '../services/auth_service.dart'; // 👈 ДОБАВИТЬ
+import '../services/r2_service.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class PostController extends GetxController {
   static PostController get to => Get.find();
@@ -23,8 +22,6 @@ class PostController extends GetxController {
   // Состояния лайков/сохранений
   final RxMap<String, bool> likedPosts = <String, bool>{}.obs;
   final RxMap<String, bool> savedPosts = <String, bool>{}.obs;
-  
-  // 🔥 ДАТЫ ЛАЙКОВ И СОХРАНЕНИЙ ДЛЯ СОРТИРОВКИ
   final RxMap<String, DateTime> likedDates = <String, DateTime>{}.obs;
   final RxMap<String, DateTime> savedDates = <String, DateTime>{}.obs;
 
@@ -32,21 +29,14 @@ class PostController extends GetxController {
   final Map<String, Map<String, dynamic>> _authorCache = {};
   final Set<String> _loadedPostIds = {};
   final Set<String> _preloadedImages = {};
-  
-  // 🔥 КЭШ ДЛЯ IMAGE PROVIDER
   final Map<String, ImageProvider> _imageProviderCache = {};
-  
-  // 🔥 ГЛОБАЛЬНЫЙ КЭШ ДЛЯ МИНИАТЮР ПОИСКА
   static final Map<String, Widget> _searchThumbnailCache = {};
-
-  // 🔥 ЖЕСТКИЙ КЭШ АВАТАРОК
   static final Map<String, String> _avatarUrlCache = {};
   static final Map<String, String> _usernameCache = {};
 
   // Ограничения кэша
   static const int maxAuthorCache = 200;
   static const int maxImageCache = 200;
-  static const int maxPreloadPerPost = 3;
 
   // 🔥 ПАГИНАЦИЯ
   DocumentSnapshot? _lastFeedDoc;
@@ -56,16 +46,11 @@ class PostController extends GetxController {
   final Map<String, bool> _hasMoreUserPosts = {};
   final RxMap<String, bool> isLoadingUserPosts = <String, bool>{}.obs;
 
-  // Firebase
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
-
-  // Stream subscriptions
   final Map<String, StreamSubscription<DocumentSnapshot>> _postSubscriptions = {};
 
   static const int _pageSize = 20;
-
-  // 🔄 Защита пагинации от гонок
   bool _feedRequestActive = false;
   final Map<String, bool> _userRequestActive = {};
 
@@ -134,8 +119,6 @@ class PostController extends GetxController {
       }
       
       print('✅ Loaded ${likedPosts.length} liked posts and ${savedPosts.length} saved posts');
-      print('✅ Liked dates: ${likedDates.length}');
-      print('✅ Saved dates: ${savedDates.length}');
     } catch (e) {
       print('❌ Error loading user interactions: $e');
     }
@@ -144,26 +127,19 @@ class PostController extends GetxController {
   // ========== 🔥 ПОЛУЧЕНИЕ ДАННЫХ АВТОРА С КЭШИРОВАНИЕМ ==========
 
   Future<Map<String, dynamic>> _getAuthorData(String userId) async {
-    print('🔍 [AVATAR CACHE] Checking cache for userId: $userId');
-    
     if (_usernameCache.containsKey(userId) && _avatarUrlCache.containsKey(userId)) {
-      print('✅ [AVATAR CACHE] HIT! Returning cached data: username=${_usernameCache[userId]}, avatar=${_avatarUrlCache[userId]}');
       return {
         'username': _usernameCache[userId]!,
         'avatarUrl': _avatarUrlCache[userId]!,
       };
     }
 
-    print('❌ [AVATAR CACHE] MISS! Loading from Firestore for userId: $userId');
-    
     final authorDoc = await _firestore.collection('users').doc(userId).get();
     final authorData = authorDoc.data() ?? {};
 
     final username = authorData['username']?.toString() ?? 'User';
     final avatarUrl = authorData['avatarUrl']?.toString() ?? '';
 
-    print('💾 [AVATAR CACHE] Saving to cache: username=$username, avatar=$avatarUrl');
-    
     _usernameCache[userId] = username;
     _avatarUrlCache[userId] = avatarUrl;
 
@@ -184,21 +160,17 @@ class PostController extends GetxController {
   // ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ КЭША ==========
 
   void updateAvatarInCache(String userId, String newAvatarUrl) {
-    print('🔄 [AVATAR CACHE] Updating avatar for userId: $userId -> $newAvatarUrl');
     _avatarUrlCache[userId] = newAvatarUrl;
-    
     for (final post in posts.values) {
       if (post['userId'] == userId) {
         post['userAvatar'] = newAvatarUrl;
       }
     }
-    
     for (int i = 0; i < feedPosts.length; i++) {
       if (feedPosts[i]['userId'] == userId) {
         feedPosts[i]['userAvatar'] = newAvatarUrl;
       }
     }
-    
     if (userPosts.containsKey(userId)) {
       final updatedList = userPosts[userId]!.map((post) {
         final newPost = Map<String, dynamic>.from(post);
@@ -207,29 +179,23 @@ class PostController extends GetxController {
       }).toList();
       userPosts[userId] = updatedList;
     }
-    
     posts.refresh();
     feedPosts.refresh();
     userPosts.refresh();
-    print('✅ [AVATAR CACHE] Avatar updated in all posts');
   }
 
   void updateUsernameInCache(String userId, String newUsername) {
-    print('🔄 [AVATAR CACHE] Updating username for userId: $userId -> $newUsername');
     _usernameCache[userId] = newUsername;
-    
     for (final post in posts.values) {
       if (post['userId'] == userId) {
         post['userName'] = newUsername;
       }
     }
-    
     for (int i = 0; i < feedPosts.length; i++) {
       if (feedPosts[i]['userId'] == userId) {
         feedPosts[i]['userName'] = newUsername;
       }
     }
-    
     if (userPosts.containsKey(userId)) {
       final updatedList = userPosts[userId]!.map((post) {
         final newPost = Map<String, dynamic>.from(post);
@@ -238,11 +204,9 @@ class PostController extends GetxController {
       }).toList();
       userPosts[userId] = updatedList;
     }
-    
     posts.refresh();
     feedPosts.refresh();
     userPosts.refresh();
-    print('✅ [AVATAR CACHE] Username updated in all posts');
   }
 
   void updateUserDataInCache(String userId, String newUsername, String newAvatarUrl) {
@@ -256,13 +220,11 @@ class PostController extends GetxController {
     if (_imageProviderCache.containsKey(url)) {
       return _imageProviderCache[url]!;
     }
-    
     final provider = ResizeImage(
       CachedNetworkImageProvider(url),
       width: width,
       height: height,
     );
-    
     _imageProviderCache[url] = provider;
     return provider;
   }
@@ -273,7 +235,6 @@ class PostController extends GetxController {
     if (_searchThumbnailCache.containsKey(postId)) {
       return _searchThumbnailCache[postId]!;
     }
-    
     final widget = RepaintBoundary(
       key: ValueKey('search_thumb_$postId'),
       child: GestureDetector(
@@ -304,7 +265,6 @@ class PostController extends GetxController {
         ),
       ),
     );
-    
     _searchThumbnailCache[postId] = widget;
     return widget;
   }
@@ -315,16 +275,13 @@ class PostController extends GetxController {
 
   void preloadImage(String url) {
     if (url.isEmpty || _preloadedImages.contains(url)) return;
-
     _preloadedImages.add(url);
-
     if (_preloadedImages.length > maxImageCache) {
       final oldest = _preloadedImages.isNotEmpty ? _preloadedImages.first : null;
       if (oldest != null) {
         _preloadedImages.remove(oldest);
       }
     }
-
     unawaited(precacheImage(getImageProvider(url), Get.context!));
   }
 
@@ -337,13 +294,11 @@ class PostController extends GetxController {
   void preloadPostById(String postId) {
     final post = getPostFromStorage(postId);
     if (post == null) return;
-    
     final dynamic imageUrlsRaw = post['imageUrls'];
     List<String> imageUrls = [];
     if (imageUrlsRaw is List) {
       imageUrls = imageUrlsRaw.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
     }
-    
     if (imageUrls.isNotEmpty) {
       preloadPostImages(imageUrls);
     }
@@ -351,7 +306,6 @@ class PostController extends GetxController {
 
   List<String> extractImageUrls(Map<String, dynamic> data) {
     final urls = <String>[];
-
     final dynamic imageUrlsRaw = data['imageUrls'];
     if (imageUrlsRaw is List) {
       for (var item in imageUrlsRaw) {
@@ -360,7 +314,6 @@ class PostController extends GetxController {
         }
       }
     }
-
     final dynamic imagesRaw = data['images'];
     if (imagesRaw is List && urls.isEmpty) {
       for (var item in imagesRaw) {
@@ -369,86 +322,53 @@ class PostController extends GetxController {
         }
       }
     }
-
     if (data['url'] != null && data['url'].toString().isNotEmpty && urls.isEmpty) {
       urls.add(data['url'].toString());
     }
     if (data['imageUrl'] != null && data['imageUrl'].toString().isNotEmpty && urls.isEmpty) {
       urls.add(data['imageUrl'].toString());
     }
-
     return urls;
   }
 
-  // ========== 🔥 ОСНОВНОЙ МЕТОД ОБРАБОТКИ ПОСТА ==========
-
+  // ============================================================
+  // 🔥 _processPost
+  // ============================================================
   Future<Map<String, dynamic>?> _processPost(DocumentSnapshot doc, {bool forceRefresh = false}) async {
     try {
       final data = doc.data() as Map<String, dynamic>;
       final postId = doc.id;
 
-      print('📦 [POST PROCESS] PostId: $postId, forceRefresh: $forceRefresh');
+      print('🔍 [PROCESS] ==========================================');
+      print('🔍 [PROCESS] Post ID: $postId');
+      print('🔍 [PROCESS] mediaType: ${data['mediaType']}');
+      print('🔍 [PROCESS] videoUrl: ${data['videoUrl']}');
+      print('🔍 [PROCESS] ==========================================');
 
       if (!forceRefresh && _loadedPostIds.contains(postId)) {
         final cached = posts[postId];
         if (cached != null) {
-          print('✅ [POST PROCESS] CACHE HIT for postId: $postId');
+          print('🔍 [PROCESS] Returning CACHED post $postId');
           return cached;
         }
       }
 
-      if (forceRefresh && _loadedPostIds.contains(postId)) {
-        final cached = posts[postId];
-        if (cached != null) {
-          final currentLikes = data['likes'] as int? ?? 0;
-          final currentComments = data['comments'] as int? ?? 0;
-          final currentSaves = data['saves'] as int? ?? 0;
-          
-          final cachedLikes = cached['likes'] ?? 0;
-          final cachedComments = cached['comments'] ?? 0;
-          final cachedSaves = cached['saves'] ?? 0;
-          
-          if (currentLikes == cachedLikes && 
-              currentComments == cachedComments && 
-              currentSaves == cachedSaves) {
-            print('✅ [POST PROCESS] Data unchanged, returning cached post: $postId');
-            return cached;
-          }
-          print('🔄 [POST PROCESS] Data changed, updating post: $postId');
-        }
-      }
-
-      print('❌ [POST PROCESS] CACHE MISS or data changed for postId: $postId');
-
       final imageUrls = extractImageUrls(data);
-      if (imageUrls.isEmpty) {
-        print('❌ [POST PROCESS] No images for postId: $postId');
-        return null;
-      }
+      if (imageUrls.isEmpty) return null;
 
       final authorId = data['userId'] as String?;
-      if (authorId == null) {
-        print('❌ [POST PROCESS] No authorId for postId: $postId');
-        return null;
-      }
+      if (authorId == null) return null;
 
       final authorData = await _getAuthorData(authorId);
-      print('📦 [POST PROCESS] Author data: username=${authorData['username']}, avatar=${authorData['avatarUrl']}');
 
       List<String> fitModes = [];
       final dynamic fitModesRaw = data['fitModes'];
       if (fitModesRaw is List) {
         fitModes = fitModesRaw.map((e) => e?.toString() ?? 'cover').toList();
-      } else if (data['fitMode'] != null) {
-        final singleMode = data['fitMode'].toString();
-        fitModes = List.filled(imageUrls.length, singleMode);
       } else {
         fitModes = List.filled(imageUrls.length, 'cover');
       }
-
-      while (fitModes.length < imageUrls.length) {
-        fitModes.add('cover');
-      }
+      while (fitModes.length < imageUrls.length) fitModes.add('cover');
       if (fitModes.length > imageUrls.length) {
         fitModes = fitModes.sublist(0, imageUrls.length);
       }
@@ -460,20 +380,21 @@ class PostController extends GetxController {
       final dynamic tagsRaw = data['tags'];
       if (tagsRaw is List) {
         tags = tagsRaw.map((e) {
-          if (e is Map<String, dynamic>) {
-            return e;
-          }
+          if (e is Map<String, dynamic>) return e;
           return <String, dynamic>{};
         }).where((e) => e.isNotEmpty).toList();
       }
-      
-      print('🔥 [POST PROCESS] Tags for postId $postId: ${tags.length} tags found');
 
-      // 🔥 ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ДЛЯ РЕКОМЕНДАЦИЙ
       final domainCategory = data['domainCategory']?.toString() ?? 'general';
       final linkDomain = data['linkDomain']?.toString() ?? '';
       final clicks = (data['clicks'] ?? 0) as int;
       final hotScore = (data['hotScore'] ?? 0.0) as double;
+
+      final String mediaType = data['mediaType']?.toString() ?? 'photo';
+      final String? videoUrl = data['videoUrl']?.toString();
+      final String? thumbnailUrl = data['thumbnailUrl']?.toString();
+
+      print('🔍 [PROCESS] EXTRACTED: mediaType=$mediaType, videoUrl=$videoUrl');
 
       final result = {
         'id': postId,
@@ -494,23 +415,46 @@ class PostController extends GetxController {
         'hashtags': data['hashtags'] is List ? List<String>.from(data['hashtags']) : [],
         'tags': tags,
         'isInFeed': false,
-        // 🔥 НОВЫЕ ПОЛЯ
         'domainCategory': domainCategory,
         'linkDomain': linkDomain,
         'clicks': clicks,
         'hotScore': hotScore,
+        'mediaType': mediaType,
+        'videoUrl': videoUrl,
+        'thumbnailUrl': thumbnailUrl,
       };
 
-      _loadedPostIds.add(postId);
-      print('✅ [POST PROCESS] Post processed and cached: $postId');
-      print('🔥 [POST PROCESS] Tags saved to cache: ${tags.length} tags');
-      print('🏷️ [POST PROCESS] Category: $domainCategory');
-      return result;
+      print('🔍 [PROCESS] RESULT: mediaType=${result['mediaType']}, videoUrl=${result['videoUrl']}');
 
+      _loadedPostIds.add(postId);
+      return result;
     } catch (e) {
       print('❌ [POST PROCESS] Error processing post: $e');
       return null;
     }
+  }
+
+  // ========== 🔥 ПУБЛИЧНАЯ ОБЁРТКА ==========
+  Future<Map<String, dynamic>?> getProcessedPost(DocumentSnapshot doc, {bool forceRefresh = false}) async {
+    return await _processPost(doc, forceRefresh: forceRefresh);
+  }
+
+  // ========== 🔥 ГЕТТЕРЫ ДЛЯ ВИДЕО ==========
+  
+  bool isVideoPost(String postId) {
+    final post = posts[postId];
+    final mediaType = post?['mediaType']?.toString() ?? 'photo';
+    return mediaType == 'video';
+  }
+
+  String? getVideoUrl(String postId) {
+    final post = posts[postId];
+    return post?['videoUrl']?.toString();
+  }
+
+  String? getThumbnailUrl(String postId) {
+    final post = posts[postId];
+    return post?['thumbnailUrl']?.toString();
   }
 
   // ========== 🔥 ГЛАВНЫЙ МЕТОД ОБНОВЛЕНИЯ ПОСТА ==========
@@ -520,20 +464,29 @@ class PostController extends GetxController {
     if (existingPost != null && existingPost['fitModes'] != null) {
       updatedPost['fitModes'] = existingPost['fitModes'];
     }
-    
     if (existingPost != null && existingPost['tags'] != null) {
       updatedPost['tags'] = existingPost['tags'];
     }
+    // 🔥 СОХРАНЯЕМ mediaType И videoUrl при обновлении
+    if (existingPost != null) {
+      if (updatedPost['mediaType'] == null && existingPost['mediaType'] != null) {
+        updatedPost['mediaType'] = existingPost['mediaType'];
+      }
+      if (updatedPost['videoUrl'] == null && existingPost['videoUrl'] != null) {
+        updatedPost['videoUrl'] = existingPost['videoUrl'];
+      }
+      if (updatedPost['thumbnailUrl'] == null && existingPost['thumbnailUrl'] != null) {
+        updatedPost['thumbnailUrl'] = existingPost['thumbnailUrl'];
+      }
+    }
     
     final postCopy = Map<String, dynamic>.from(updatedPost);
-    
     posts[postId] = postCopy;
     
     final feedIndex = feedPosts.indexWhere((p) => p['id'] == postId);
     if (feedIndex != -1) {
       feedPosts[feedIndex] = postCopy;
     }
-    
     final userId = postCopy['userId']?.toString();
     if (userId != null) {
       final currentList = userPosts[userId];
@@ -546,19 +499,16 @@ class PostController extends GetxController {
         }
       }
     }
-    
     final searchIndex = searchPosts.indexWhere((p) => p['id'] == postId);
     if (searchIndex != -1) {
       searchPosts[searchIndex] = postCopy;
     }
-    
     singlePost[postId] = postCopy;
   }
 
   void _removePostFromAllLists(String postId) {
     posts.remove(postId);
     feedPosts.removeWhere((p) => p['id'] == postId);
-
     for (var userId in userPosts.keys.toList()) {
       final currentList = userPosts[userId] ?? [];
       final newList = currentList.where((p) => p['id'] != postId).toList();
@@ -566,10 +516,8 @@ class PostController extends GetxController {
         userPosts[userId] = newList;
       }
     }
-
     searchPosts.removeWhere((p) => p['id'] == postId);
     singlePost.remove(postId);
-
     _postSubscriptions[postId]?.cancel();
     _postSubscriptions.remove(postId);
     _loadedPostIds.remove(postId);
@@ -578,11 +526,9 @@ class PostController extends GetxController {
   // ========== 🔥 ОПТИМИСТИЧНОЕ УДАЛЕНИЕ ==========
   void removePostFromAllLists(String postId) {
     print('🗑️ [PostController] Optimistically removing post: $postId');
-    
     posts.remove(postId);
     feedPosts.removeWhere((post) => post['id'] == postId);
     searchPosts.removeWhere((post) => post['id'] == postId);
-    
     for (var userId in userPosts.keys.toList()) {
       final currentList = userPosts[userId] ?? [];
       final updatedList = currentList.where((post) => post['id'] != postId).toList();
@@ -590,9 +536,7 @@ class PostController extends GetxController {
         userPosts[userId] = updatedList;
       }
     }
-    
     singlePost.remove(postId);
-    
     userPosts.refresh();
     feedPosts.refresh();
     searchPosts.refresh();
@@ -604,75 +548,147 @@ class PostController extends GetxController {
         .collection(collection)
         .where('postId', isEqualTo: postId)
         .get();
-
     for (var doc in snapshot.docs) {
       await doc.reference.delete();
     }
   }
 
-  // ========== 🔥 ЕДИНСТВЕННЫЙ МЕТОД УДАЛЕНИЯ ==========
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД УДАЛЕНИЯ - ЗАГРУЖАЕТ ИЗ FIRESTORE ПРИ НЕОБХОДИМОСТИ
+  // ============================================================
   Future<void> deletePost(String postId) async {
     print('🔥 DELETE START: $postId');
-
+    
+    // 🔥 1. ПЫТАЕМСЯ ПОЛУЧИТЬ ПОСТ ИЗ КЭША
+    var post = posts[postId];
+    var videoUrl = post?['videoUrl']?.toString();
+    
+    // 🔥 2. ЕСЛИ В КЭШЕ НЕТ videoUrl - ЗАГРУЖАЕМ ИЗ FIRESTORE
+    if (videoUrl == null || videoUrl.isEmpty) {
+      print('🔍 [DELETE] videoUrl not in cache, fetching from Firestore...');
+      try {
+        final doc = await _firestore.collection('posts').doc(postId).get();
+        if (doc.exists) {
+          final data = doc.data()!;
+          videoUrl = data['videoUrl']?.toString();
+          print('🔍 [DELETE] Found in Firestore: videoUrl=$videoUrl');
+          
+          // Обновляем кэш
+          if (videoUrl != null && videoUrl.isNotEmpty) {
+            if (post != null) {
+              post['videoUrl'] = videoUrl;
+              post['mediaType'] = data['mediaType']?.toString() ?? 'video';
+              posts[postId] = post;
+            }
+          }
+        } else {
+          print('⚠️ [DELETE] Post not found in Firestore (already deleted?)');
+        }
+      } catch (e) {
+        print('⚠️ [DELETE] Failed to fetch from Firestore: $e');
+      }
+    }
+    
+    print('🎬 [DELETE] final videoUrl: $videoUrl');
+    
     removePostFromAllLists(postId);
-
+    
     try {
+      // 🔥 УДАЛЯЕМ ИЗ FIRESTORE
       await _firestore.collection('posts').doc(postId).delete();
-
       await Future.wait([
         _deleteCollection('likes', postId),
         _deleteCollection('comments', postId),
       ]);
-
+      
+      // 🔥 УДАЛЯЕМ ВИДЕО ИЗ R2 (ЕСЛИ ЕСТЬ)
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        print('🗑️ [DELETE] Attempting to delete from R2: $videoUrl');
+        try {
+          final r2Service = R2Service();
+          await r2Service.deleteFile(videoUrl);
+          print('✅ [DELETE] Video deleted from R2: $videoUrl');
+        } catch (e) {
+          print('⚠️ [DELETE] Failed to delete from R2: $e');
+        }
+      } else {
+        print('⚠️ [DELETE] No videoUrl to delete (probably photo post)');
+      }
+      
       print('✅ DELETE SUCCESS: $postId');
     } catch (e) {
       print('❌ DELETE FAILED: $e');
     }
   }
 
-  // ========== ДОБАВЛЕНИЕ ПОСТОВ ==========
-
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ addPostsToStorage
+  // ============================================================
   void addPostsToStorage(List<Map<String, dynamic>> newPosts, {bool markAsInFeed = false}) {
     for (var post in newPosts) {
       final postId = post['id']?.toString();
       if (postId == null) continue;
 
+      final String? mediaType = post['mediaType']?.toString();
+      final String? videoUrl = post['videoUrl']?.toString();
+      final String? thumbnailUrl = post['thumbnailUrl']?.toString();
+
+      print('📦 [ADD] Post $postId: mediaType=$mediaType, videoUrl=$videoUrl');
+
       if (markAsInFeed) post['isInFeed'] = true;
       
       final postCopy = Map<String, dynamic>.from(post);
       
-      final existingPost = posts[postId];
-      if (existingPost != null && existingPost['fitModes'] != null && postCopy['fitModes'] == null) {
-        postCopy['fitModes'] = existingPost['fitModes'];
+      if (mediaType != null && mediaType.isNotEmpty && mediaType != 'null') {
+        postCopy['mediaType'] = mediaType;
+      } else if (mediaType == null || mediaType == 'null' || mediaType.isEmpty) {
+        if (videoUrl != null && videoUrl.isNotEmpty) {
+          postCopy['mediaType'] = 'video';
+          print('📦 [ADD] Fixed mediaType: setting to "video" because videoUrl exists');
+        } else {
+          postCopy['mediaType'] = 'photo';
+        }
       }
       
-      if (existingPost != null && existingPost['tags'] != null && postCopy['tags'] == null) {
-        postCopy['tags'] = existingPost['tags'];
+      if (videoUrl != null && videoUrl.isNotEmpty && videoUrl != 'null') {
+        postCopy['videoUrl'] = videoUrl;
       }
-      
+      if (thumbnailUrl != null && thumbnailUrl.isNotEmpty && thumbnailUrl != 'null') {
+        postCopy['thumbnailUrl'] = thumbnailUrl;
+      }
+
       posts[postId] = postCopy;
       
+      print('📦 [ADD] SAVED: Post $postId: mediaType=${postCopy['mediaType']}, videoUrl=${postCopy['videoUrl']}');
+      
       _syncPostToOriginalLists(postId, postCopy);
-
+      
       final dynamic imageUrlsRaw = post['imageUrls'];
       if (imageUrlsRaw is List) {
-        final List<String> imageUrls = imageUrlsRaw.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
-        if (imageUrls.isNotEmpty) {
-          preloadPostImages(imageUrls);
+        final List<String> urls = imageUrlsRaw.map((e) => e?.toString() ?? '').where((e) => e.isNotEmpty).toList();
+        if (urls.isNotEmpty) {
+          preloadPostImages(urls);
         }
       }
     }
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _syncPostToOriginalLists
+  // ============================================================
   void _syncPostToOriginalLists(String postId, Map<String, dynamic> postData) {
-    final postCopy = Map<String, dynamic>.from(postData);
+    final freshPost = posts[postId];
+    if (freshPost == null) return;
     
-    final existingPost = posts[postId];
-    if (existingPost != null && existingPost['fitModes'] != null && postCopy['fitModes'] == null) {
-      postCopy['fitModes'] = existingPost['fitModes'];
-    }
-    if (existingPost != null && existingPost['tags'] != null && postCopy['tags'] == null) {
-      postCopy['tags'] = existingPost['tags'];
+    final postCopy = Map<String, dynamic>.from(freshPost);
+    
+    if (postCopy['mediaType'] == null || postCopy['mediaType'] == 'null' || postCopy['mediaType'] == '') {
+      if (postCopy['videoUrl'] != null && postCopy['videoUrl'].toString().isNotEmpty) {
+        postCopy['mediaType'] = 'video';
+        print('🔄 [SYNC] Restored mediaType="video" for post $postId');
+      } else {
+        postCopy['mediaType'] = 'photo';
+      }
     }
     
     final feedIndex = feedPosts.indexWhere((p) => p['id'] == postId);
@@ -683,7 +699,7 @@ class PostController extends GetxController {
         feedPosts.add(postCopy);
       }
     }
-
+    
     final userId = postData['userId']?.toString();
     if (userId != null) {
       final userList = userPosts[userId] ?? [];
@@ -695,34 +711,44 @@ class PostController extends GetxController {
         userPosts[userId] = [...userList, postCopy];
       }
     }
-
+    
     final searchIndex = searchPosts.indexWhere((p) => p['id'] == postId);
     if (searchIndex >= 0) {
       searchPosts[searchIndex] = postCopy;
     } else {
       searchPosts.add(postCopy);
     }
-
+    
     singlePost[postId] = postCopy;
   }
 
   Map<String, dynamic>? getPostFromStorage(String postId) {
-    return posts[postId];
+    final post = posts[postId];
+    if (post != null) {
+      if (post['mediaType'] == null || post['mediaType'] == 'null') {
+        if (post['videoUrl'] != null && post['videoUrl'].toString().isNotEmpty) {
+          post['mediaType'] = 'video';
+          print('🔄 [GET] Fixed mediaType="video" for post $postId');
+        } else {
+          post['mediaType'] = 'photo';
+        }
+        posts[postId] = post;
+      }
+    }
+    return post;
   }
 
-  // ========== 🏠 ЗАГРУЗКА FEED С РЕКОМЕНДАЦИЯМИ + ГОСТЕВОЙ РЕЖИМ ==========
+  // ========== 🏠 ЗАГРУЗКА FEED ==========
 
   Future<List<String>> _getFollowingUsers() async {
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null) return [];
-
     try {
       final snapshot = await _firestore
           .collection('following')
           .doc(currentUserId)
           .collection('userFollowing')
           .get();
-
       return snapshot.docs.map((doc) => doc.id).toList();
     } catch (e) {
       print('❌ Error getting following: $e');
@@ -730,70 +756,52 @@ class PostController extends GetxController {
     }
   }
 
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД ЗАГРУЗКИ FEED С ГОСТЕВЫМ РЕЖИМОМ
   Future<void> loadFeedPosts({bool refresh = false}) async {
     if (_feedRequestActive) return;
     if (!refresh && !_hasMoreFeed) return;
-
     print('📡 [FEED] loadFeedPosts called: refresh=$refresh');
-    
     _feedRequestActive = true;
     isLoadingFeed.value = true;
 
     try {
       final currentUser = _auth.currentUser;
-
-      // 🔥 ГОСТЕВОЙ РЕЖИМ
       if (currentUser == null) {
-        print('👤 [FEED] Guest mode - loading fresh posts');
-        
         Query query = _firestore
             .collection('posts')
             .orderBy('createdAt', descending: true)
             .limit(_pageSize);
-
         if (!refresh && _lastFeedDoc != null) {
           query = query.startAfterDocument(_lastFeedDoc!);
         }
-
         final snapshot = await query.get();
-
         final List<Map<String, dynamic>> posts = [];
         for (final doc in snapshot.docs) {
           final processed = await _processPost(doc);
           if (processed != null) posts.add(processed);
         }
-
         addPostsToStorage(posts, markAsInFeed: true);
-
         if (refresh) {
           feedPosts.clear();
           _lastFeedDoc = null;
           _hasMoreFeed = true;
         }
-
         final existingIds = feedPosts.map((p) => p['id']).toSet();
         final newPosts = posts.where((p) => !existingIds.contains(p['id'])).toList();
-
         if (refresh) {
           feedPosts.assignAll(posts);
         } else {
           feedPosts.addAll(newPosts);
         }
-
         if (snapshot.docs.isNotEmpty) {
           _lastFeedDoc = snapshot.docs.last;
           _hasMoreFeed = snapshot.docs.length == _pageSize;
         } else {
           _hasMoreFeed = false;
         }
-
         print('✅ [FEED] Guest feed loaded: ${feedPosts.length} posts');
-        print('✅ [FEED] Has more: $_hasMoreFeed');
         return;
       }
 
-      // 🔥 АВТОРИЗОВАННЫЙ ПОЛЬЗОВАТЕЛЬ
       final followingUsers = await _getFollowingUsers();
       final recommendationService = RecommendationService();
       final recommendedPosts = await recommendationService.getPersonalizedFeed(
@@ -802,29 +810,24 @@ class PostController extends GetxController {
         lastDocument: refresh ? null : _lastFeedDoc,
         refresh: refresh,
       );
-
+      
       addPostsToStorage(recommendedPosts, markAsInFeed: true);
-
+      
       if (refresh) {
         feedPosts.clear();
         _lastFeedDoc = null;
         _hasMoreFeed = true;
+        _loadedPostIds.clear();
       }
-
       final existingIds = feedPosts.map((p) => p['id']).toSet();
       final newPosts = recommendedPosts.where((p) => !existingIds.contains(p['id'])).toList();
-
       if (refresh) {
         feedPosts.assignAll(recommendedPosts);
       } else {
         feedPosts.addAll(newPosts);
       }
-
       _hasMoreFeed = recommendedPosts.length == RecommendationService.FETCH_LIMIT;
-
       print('✅ [FEED] Feed loaded: ${feedPosts.length} posts');
-      print('✅ [FEED] Has more: $_hasMoreFeed');
-
     } catch (e) {
       print('❌ [FEED] Error loading feed: $e');
     } finally {
@@ -833,23 +836,24 @@ class PostController extends GetxController {
     }
   }
 
-  void refreshFeed() => loadFeedPosts(refresh: true);
+  void refreshFeed() {
+    _loadedPostIds.clear();
+    loadFeedPosts(refresh: true);
+  }
   
   Future<void> loadMoreFeedPosts() async {
     if (_hasMoreFeed && !_feedRequestActive && !isLoadingFeed.value) {
-      print('📡 [FEED] loadMoreFeedPosts called, loading more...');
       await loadFeedPosts(refresh: false);
     }
   }
 
-  // ========== 👤 ЗАГРУЗКА ПОСТОВ ПОЛЬЗОВАТЕЛЯ ==========
-
+  // ============================================================
+  // 🔥 loadUserPosts
+  // ============================================================
   Future<void> loadUserPosts(String userId, {bool refresh = false}) async {
     if (_userRequestActive[userId] == true) return;
     if (!refresh && _hasMoreUserPosts[userId] == false) return;
-
     print('📡 [USER] loadUserPosts called: userId=$userId, refresh=$refresh');
-    
     _userRequestActive[userId] = true;
     isLoadingUserPosts[userId] = true;
 
@@ -859,46 +863,51 @@ class PostController extends GetxController {
           .where('userId', isEqualTo: userId)
           .orderBy('createdAt', descending: true)
           .limit(_pageSize);
-
       if (!refresh && _lastUserDoc[userId] != null) {
         query = query.startAfterDocument(_lastUserDoc[userId]!);
       }
-
       final snapshot = await query.get();
-
       final newPosts = <Map<String, dynamic>>[];
       for (var doc in snapshot.docs) {
-        final processedPost = await _processPost(doc);
-        if (processedPost != null) newPosts.add(processedPost);
+        final processedPost = await _processPost(doc, forceRefresh: refresh);
+        if (processedPost != null) {
+          print('📦 [USER-LOAD] Post ${processedPost['id']}: mediaType=${processedPost['mediaType']}, videoUrl=${processedPost['videoUrl']}');
+          newPosts.add(processedPost);
+        }
       }
-
+      
+      print('📦 [USER-LOAD] Total newPosts: ${newPosts.length}');
+      
       if (newPosts.isNotEmpty) {
         addPostsToStorage(newPosts);
         
-        final currentList = userPosts[userId] ?? [];
-        final existingIds = currentList.map((p) => p['id']).toSet();
-        final postsToAdd = newPosts.where((p) => !existingIds.contains(p['id'])).toList();
+        final updatedList = newPosts.map((post) {
+          final pid = post['id'] as String;
+          final cachedPost = getPostFromStorage(pid);
+          return cachedPost ?? post;
+        }).toList();
         
         if (refresh) {
-          userPosts[userId] = newPosts;
+          userPosts[userId] = updatedList;
+          print('🔄 [USER] Refreshed userPosts for $userId: ${updatedList.length} posts');
         } else {
+          final currentList = userPosts[userId] ?? [];
+          final existingIds = currentList.map((p) => p['id']).toSet();
+          final postsToAdd = updatedList.where((p) => !existingIds.contains(p['id'])).toList();
           if (postsToAdd.isNotEmpty) {
             userPosts[userId] = [...currentList, ...postsToAdd];
           } else if (currentList.isEmpty) {
-            userPosts[userId] = newPosts;
+            userPosts[userId] = updatedList;
           }
         }
       }
-
       if (snapshot.docs.isNotEmpty) {
         _lastUserDoc[userId] = snapshot.docs.last;
         _hasMoreUserPosts[userId] = snapshot.docs.length == _pageSize;
       } else {
         _hasMoreUserPosts[userId] = false;
       }
-
       _subscribeToPostUpdates(newPosts.map((p) => p['id'] as String).toList());
-
     } catch (e) {
       print('❌ Error loading user posts: $e');
     } finally {
@@ -908,13 +917,19 @@ class PostController extends GetxController {
   }
 
   Future<void> refreshUserPosts(String userId) async {
+    print('🔄 [REFRESH] Force refreshing posts for user: $userId');
+    final oldPosts = userPosts[userId] ?? [];
+    for (var post in oldPosts) {
+      final pid = post['id'] as String;
+      posts.remove(pid);
+      _loadedPostIds.remove(pid);
+    }
     _lastUserDoc[userId] = null;
     _hasMoreUserPosts[userId] = true;
+    userPosts[userId] = [];
     await loadUserPosts(userId, refresh: true);
   }
 
-  // ========== 🔥 НОВЫЙ МЕТОД ДЛЯ ПАГИНАЦИИ ==========
-  
   Future<List<Map<String, dynamic>>> loadMoreUserPosts(
     String userId, {
     required int page,
@@ -922,49 +937,46 @@ class PostController extends GetxController {
   }) async {
     try {
       print('📡 [POST] Loading more posts for user: $userId, page: $page');
-      
       Query query = _firestore
           .collection('posts')
           .where('userId', isEqualTo: userId)
           .orderBy('createdAt', descending: true)
           .limit(pageSize);
-      
       if (_lastUserDoc[userId] != null) {
         query = query.startAfterDocument(_lastUserDoc[userId]!);
       }
-      
       final snapshot = await query.get();
-      
       if (snapshot.docs.isEmpty) {
         _hasMoreUserPosts[userId] = false;
         return [];
       }
-      
       final newPosts = <Map<String, dynamic>>[];
       for (final doc in snapshot.docs) {
-        final processedPost = await _processPost(doc);
+        final processedPost = await _processPost(doc, forceRefresh: true);
         if (processedPost != null) {
           newPosts.add(processedPost);
         }
       }
-      
       if (newPosts.isNotEmpty) {
         addPostsToStorage(newPosts);
+        
+        final updatedList = newPosts.map((post) {
+          final pid = post['id'] as String;
+          final cachedPost = getPostFromStorage(pid);
+          return cachedPost ?? post;
+        }).toList();
+        
         _lastUserDoc[userId] = snapshot.docs.last;
         _hasMoreUserPosts[userId] = snapshot.docs.length == pageSize;
-        
         final currentList = userPosts[userId] ?? [];
         final existingIds = currentList.map((p) => p['id']).toSet();
-        final postsToAdd = newPosts.where((p) => !existingIds.contains(p['id'])).toList();
-        
+        final postsToAdd = updatedList.where((p) => !existingIds.contains(p['id'])).toList();
         if (postsToAdd.isNotEmpty) {
           userPosts[userId] = [...currentList, ...postsToAdd];
         }
       }
-      
       print('✅ [POST] Loaded ${newPosts.length} more posts for user: $userId');
       return newPosts;
-      
     } catch (e) {
       print('❌ [POST] Error loading more posts: $e');
       return [];
@@ -1006,22 +1018,15 @@ class PostController extends GetxController {
   Future<void> toggleLike(String postId) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return;
-
     final currentPost = posts[postId];
     if (currentPost == null) return;
-
     final currentlyLiked = likedPosts[postId] ?? false;
     final newLikedState = !currentlyLiked;
-    
     final oldPost = Map<String, dynamic>.from(currentPost);
     final oldLikesCount = oldPost['likes'] as int? ?? 0;
-
     final updatedPost = Map<String, dynamic>.from(currentPost);
     updatedPost['likes'] = newLikedState ? oldLikesCount + 1 : (oldLikesCount - 1).clamp(0, 999999);
-    
     _updatePostInAllLists(postId, updatedPost);
-    
-    // 👇 ОБНОВЛЯЕМ ДАТУ ЛАЙКА
     if (newLikedState) {
       likedPosts[postId] = true;
       likedDates[postId] = DateTime.now();
@@ -1029,15 +1034,11 @@ class PostController extends GetxController {
       likedPosts[postId] = false;
       likedDates.remove(postId);
     }
-
-    // 🔥 ОБНОВЛЯЕМ ИНТЕРЕСЫ ПОЛЬЗОВАТЕЛЯ
     final category = currentPost['domainCategory']?.toString() ?? 'general';
     await RecommendationService().updateUserInterest(userId, category);
-
     try {
       final likeId = '${userId}_$postId';
       final likeRef = _firestore.collection('likes').doc(likeId);
-      
       if (newLikedState) {
         final existing = await likeRef.get();
         if (!existing.exists) {
@@ -1076,22 +1077,15 @@ class PostController extends GetxController {
   Future<void> toggleSave(String postId) async {
     final userId = _auth.currentUser?.uid;
     if (userId == null) return;
-
     final currentPost = posts[postId];
     if (currentPost == null) return;
-
     final currentlySaved = savedPosts[postId] ?? false;
     final newSavedState = !currentlySaved;
-    
     final oldPost = Map<String, dynamic>.from(currentPost);
     final oldSavesCount = oldPost['saves'] as int? ?? 0;
-
     final updatedPost = Map<String, dynamic>.from(currentPost);
     updatedPost['saves'] = newSavedState ? oldSavesCount + 1 : (oldSavesCount - 1).clamp(0, 999999);
-    
     _updatePostInAllLists(postId, updatedPost);
-    
-    // 👇 ОБНОВЛЯЕМ ДАТУ СОХРАНЕНИЯ
     if (newSavedState) {
       savedPosts[postId] = true;
       savedDates[postId] = DateTime.now();
@@ -1099,14 +1093,12 @@ class PostController extends GetxController {
       savedPosts[postId] = false;
       savedDates.remove(postId);
     }
-
     try {
       final savedRef = _firestore
           .collection('users')
           .doc(userId)
           .collection('savedPosts')
           .doc(postId);
-          
       if (newSavedState) {
         await savedRef.set({
           'postId': postId,
@@ -1138,22 +1130,18 @@ class PostController extends GetxController {
   void incrementComments(String postId) {
     final currentPost = posts[postId];
     if (currentPost == null) return;
-    
     final updatedPost = Map<String, dynamic>.from(currentPost);
     final currentComments = (updatedPost['comments'] ?? 0) as int;
     updatedPost['comments'] = currentComments + 1;
-    
     _updatePostInAllLists(postId, updatedPost);
   }
 
   void decrementComments(String postId) {
     final currentPost = posts[postId];
     if (currentPost == null) return;
-    
     final updatedPost = Map<String, dynamic>.from(currentPost);
     final currentComments = (updatedPost['comments'] ?? 1) as int;
     updatedPost['comments'] = (currentComments - 1).clamp(0, 999999);
-    
     _updatePostInAllLists(postId, updatedPost);
   }
 
@@ -1162,21 +1150,15 @@ class PostController extends GetxController {
   void addNewPost(Map<String, dynamic> postData) {
     final postId = postData['id'] as String;
     final userId = postData['userId'] as String;
-
     final postCopy = Map<String, dynamic>.from(postData);
-    
     posts[postId] = postCopy;
-
     final currentUserPosts = userPosts[userId] ?? [];
     userPosts[userId] = [postCopy, ...currentUserPosts];
-
     if (postData['isInFeed'] == true) {
       feedPosts.insert(0, postCopy);
     }
-
     searchPosts.insert(0, postCopy);
     singlePost[postId] = postCopy;
-
     _subscribeToSinglePost(postId);
   }
 

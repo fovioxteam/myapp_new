@@ -85,7 +85,6 @@ class _SearchScreenState extends State<SearchScreen>
     super.dispose();
   }
 
-  // ============ МЕТОД ДЛЯ ПОЛУЧЕНИЯ THUMBNAIL ============
   String _getThumbnailUrl(Map<String, dynamic> post) {
     if (post["thumbnailUrl"] != null && post["thumbnailUrl"].toString().isNotEmpty) {
       return post["thumbnailUrl"].toString();
@@ -569,11 +568,21 @@ class _SearchScreenState extends State<SearchScreen>
     print('🔍 [SEARCH] Opening post detail at index: $index');
     final scrollPosition = _scrollController.position.pixels;
     
+    final updatedPosts = _posts.map((post) {
+      final postId = post['id']?.toString() ?? '';
+      final cached = _postController.getPostFromStorage(postId);
+      if (cached != null) {
+        print('📱 [SEARCH] Using cached post $postId: mediaType=${cached['mediaType']}, videoUrl=${cached['videoUrl']}');
+        return cached;
+      }
+      return post;
+    }).toList();
+    
     await Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PostDetailScreen(
-          posts: _posts,
+          posts: updatedPosts,
           initialIndex: index,
           likedPosts: _getLikedPostsMap(),
           savedPosts: _getSavedPostsMap(),
@@ -846,7 +855,6 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
-  // ============ ИСПРАВЛЕНО: отступ снизу ТОЧНО такой же, как в ProfilePostsGrid ============
   Widget _buildUserSearchResults() {
     if (_users.isEmpty) {
       print('🔍 [SEARCH] No users found, showing empty state');
@@ -886,7 +894,6 @@ class _SearchScreenState extends State<SearchScreen>
       physics: const BouncingScrollPhysics(),
       slivers: [
         CupertinoSliverRefreshControl(onRefresh: _refreshSearch),
-        // 👇 Отступ ровно 80 (как в ProfilePostsGrid)
         SliverPadding(
           padding: const EdgeInsets.only(bottom: 80),
           sliver: SliverList(
@@ -972,7 +979,9 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
-  // ============ ИСПРАВЛЕНО: отступ 80, crossAxisCount = 3 ============
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _buildPostsSearchResults - ИКОНКА ТОЛЬКО ДЛЯ ФОТО
+  // ============================================================
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
       print('🔍 [SEARCH] No posts found, showing empty state');
@@ -1016,7 +1025,7 @@ class _SearchScreenState extends State<SearchScreen>
         left: 1,
         right: 1,
         top: 1,
-        bottom: 80, // 👈 ТОЧНО ТАКОЙ ЖЕ, как в ProfilePostsGrid
+        bottom: 80,
       ),
       physics: const BouncingScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -1031,12 +1040,19 @@ class _SearchScreenState extends State<SearchScreen>
         final imageUrl = _getThumbnailUrl(post);
         final postId = post['id']?.toString() ?? '';
         
+        final isVideo = post['mediaType']?.toString() == 'video' || 
+                       (post['videoUrl'] != null && post['videoUrl'].toString().isNotEmpty);
+
         return GestureDetector(
           onTap: () => _openPostDetail(index),
           child: Container(
             color: Colors.grey[200],
-            child: imageUrl.isNotEmpty && imageUrl.startsWith('http')
-                ? CachedNetworkImage(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // ИЗОБРАЖЕНИЕ
+                if (imageUrl.isNotEmpty && imageUrl.startsWith('http'))
+                  CachedNetworkImage(
                     key: ValueKey('search_post_${postId}_$imageUrl'),
                     imageUrl: imageUrl,
                     fit: BoxFit.cover,
@@ -1054,12 +1070,29 @@ class _SearchScreenState extends State<SearchScreen>
                       ),
                     ),
                   )
-                : Container(
+                else
+                  Container(
                     color: Colors.grey[300],
                     child: const Center(
                       child: Icon(Icons.image_not_supported_outlined, color: Colors.grey),
                     ),
                   ),
+
+                // ============================================================
+                // 🔥 ИКОНКА ТОЛЬКО ДЛЯ ФОТО (ВИДЕО - БЕЗ ИКОНКИ)
+                // ============================================================
+                if (!isVideo)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: const Icon(
+                      CupertinoIcons.square_on_square,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },

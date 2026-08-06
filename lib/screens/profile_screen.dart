@@ -1,5 +1,3 @@
-// lib/screens/profile_screen.dart
-
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -32,8 +30,8 @@ import '../widgets/shimmer_loading.dart';
 import '../widgets/profile_posts_grid.dart';
 import 'user_profile_screen.dart';
 import 'post_detail_screen.dart';
-import 'guest_profile_screen.dart'; // 👈 ДОБАВЛЕНО
-import '../services/auth_service.dart'; // 👈 ДОБАВЛЕНО
+import 'guest_profile_screen.dart';
+import '../services/auth_service.dart';
 
 // ========== ВКЛАДКА ПОСТОВ ==========
 class _PostsTabWidget extends StatefulWidget {
@@ -667,8 +665,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ========== ОТКРЫТИЕ ПОСТА ==========
-
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД ОТКРЫТИЯ ПОСТА
+  // ============================================================
   void _openPostDetail(String postId) {
     if (!mounted) return;
     
@@ -706,12 +705,30 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (initialIndex == -1) initialIndex = 0;
     }
     
+    // ============================================================
+    // 🔥 ОБНОВЛЯЕМ ПОСТЫ ИЗ ГЛОБАЛЬНОГО ХРАНИЛИЩА
+    // ============================================================
+    final updatedPosts = posts.map((post) {
+      final pid = post['id'] as String;
+      final cachedPost = _postController.getPostFromStorage(pid);
+      if (cachedPost != null) {
+        print('📱 [ProfileScreen] Updated post $pid: mediaType=${cachedPost['mediaType']}, videoUrl=${cachedPost['videoUrl']}');
+        return cachedPost;
+      }
+      return post;
+    }).toList();
+    
+    final newIndex = updatedPosts.indexWhere((p) => p['id'] == postId);
+    final finalIndex = newIndex != -1 ? newIndex : (initialIndex < updatedPosts.length ? initialIndex : 0);
+    
+    print('📱 [ProfileScreen] Opening post detail with ${updatedPosts.length} posts');
+    
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PostDetailScreen(
-          posts: posts,
-          initialIndex: initialIndex,
+          posts: updatedPosts,
+          initialIndex: finalIndex,
           followingUsers: _followingUsers,
           onLikeChanged: (postId, isLiked) {
             if (mounted) {
@@ -727,6 +744,74 @@ class _ProfileScreenState extends State<ProfileScreen>
       ),
     );
   }
+
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _refreshProfile - ПОЛНОСТЬЮ ОЧИЩАЕТ КЭШ
+  // ============================================================
+  Future<void> _refreshProfile() async {
+    if (!mounted) return;
+    
+    print('🔄 [ProfileScreen] ========== STARTING PROFILE REFRESH ==========');
+    
+    // 🔥 1. ОЧИЩАЕМ ВЕСЬ КЭШ POST_CONTROLLER
+    _postController.clearCache();
+    _postController.clearUserPostsCache(_currentUserId);
+    print('🗑️ [ProfileScreen] Cleared PostController cache');
+    
+    // 🔥 2. ОЧИЩАЕМ КЭШ ИЗОБРАЖЕНИЙ
+    await _clearImageCache();
+    print('🗑️ [ProfileScreen] Cleared image cache');
+    
+    // 🔥 3. СБРАСЫВАЕМ ЛОКАЛЬНЫЕ СПИСКИ
+    setState(() {
+      _likedPosts = [];
+      _likedPostsLoaded = false;
+      _savedPosts = [];
+      _savedPostsLoaded = false;
+      _isFirstLoad = true;
+    });
+    
+    try {
+      // 🔥 4. ПЕРЕЗАГРУЖАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
+      await _loadUserData(refresh: true);
+      await _loadUserDetails();
+      await _loadFollowingUsers();
+      
+      // 🔥 5. ПЕРЕЗАГРУЖАЕМ ЛАЙКИ И СОХРАНЕНИЯ
+      await _loadLikedPostsFromFirestore();
+      await _loadSavedPostsFromFirestore();
+      
+      // 🔥 6. ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСКИ
+      _refreshLikedPostsFromController();
+      _refreshSavedPostsFromController();
+      
+      // 🔥 7. ОБНОВЛЯЕМ UI
+      if (mounted) {
+        setState(() {
+          _isFirstLoad = false;
+        });
+      }
+      
+      print('✅ [ProfileScreen] Profile refresh completed successfully');
+      
+      // 🔥 8. ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ
+      _showSnackbar('Profile refreshed');
+      
+    } catch (e) {
+      _handleError('Failed to refresh profile', error: e);
+      if (mounted) {
+        setState(() {
+          _isFirstLoad = false;
+        });
+      }
+    }
+    
+    print('🔄 [ProfileScreen] ========== PROFILE REFRESH COMPLETE ==========');
+  }
+
+  // ============================================================
+  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ (БЕЗ ИЗМЕНЕНИЙ)
+  // ============================================================
 
   Widget _buildPostsShimmer() {
     return GridView.builder(
@@ -1320,34 +1405,12 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  Future<void> _refreshProfile() async {
-    if (!mounted) return;
-    
-    print('🔄 Starting profile refresh...');
-    
-    await _clearImageCache();
-    
-    try {
-      await _postController.refreshUserPosts(_currentUserId);
-      await _loadUserDetails();
-      await _loadFollowingUsers();
-      
-      await _loadLikedPostsFromFirestore();
-      await _loadSavedPostsFromFirestore();
-      
-      print('✅ Profile refresh completed');
-      
-    } catch (e) {
-      _handleError('Failed to refresh profile', error: e);
-    }
-  }
-
   // ==================== ОСНОВНОЙ BUILD ====================
   @override
   Widget build(BuildContext context) {
     super.build(context);
     
-    // 🔥 ПРОВЕРКА ГОСТЯ (ДОБАВЛЕНО)
+    // 🔥 ПРОВЕРКА ГОСТЯ
     final authService = Get.find<AuthService>();
     if (!authService.isLoggedIn) {
       return const GuestProfileScreen();

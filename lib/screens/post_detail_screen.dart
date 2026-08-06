@@ -1,5 +1,3 @@
-// lib/screens/post_detail_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -8,7 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../widgets/post_item.dart';
 import '../controllers/post_controller.dart';
-import '../services/recommendation_service.dart'; // 👈 ДОБАВИТЬ
+import '../services/recommendation_service.dart';
 
 class PostDetailScreen extends StatefulWidget {
   final List<Map<String, dynamic>>? posts;
@@ -56,7 +54,6 @@ class _PostDetailScreenState extends State<PostDetailScreen>
   int _currentIndex = 0;
   List<Map<String, dynamic>> _carouselPosts = [];
 
-  // 🔥 КЭШ ДЛЯ ВИДЖЕТОВ ПОСТОВ
   final Map<String, Widget> _postWidgetCache = {};
 
   @override
@@ -137,32 +134,27 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     }
   }
 
-  // 🔥 ОБРАБОТЧИК КЛИКА ПО ССЫЛКЕ (увеличивает счётчик)
   Future<void> _handleLinkClick(String postId) async {
     if (postId.isEmpty) return;
     
     print('🔗 [PostDetailScreen] Link clicked for post: $postId');
     
     try {
-      // Увеличиваем счётчик кликов в Firestore
       await _firestore.collection('posts').doc(postId).update({
         'clicks': FieldValue.increment(1),
       });
       
-      // Обновляем локальный пост
       final post = _postController.getPostFromStorage(postId);
       if (post != null) {
         final updatedPost = Map<String, dynamic>.from(post);
         final currentClicks = (updatedPost['clicks'] ?? 0) as int;
         updatedPost['clicks'] = currentClicks + 1;
         
-        // Пересчитываем hotScore
         final hotScore = RecommendationService.calculateHotScore(updatedPost);
         updatedPost['hotScore'] = hotScore;
         
         _postController.addPostsToStorage([updatedPost]);
         
-        // Обновляем текущий пост если он отображается
         if (_post != null && _post!['id'] == postId) {
           setState(() {
             _post = updatedPost;
@@ -186,14 +178,24 @@ class _PostDetailScreenState extends State<PostDetailScreen>
     );
   }
 
-  // 🔥 ИСПРАВЛЯЕМ - БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _buildPostItem - ОБНОВЛЯЕТ ПОСТ ИЗ КЭША
+  // ============================================================
   Widget _buildPostItem(Map<String, dynamic> postData, bool isCurrentPost) {
     final postId = postData['id']?.toString() ?? '';
     
-    // БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
-    final freshPost = _postController.getPostFromStorage(postId) ?? postData;
+    // 🔥 БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+    var freshPost = _postController.getPostFromStorage(postId);
     
-    // УНИКАЛЬНЫЙ КЛЮЧ ДЛЯ КАЖДОГО ПОСТА
+    // 🔥 ЕСЛИ В КЭШЕ НЕТ - ОБНОВЛЯЕМ ИЗ postData
+    if (freshPost == null) {
+      print('📦 [PostDetailScreen] Post $postId not in cache, using provided data');
+      freshPost = postData;
+      _postController.addPostsToStorage([postData]);
+    }
+    
+    print('📱 [PostDetailScreen] Building post $postId: mediaType=${freshPost['mediaType']}, videoUrl=${freshPost['videoUrl']}');
+    
     final cacheKey = '${postId}_${freshPost['likes']}_${freshPost['saves']}';
     
     if (_postWidgetCache.containsKey(cacheKey)) {
@@ -211,7 +213,6 @@ class _PostDetailScreenState extends State<PostDetailScreen>
       onLikeChanged: widget.onLikeChanged,
       onSaveChanged: widget.onSaveChanged,
       onPostDeleted: isCurrentPost ? _onPostDeleted : null,
-      // 🔥 ДОБАВЛЯЕМ КОЛБЭК ДЛЯ КЛИКА ПО ССЫЛКЕ
       onLinkClick: () => _handleLinkClick(postId),
     );
     

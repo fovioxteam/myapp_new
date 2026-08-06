@@ -2,17 +2,33 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-/// Модель поста с типизированными полями
+/// Тип медиа контента
+enum MediaType {
+  image,
+  video,
+}
+
+/// Модель поста с поддержкой фото и видео
 class PostModel {
   final String id;
   final String userId;
   final String userName;
   final String userAvatar;
   
-  // Медиа
+  // 🔥 ТИП МЕДИА
+  final MediaType mediaType;
+  
+  // Фото
   final List<String> images;
   final List<String> imageUrls;
   final String imageUrl;
+  
+  // 🔥 ВИДЕО
+  final String? videoUrl;
+  final String? thumbnailUrl;
+  final String? videoUid;
+  final int? videoDuration;
+  
   final int imageCount;
   
   // Контент
@@ -27,7 +43,7 @@ class PostModel {
   
   // Метрики (алгоритмические)
   final double score;
-  final String stage; // test, expanding, viral, dead
+  final String stage;
   
   // Временные метки
   final Timestamp createdAt;
@@ -37,14 +53,22 @@ class PostModel {
   // Флаги
   final bool isInFeed;
   
+  // 🔥 ТЕГИ
+  final List<PostTag> tags;
+  
   const PostModel({
     required this.id,
     required this.userId,
     required this.userName,
     required this.userAvatar,
+    required this.mediaType,
     required this.images,
     required this.imageUrls,
     required this.imageUrl,
+    this.videoUrl,
+    this.thumbnailUrl,
+    this.videoUid,
+    this.videoDuration,
     required this.imageCount,
     required this.caption,
     required this.hashtags,
@@ -58,7 +82,20 @@ class PostModel {
     this.lastEngagementAt,
     this.stageChangedAt,
     required this.isInFeed,
+    this.tags = const [],
   });
+  
+  /// Является ли пост видео
+  bool get isVideo => mediaType == MediaType.video;
+  bool get isImage => mediaType == MediaType.image;
+  
+  /// Получить основной медиа URL (фото или превью видео)
+  String get mediaUrl => isVideo ? (thumbnailUrl ?? imageUrl) : imageUrl;
+  
+  /// Получить медиа для отображения в списке
+  List<String> get mediaUrls => isVideo 
+      ? [thumbnailUrl ?? imageUrl].where((e) => e.isNotEmpty).toList()
+      : images;
   
   /// Создание из Map (из Firestore)
   factory PostModel.fromMap(String id, Map<String, dynamic> data) {
@@ -74,14 +111,32 @@ class PostModel {
     
     final imageUrls = List<String>.from(data['imageUrls'] ?? images);
     
+    // 🔥 ОПРЕДЕЛЯЕМ ТИП МЕДИА
+    final mediaTypeStr = data['mediaType']?.toString() ?? 'image';
+    final mediaType = mediaTypeStr == 'video' ? MediaType.video : MediaType.image;
+    
+    // 🔥 ИЗВЛЕКАЕМ ТЕГИ
+    List<PostTag> tags = [];
+    if (data['tags'] is List) {
+      tags = (data['tags'] as List)
+          .where((e) => e is Map<String, dynamic>)
+          .map((e) => PostTag.fromJson(e))
+          .toList();
+    }
+    
     return PostModel(
       id: id,
       userId: data['userId'] ?? '',
       userName: data['userName'] ?? 'Unknown',
       userAvatar: data['userAvatar'] ?? '',
+      mediaType: mediaType,
       images: images,
       imageUrls: imageUrls,
       imageUrl: images.isNotEmpty ? images.first : '',
+      videoUrl: data['videoUrl']?.toString(),
+      thumbnailUrl: data['thumbnailUrl']?.toString(),
+      videoUid: data['videoUid']?.toString(),
+      videoDuration: data['videoDuration'] as int?,
       imageCount: images.length,
       caption: data['caption']?.toString() ?? '',
       hashtags: List<String>.from(data['hashtags'] ?? []),
@@ -95,6 +150,7 @@ class PostModel {
       lastEngagementAt: data['lastEngagementAt'],
       stageChangedAt: data['stageChangedAt'],
       isInFeed: data['isInFeed'] ?? false,
+      tags: tags,
     );
   }
   
@@ -104,8 +160,13 @@ class PostModel {
       'userId': userId,
       'userName': userName,
       'userAvatar': userAvatar,
+      'mediaType': mediaType.name,
       'images': images,
       'imageUrls': imageUrls,
+      if (videoUrl != null) 'videoUrl': videoUrl,
+      if (thumbnailUrl != null) 'thumbnailUrl': thumbnailUrl,
+      if (videoUid != null) 'videoUid': videoUid,
+      if (videoDuration != null) 'videoDuration': videoDuration,
       'caption': caption,
       'hashtags': hashtags,
       'likes': likes,
@@ -118,18 +179,24 @@ class PostModel {
       'lastEngagementAt': lastEngagementAt,
       'stageChangedAt': stageChangedAt,
       'isInFeed': isInFeed,
+      'tags': tags.map((e) => e.toJson()).toList(),
     };
   }
   
-  /// Копирование с изменениями (immutable)
+  /// Копирование с изменениями
   PostModel copyWith({
     String? id,
     String? userId,
     String? userName,
     String? userAvatar,
+    MediaType? mediaType,
     List<String>? images,
     List<String>? imageUrls,
     String? imageUrl,
+    String? videoUrl,
+    String? thumbnailUrl,
+    String? videoUid,
+    int? videoDuration,
     int? imageCount,
     String? caption,
     List<String>? hashtags,
@@ -143,15 +210,21 @@ class PostModel {
     Timestamp? lastEngagementAt,
     Timestamp? stageChangedAt,
     bool? isInFeed,
+    List<PostTag>? tags,
   }) {
     return PostModel(
       id: id ?? this.id,
       userId: userId ?? this.userId,
       userName: userName ?? this.userName,
       userAvatar: userAvatar ?? this.userAvatar,
+      mediaType: mediaType ?? this.mediaType,
       images: images ?? this.images,
       imageUrls: imageUrls ?? this.imageUrls,
       imageUrl: imageUrl ?? this.imageUrl,
+      videoUrl: videoUrl ?? this.videoUrl,
+      thumbnailUrl: thumbnailUrl ?? this.thumbnailUrl,
+      videoUid: videoUid ?? this.videoUid,
+      videoDuration: videoDuration ?? this.videoDuration,
       imageCount: imageCount ?? this.imageCount,
       caption: caption ?? this.caption,
       hashtags: hashtags ?? this.hashtags,
@@ -165,6 +238,7 @@ class PostModel {
       lastEngagementAt: lastEngagementAt ?? this.lastEngagementAt,
       stageChangedAt: stageChangedAt ?? this.stageChangedAt,
       isInFeed: isInFeed ?? this.isInFeed,
+      tags: tags ?? this.tags,
     );
   }
   
@@ -202,6 +276,7 @@ class PostModel {
       userId: '',
       userName: '',
       userAvatar: '',
+      mediaType: MediaType.image,
       images: [],
       imageUrls: [],
       imageUrl: '',
@@ -217,6 +292,53 @@ class PostModel {
       createdAt: Timestamp.now(),
       isInFeed: false,
     );
+  }
+}
+
+/// Тег поста
+class PostTag {
+  final String id;
+  final double x;
+  final double y;
+  final String url;
+  final String platform;
+  final String displayName;
+  
+  PostTag({
+    required this.id,
+    required this.x,
+    required this.y,
+    required this.url,
+    required this.platform,
+    required this.displayName,
+  });
+  
+  factory PostTag.fromJson(Map<String, dynamic> json) {
+    return PostTag(
+      id: json['id']?.toString() ?? '',
+      x: (json['x'] ?? 0.0).toDouble(),
+      y: (json['y'] ?? 0.0).toDouble(),
+      url: json['url']?.toString() ?? '',
+      platform: json['platform']?.toString() ?? 'web',
+      displayName: json['displayName']?.toString() ?? '',
+    );
+  }
+  
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'x': x,
+      'y': y,
+      'url': url,
+      'platform': platform,
+      'displayName': displayName,
+    };
+  }
+  
+  void updatePosition(double newX, double newY) {
+    // Для immutable - возвращаем новый объект
+    // Но так как мы используем в UI, делаем мутабельным
+    // В реальном проекте лучше использовать copyWith
   }
 }
 

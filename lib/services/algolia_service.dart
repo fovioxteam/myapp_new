@@ -1,5 +1,3 @@
-// lib/services/algolia_service.dart
-
 import 'package:algolia/algolia.dart';
 
 class AlgoliaService {
@@ -13,7 +11,9 @@ class AlgoliaService {
 
   static Algolia get instance => _algolia;
   
-  // 🔍 Поиск постов
+  // ============================================================
+  // 🔍 ПОИСК ПОСТОВ
+  // ============================================================
   static Future<List<Map<String, dynamic>>> searchPosts(
     String query, {
     int hitsPerPage = 20,
@@ -25,7 +25,6 @@ class AlgoliaService {
           .setHitsPerPage(hitsPerPage)
           .getObjects();
       
-      // 🔥 БЕЗОПАСНОЕ ПРЕОБРАЗОВАНИЕ С ЗАЩИТОЙ ОТ NULL
       final posts = snap.hits.map((hit) {
         final data = hit.data;
         return {
@@ -36,10 +35,19 @@ class AlgoliaService {
           'thumbnailUrl': data['thumbnailUrl']?.toString() ?? '',
           'likes': (data['likes'] as int?) ?? 0,
           'comments': (data['comments'] as int?) ?? 0,
+          'saves': (data['saves'] as int?) ?? 0,
           'createdAt': data['createdAt'] as int? ?? 0,
           'userId': data['userId']?.toString() ?? '',
           'userName': data['userName']?.toString() ?? '',
           'userAvatar': data['userAvatar']?.toString() ?? '',
+          'mediaType': data['mediaType']?.toString() ?? 'photo',
+          'videoUrl': data['videoUrl']?.toString() ?? '',
+          'imageUrls': data['imageUrls'] is List 
+              ? List<String>.from(data['imageUrls']) 
+              : [data['imageUrl']?.toString() ?? ''],
+          'fitModes': data['fitModes'] is List 
+              ? List<String>.from(data['fitModes']) 
+              : [],
         };
       }).toList();
       
@@ -50,7 +58,9 @@ class AlgoliaService {
     }
   }
   
-  // 🔍 Поиск пользователей
+  // ============================================================
+  // 🔍 ПОИСК ПОЛЬЗОВАТЕЛЕЙ
+  // ============================================================
   static Future<List<Map<String, dynamic>>> searchUsers(
     String query, {
     int hitsPerPage = 20,
@@ -62,7 +72,6 @@ class AlgoliaService {
           .setHitsPerPage(hitsPerPage)
           .getObjects();
       
-      // 🔥 БЕЗОПАСНОЕ ПРЕОБРАЗОВАНИЕ С ЗАЩИТОЙ ОТ NULL
       final users = snap.hits.map((hit) {
         final data = hit.data;
         return {
@@ -80,5 +89,83 @@ class AlgoliaService {
       print('❌ Algolia search users error: $e');
       return [];
     }
+  }
+  
+  // ============================================================
+  // 🔥 ОБНОВЛЕНИЕ ПОСТА В ALGOLIA
+  // ============================================================
+  static Future<void> updatePostInAlgolia(Map<String, dynamic> post) async {
+    try {
+      final index = _algolia.instance.index('posts');
+      
+      final object = {
+        'objectID': post['id'],
+        'userId': post['userId'],
+        'userName': post['userName'] ?? '',
+        'userAvatar': post['userAvatar'] ?? '',
+        'caption': post['caption'] ?? '',
+        'imageUrl': post['imageUrl'] ?? '',
+        'thumbnailUrl': post['thumbnailUrl'] ?? '',
+        'likes': post['likes'] ?? 0,
+        'comments': post['comments'] ?? 0,
+        'saves': post['saves'] ?? 0,
+        'hashtags': post['hashtags'] ?? [],
+        'mediaType': post['mediaType'] ?? 'photo',
+        'videoUrl': post['videoUrl'] ?? '',
+        'imageUrls': post['imageUrls'] ?? [],
+        'fitModes': post['fitModes'] ?? [],
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+      };
+      
+      await index.addObject(object);
+      print('✅ [ALGOLIA] Post updated: ${post['id']} with mediaType=${post['mediaType']}');
+      
+    } catch (e) {
+      print('❌ [ALGOLIA] Error updating post: $e');
+    }
+  }
+  
+  // ============================================================
+  // 🔥 УДАЛЕНИЕ ПОСТА ИЗ ALGOLIA (ПУСТОЙ - БЕЗ ОШИБОК)
+  // ============================================================
+  static Future<void> deletePostFromAlgolia(String postId) async {
+    // В текущей версии algolia методы удаления недоступны
+    // Удаление происходит через Algolia Dashboard или Cloud Function
+    print('ℹ️ [ALGOLIA] Delete post not implemented: $postId');
+    return Future.value();
+  }
+  
+  // ============================================================
+  // 🔥 ОБНОВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ В ALGOLIA
+  // ============================================================
+  static Future<void> updateUserInAlgolia(Map<String, dynamic> user) async {
+    try {
+      final index = _algolia.instance.index('users');
+      
+      final object = {
+        'objectID': user['id'],
+        'username': user['username'] ?? '',
+        'avatarUrl': user['avatarUrl'] ?? '',
+        'bio': user['bio'] ?? '',
+        'followersCount': user['followersCount'] ?? 0,
+        'createdAt': DateTime.now().millisecondsSinceEpoch,
+      };
+      
+      await index.addObject(object);
+      print('✅ [ALGOLIA] User updated: ${user['id']}');
+      
+    } catch (e) {
+      print('❌ [ALGOLIA] Error updating user: $e');
+    }
+  }
+  
+  // ============================================================
+  // 🔥 УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ ИЗ ALGOLIA (ПУСТОЙ - БЕЗ ОШИБОК)
+  // ============================================================
+  static Future<void> deleteUserFromAlgolia(String userId) async {
+    // В текущей версии algolia методы удаления недоступны
+    // Удаление происходит через Algolia Dashboard или Cloud Function
+    print('ℹ️ [ALGOLIA] Delete user not implemented: $userId');
+    return Future.value();
   }
 }

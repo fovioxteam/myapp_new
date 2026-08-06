@@ -1,20 +1,22 @@
-// lib/screens/upload_screen.dart
-
+import 'dart:io';
+import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'dart:io';
-import 'dart:async';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:video_compress/video_compress.dart';
 
 import 'post_preview_screen.dart';
+import '../models/media_types.dart';
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
+import '../utils/video_compressor.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -24,58 +26,43 @@ class UploadScreen extends StatefulWidget {
 }
 
 class _UploadScreenState extends State<UploadScreen> {
-  // 🔥 Firebase
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  
-  // 🔥 PostController
   final PostController _postController = Get.find<PostController>();
   
-  // 🔥 SELECTED FOLDER
   String _selectedFolder = 'Recents';
   final List<AssetPathEntity> _albums = [];
   AssetPathEntity? _selectedAlbum;
   
-  // 🔥 MULTI-SELECT: ВЫБРАННЫЕ ИЗОБРАЖЕНИЯ
-  final Map<String, int> _selectedAssets = {};  // asset.id -> order
-  final List<String> _selectedAssetsOrder = []; // asset.id order
+  final Map<String, int> _selectedAssets = {};
+  final List<String> _selectedAssetsOrder = [];
+  final List<AssetEntity> _mediaItems = [];
   
-  // 🔥 ВСЕ ФОТО ИЗ ВЫБРАННОГО АЛЬБОМА
-  final List<AssetEntity> _photos = [];
-  
-  // 🔥 ДЛЯ ПАГИНАЦИИ
   int _currentPage = 0;
   final int _pageSize = 40;
   bool _hasMore = true;
   bool _isLoading = false;
   bool _isLoadingMore = false;
-  
-  // 🔥 ДЛЯ РАЗВОРАЧИВАНИЯ RECENTS
   bool _isRecentsExpanded = false;
   
-  // 🔥 ПРАВА ДОСТУПА
   bool _hasPermission = false;
   bool _isLoadingPermission = true;
   String _permissionError = '';
   
-  // 🔥 КЭШ ДЛЯ ФОТО (ОГРАНИЧЕННЫЙ)
-  final Map<String, File?> _photoCache = {};
+  final Map<String, Uint8List?> _thumbnailCache = {};
+  final Map<String, Duration?> _durationCache = {};
   final Set<String> _loadingAssets = {};
   static const int _maxCacheSize = 80;
   
-  // 🔥 ДЛЯ ДЕБАУНСА ВЫБОРА
   Timer? _selectionTimer;
-  
-  // 🔥 ТЕКУЩИЙ ИСТОЧНИК (GALLERY / CAMERA / FILES)
   String _selectedSource = 'gallery';
   
-  // 🔥 ФОТО С КАМЕРЫ
   File? _cameraImage;
   bool _isCameraMode = false;
-  
-  // 🔥 ФАЙЛЫ ИЗ ФАЙЛОВОГО МЕНЕДЖЕРА
   List<File> _selectedFiles = [];
   bool _isFilePickerMode = false;
+
+  MediaUploadType _detectedMediaType = MediaUploadType.image;
 
   @override
   void initState() {
@@ -91,7 +78,8 @@ class _UploadScreenState extends State<UploadScreen> {
   @override
   void dispose() {
     _selectionTimer?.cancel();
-    _photoCache.clear();
+    _thumbnailCache.clear();
+    _durationCache.clear();
     _loadingAssets.clear();
     super.dispose();
   }
@@ -196,14 +184,32 @@ class _UploadScreenState extends State<UploadScreen> {
     );
   }
 
+  void _showSnackBar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: color,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Future<void> _loadAlbums() async {
     print('📁 Loading albums...');
     try {
       final albums = await PhotoManager.getAssetPathList(
-        type: RequestType.image,
+        type: RequestType.common,
         filterOption: FilterOptionGroup(
           imageOption: FilterOption(
             sizeConstraint: SizeConstraint(ignoreSize: true),
+          ),
+          videoOption: FilterOption(
+            sizeConstraint: SizeConstraint(ignoreSize: true),
+            durationConstraint: DurationConstraint(
+              max: const Duration(seconds: 60),
+            ),
           ),
         ),
       );
@@ -222,7 +228,7 @@ class _UploadScreenState extends State<UploadScreen> {
       });
       
       if (_selectedAlbum != null) {
-        await _loadPhotos(refresh: true);
+        await _loadMedia(refresh: true);
       }
     } catch (e) {
       print('❌ Error loading albums: $e');
@@ -232,17 +238,18 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  Future<void> _loadPhotos({bool refresh = false}) async {
+  Future<void> _loadMedia({bool refresh = false}) async {
     if (_selectedAlbum == null) return;
     if (_isLoadingMore) return;
     
     if (refresh) {
       _currentPage = 0;
       _hasMore = true;
-      _photos.clear();
+      _mediaItems.clear();
       _selectedAssets.clear();
       _selectedAssetsOrder.clear();
-      _photoCache.clear();
+      _thumbnailCache.clear();
+      _durationCache.clear();
       _loadingAssets.clear();
     }
     
@@ -253,7 +260,7 @@ class _UploadScreenState extends State<UploadScreen> {
     });
     
     try {
-      final photos = await _selectedAlbum!.getAssetListPaged(
+      final media = await _selectedAlbum!.getAssetListPaged(
         page: _currentPage,
         size: _pageSize,
       );
@@ -261,20 +268,19 @@ class _UploadScreenState extends State<UploadScreen> {
       if (!mounted) return;
       
       setState(() {
-        if (photos.isNotEmpty) {
-          _photos.addAll(photos);
+        if (media.isNotEmpty) {
+          _mediaItems.addAll(media);
           _currentPage++;
-          _hasMore = photos.length == _pageSize;
+          _hasMore = media.length == _pageSize;
         } else {
           _hasMore = false;
         }
         _isLoadingMore = false;
       });
       
-      // 🔥 ПРЕЛОАДИМ ТОЛЬКО ПЕРВЫЕ 10 ФОТО
-      _preloadThumbnails(photos.take(10).toList());
+      _preloadThumbnails(media.take(10).toList());
     } catch (e) {
-      print('❌ Error loading photos: $e');
+      print('❌ Error loading media: $e');
       if (mounted) {
         setState(() {
           _isLoadingMore = false;
@@ -283,13 +289,11 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // 🔥 ПРЕЛОАД ТОЛЬКО МИНИАТЮР (НЕ ПОЛНЫХ ФАЙЛОВ)
-  Future<void> _preloadThumbnails(List<AssetEntity> photos) async {
-    for (var asset in photos) {
-      if (!_photoCache.containsKey(asset.id) && !_loadingAssets.contains(asset.id)) {
+  Future<void> _preloadThumbnails(List<AssetEntity> media) async {
+    for (var asset in media) {
+      if (!_thumbnailCache.containsKey(asset.id) && !_loadingAssets.contains(asset.id)) {
         _loadingAssets.add(asset.id);
         
-        // Используем миниатюры вместо полных файлов
         final thumbnail = await asset.thumbnailDataWithSize(
           const ThumbnailSize(200, 200),
         );
@@ -298,22 +302,20 @@ class _UploadScreenState extends State<UploadScreen> {
         
         if (mounted && thumbnail != null) {
           setState(() {
-            if (_photoCache.length > _maxCacheSize) {
-              final oldestKey = _photoCache.keys.first;
-              _photoCache.remove(oldestKey);
+            if (_thumbnailCache.length > _maxCacheSize) {
+              final oldestKey = _thumbnailCache.keys.first;
+              _thumbnailCache.remove(oldestKey);
             }
-            // Кэшируем как Uint8List, но храним как File? для совместимости
-            _photoCache[asset.id] = null; // Помечаем что загружено
+            _thumbnailCache[asset.id] = thumbnail;
           });
         }
       }
     }
   }
 
-  // 🔥 ПОЛУЧАЕМ ФАЙЛ ДЛЯ ПРЕВЬЮ (ТОЛЬКО КОГДА НУЖНО)
-  Future<File?> _getFileForAsset(AssetEntity asset) async {
-    if (_photoCache.containsKey(asset.id) && _photoCache[asset.id] != null) {
-      return _photoCache[asset.id];
+  Future<Uint8List?> _getVideoThumbnail(AssetEntity asset) async {
+    if (_thumbnailCache.containsKey(asset.id)) {
+      return _thumbnailCache[asset.id];
     }
     
     if (_loadingAssets.contains(asset.id)) {
@@ -322,37 +324,142 @@ class _UploadScreenState extends State<UploadScreen> {
     
     _loadingAssets.add(asset.id);
     
-    final file = await asset.file;
+    try {
+      final thumbnail = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(200, 200),
+      );
+      
+      _loadingAssets.remove(asset.id);
+      
+      if (thumbnail != null) {
+        setState(() {
+          if (_thumbnailCache.length > _maxCacheSize) {
+            final oldestKey = _thumbnailCache.keys.first;
+            _thumbnailCache.remove(oldestKey);
+          }
+          _thumbnailCache[asset.id] = thumbnail;
+        });
+        return thumbnail;
+      }
+      return null;
+    } catch (e) {
+      _loadingAssets.remove(asset.id);
+      print('❌ Thumbnail error: $e');
+      return null;
+    }
+  }
+
+  Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
+    if (asset.type != AssetType.video) return null;
     
-    _loadingAssets.remove(asset.id);
+    final assetId = asset.id;
     
-    if (mounted && file != null) {
-      setState(() {
-        if (_photoCache.length > _maxCacheSize) {
-          final oldestKey = _photoCache.keys.first;
-          _photoCache.remove(oldestKey);
-        }
-        _photoCache[asset.id] = file;
-      });
+    if (_durationCache.containsKey(assetId)) {
+      return _durationCache[assetId];
     }
     
-    return file;
+    try {
+      final file = await asset.file;
+      if (file != null) {
+        print('🎬 [DURATION] Getting duration for: ${file.path}');
+        final info = await VideoCompress.getMediaInfo(file.path);
+        if (info != null && info.duration != null && info.duration! > 0) {
+          final duration = Duration(milliseconds: info.duration!.toInt());
+          _durationCache[assetId] = duration;
+          print('🎬 [DURATION] Duration: ${duration.inSeconds} sec');
+          return duration;
+        }
+      }
+    } catch (e) {
+      print('❌ [DURATION] Error: $e');
+    }
+    
+    print('⚠️ [DURATION] Could not get duration, showing 0:00');
+    _durationCache[assetId] = Duration.zero;
+    return Duration.zero;
   }
 
-  IconData _getAlbumIcon(AssetPathEntity album) {
-    final name = album.name.toLowerCase();
-    if (name.contains('screenshot')) return Icons.screenshot;
-    if (name.contains('camera')) return Icons.camera_alt;
-    if (name.contains('whatsapp')) return Icons.message;
-    if (name.contains('instagram')) return Icons.photo_camera;
-    if (name.contains('download')) return Icons.download;
-    if (name.contains('favorite')) return Icons.favorite;
-    return Icons.photo_library;
+  String _formatDuration(Duration d) {
+    final minutes = d.inMinutes;
+    final seconds = d.inSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
-  void _toggleSelection(AssetEntity asset) {
-    // 🔥 ДЕБАУНС ДЛЯ ПРЕДОТВРАЩЕНИЯ ГОНОК
+  Future<File?> _getFileForAsset(AssetEntity asset) async {
+    if (asset.type == AssetType.video) {
+      return await asset.file;
+    }
+    return await asset.file;
+  }
+
+  void _toggleSelection(AssetEntity asset) async {
     _selectionTimer?.cancel();
+    
+    if (asset.type == AssetType.video) {
+      print('🎬 [UPLOAD] ========== VIDEO SELECTED ==========');
+      print('🎬 [UPLOAD] Asset ID: ${asset.id}');
+      print('🎬 [UPLOAD] Asset duration: ${asset.duration} seconds');
+      print('🎬 [UPLOAD] Asset width: ${asset.width}, height: ${asset.height}');
+      
+      final file = await _getFileForAsset(asset);
+      if (file != null && mounted) {
+        final originalSize = await file.length();
+        print('🎬 [UPLOAD] Original file size: ${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB');
+        
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (context) => AlertDialog(
+            backgroundColor: Colors.black,
+            contentPadding: const EdgeInsets.all(24),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(color: Colors.white),
+                const SizedBox(height: 16),
+                const Text(
+                  'Processing video...',
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Optimizing for upload',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        );
+        
+        final compressedFile = await VideoCompressor.compressVideo(file);
+        
+        if (mounted) Navigator.pop(context);
+        
+        final compressedSize = await compressedFile.length();
+        print('🎬 [UPLOAD] Compressed file size: ${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB');
+        
+        if (mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostPreviewScreen(
+                selectedFiles: [compressedFile],
+                selectedAssets: [],
+                mediaType: MediaUploadType.video,
+              ),
+            ),
+          ).then((_) {
+            if (mounted) {
+              setState(() {
+                _selectedAssets.clear();
+                _selectedAssetsOrder.clear();
+              });
+            }
+          });
+        }
+      }
+      return;
+    }
     
     _selectionTimer = Timer(const Duration(milliseconds: 50), () {
       if (!mounted) return;
@@ -362,7 +469,6 @@ class _UploadScreenState extends State<UploadScreen> {
           _selectedAssets.remove(asset.id);
           _selectedAssetsOrder.remove(asset.id);
           
-          // Пересчёт порядковых номеров
           final updatedMap = <String, int>{};
           var index = 1;
           for (var id in _selectedAssetsOrder) {
@@ -398,6 +504,7 @@ class _UploadScreenState extends State<UploadScreen> {
         _cameraImage = null;
         _isFilePickerMode = false;
         _selectedFiles.clear();
+        _detectedMediaType = MediaUploadType.image;
       });
     }
   }
@@ -425,81 +532,109 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  Widget _buildSourceButton({
-    required IconData icon,
-    required String label,
-    required String source,
-  }) {
-    final isSelected = _selectedSource == source;
-    
-    return GestureDetector(
-      onTap: () => _changeSource(source),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.grey[800] : Colors.transparent,
-          borderRadius: BorderRadius.circular(30),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: isSelected ? Colors.white : Colors.grey, size: 18),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.white : Colors.grey,
-                fontSize: 14,
-                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _openCamera() async {
     try {
-      final picker = ImagePicker();
-      final file = await picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 85,
+      final choice = await showDialog<MediaUploadType>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.grey[850],
+          title: const Text(
+            'Choose Media Type',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo_camera, color: Colors.white),
+                title: const Text('Photo', style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, MediaUploadType.image),
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam, color: Colors.white),
+                title: const Text('Video', style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, MediaUploadType.video),
+              ),
+            ],
+          ),
+        ),
       );
-
-      if (file != null && mounted) {
-        setState(() {
-          _cameraImage = File(file.path);
-          _isCameraMode = true;
-          _isFilePickerMode = false;
-          _selectedFiles.clear();
-          _selectedAssets.clear();
-          _selectedAssetsOrder.clear();
-        });
-        
-        print('📸 Photo taken: ${file.path}');
-      } else if (mounted) {
+      
+      if (choice == null) {
         setState(() {
           _selectedSource = 'gallery';
-          _isCameraMode = false;
         });
+        return;
+      }
+      
+      final picker = ImagePicker();
+      
+      if (choice == MediaUploadType.video) {
+        final video = await picker.pickVideo(
+          source: ImageSource.camera,
+          maxDuration: const Duration(seconds: 60),
+        );
+        
+        if (video != null && mounted) {
+          final file = File(video.path);
+          
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              backgroundColor: Colors.black,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Processing video...',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          );
+          
+          final compressedFile = await VideoCompressor.compressVideo(file);
+          if (mounted) Navigator.pop(context);
+          
+          setState(() {
+            _selectedFiles = [compressedFile];
+            _detectedMediaType = MediaUploadType.video;
+            _selectedAssets.clear();
+            _selectedAssetsOrder.clear();
+          });
+          _navigateToPreview();
+        }
+      } else {
+        final file = await picker.pickImage(
+          source: ImageSource.camera,
+          maxWidth: 1920,
+          maxHeight: 1920,
+          imageQuality: 85,
+        );
+        
+        if (file != null && mounted) {
+          setState(() {
+            _cameraImage = File(file.path);
+            _isCameraMode = true;
+            _isFilePickerMode = false;
+            _selectedFiles.clear();
+            _selectedAssets.clear();
+            _selectedAssetsOrder.clear();
+            _detectedMediaType = MediaUploadType.image;
+          });
+        }
       }
     } catch (e) {
       print('❌ Camera error: $e');
       if (mounted) {
         setState(() {
           _selectedSource = 'gallery';
-          _isCameraMode = false;
         });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not open camera. Please check permissions.'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
-        );
+        _showSnackBar('Could not open camera. Please check permissions.', Colors.red);
       }
     }
   }
@@ -550,21 +685,104 @@ class _UploadScreenState extends State<UploadScreen> {
 
   Future<void> _openFilePicker() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.image,
-        allowMultiple: true,
+      final choice = await showDialog<MediaUploadType>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: Colors.grey[850],
+          title: const Text(
+            'Choose File Type',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.photo, color: Colors.white),
+                title: const Text('Images', style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, MediaUploadType.image),
+              ),
+              ListTile(
+                leading: const Icon(Icons.video_file, color: Colors.white),
+                title: const Text('Videos', style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context, MediaUploadType.video),
+              ),
+            ],
+          ),
+        ),
       );
-
-      if (result != null && result.files.isNotEmpty && mounted) {
+      
+      if (choice == null) {
         setState(() {
-          _selectedFiles = result.paths.map((path) => File(path!)).toList();
-          _isFilePickerMode = true;
-          _isCameraMode = false;
-          _cameraImage = null;
-          _selectedAssets.clear();
-          _selectedAssetsOrder.clear();
+          _selectedSource = 'gallery';
         });
+        return;
+      }
+      
+      FilePickerResult? result;
+      
+      if (choice == MediaUploadType.video) {
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.video,
+          allowMultiple: false,
+        );
         
+        if (result != null && result.files.isNotEmpty && mounted) {
+          final file = File(result.files.first.path!);
+          
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              backgroundColor: Colors.black,
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Processing video...',
+                    style: TextStyle(color: Colors.white, fontSize: 16),
+                  ),
+                ],
+              ),
+            ),
+          );
+          
+          final compressedFile = await VideoCompressor.compressVideo(file);
+          if (mounted) Navigator.pop(context);
+          
+          setState(() {
+            _selectedFiles = [compressedFile];
+            _detectedMediaType = MediaUploadType.video;
+            _isFilePickerMode = true;
+            _isCameraMode = false;
+            _cameraImage = null;
+            _selectedAssets.clear();
+            _selectedAssetsOrder.clear();
+          });
+          _navigateToPreview();
+        }
+      } else {
+        result = await FilePicker.platform.pickFiles(
+          type: FileType.image,
+          allowMultiple: true,
+        );
+        
+        if (result != null && result.files.isNotEmpty && mounted) {
+          final paths = result.paths.where((p) => p != null).cast<String>().toList();
+          setState(() {
+            _selectedFiles = paths.map((path) => File(path)).toList();
+            _isFilePickerMode = true;
+            _isCameraMode = false;
+            _cameraImage = null;
+            _selectedAssets.clear();
+            _selectedAssetsOrder.clear();
+            _detectedMediaType = MediaUploadType.image;
+          });
+        }
+      }
+      
+      if (result != null) {
         print('📁 Selected ${result.files.length} files');
       } else if (mounted) {
         setState(() {
@@ -579,10 +797,7 @@ class _UploadScreenState extends State<UploadScreen> {
           _selectedSource = 'gallery';
           _isFilePickerMode = false;
         });
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to pick files: $e'), backgroundColor: Colors.red),
-        );
+        _showSnackBar('Failed to pick files: $e', Colors.red);
       }
     }
   }
@@ -592,6 +807,31 @@ class _UploadScreenState extends State<UploadScreen> {
       _selectedFiles.clear();
       _isFilePickerMode = false;
       _selectedSource = 'gallery';
+      _detectedMediaType = MediaUploadType.image;
+    });
+  }
+
+  void _navigateToPreview() {
+    if (_selectedFiles.isEmpty) return;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostPreviewScreen(
+          selectedFiles: _selectedFiles,
+          selectedAssets: [],
+          mediaType: _detectedMediaType,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        setState(() {
+          _selectedAssets.clear();
+          _selectedAssetsOrder.clear();
+          _selectedFiles.clear();
+          _detectedMediaType = MediaUploadType.image;
+        });
+      }
     });
   }
 
@@ -599,7 +839,7 @@ class _UploadScreenState extends State<UploadScreen> {
     List<File> selectedFiles = [];
     
     for (var assetId in _selectedAssetsOrder) {
-      final asset = _photos.firstWhere(
+      final asset = _mediaItems.firstWhere(
         (a) => a.id == assetId,
         orElse: () => throw Exception('Asset not found'),
       );
@@ -615,7 +855,8 @@ class _UploadScreenState extends State<UploadScreen> {
         MaterialPageRoute(
           builder: (context) => PostPreviewScreen(
             selectedFiles: selectedFiles,
-            selectedAssets: [], // не нужны
+            selectedAssets: [],
+            mediaType: MediaUploadType.image,
           ),
         ),
       ).then((_) {
@@ -636,6 +877,8 @@ class _UploadScreenState extends State<UploadScreen> {
         MaterialPageRoute(
           builder: (context) => PostPreviewScreen(
             selectedFiles: [_cameraImage!],
+            selectedAssets: [],
+            mediaType: MediaUploadType.image,
           ),
         ),
       ).then((_) {
@@ -657,12 +900,374 @@ class _UploadScreenState extends State<UploadScreen> {
         MaterialPageRoute(
           builder: (context) => PostPreviewScreen(
             selectedFiles: _selectedFiles,
+            selectedAssets: [],
+            mediaType: _detectedMediaType,
           ),
         ),
       ).then((_) {
         _resetFiles();
       });
     }
+  }
+
+  Widget _buildGalleryMode() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 26),
+                  ),
+                  const Expanded(
+                    child: Center(
+                      child: Text('New Post', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _selectedAssets.isNotEmpty ? _navigateToPreviewFromGallery : null,
+                    child: Text(
+                      _selectedAssets.isNotEmpty ? 'Next (${_selectedAssets.length})' : 'Next',
+                      style: TextStyle(
+                        color: _selectedAssets.isNotEmpty ? Colors.white : Colors.grey[600],
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Preview area
+            Container(
+              height: 280,
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey[900],
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))],
+              ),
+              child: Center(
+                child: _selectedAssets.isNotEmpty && _selectedAssetsOrder.isNotEmpty
+                    ? FutureBuilder<File?>(
+                        future: _getFileForAsset(
+                          _mediaItems.firstWhere(
+                            (a) => a.id == _selectedAssetsOrder.last,
+                            orElse: () => throw Exception('Asset not found'),
+                          ),
+                        ),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
+                            return const Center(child: CircularProgressIndicator(color: Colors.grey, strokeWidth: 2));
+                          }
+                          if (snapshot.hasData && snapshot.data != null) {
+                            return ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Image.file(snapshot.data!, fit: BoxFit.cover, width: double.infinity, height: 280),
+                            );
+                          }
+                          return const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 50));
+                        },
+                      )
+                    : const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.photo_library_outlined, color: Colors.grey, size: 50),
+                            SizedBox(height: 8),
+                            Text('Select photos', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
+
+            // Albums
+            if (_albums.isNotEmpty)
+              Column(
+                children: [
+                  GestureDetector(
+                    onTap: () => setState(() => _isRecentsExpanded = !_isRecentsExpanded),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          Icon(Icons.access_time, color: Colors.grey, size: 20),
+                          const SizedBox(width: 8),
+                          Text(_selectedFolder, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500)),
+                          const Spacer(),
+                          Icon(_isRecentsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.grey, size: 24),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_isRecentsExpanded)
+                    Container(
+                      width: double.infinity,
+                      color: Colors.grey[900],
+                      child: Column(
+                        children: _albums.map((album) {
+                          final isSelected = album == _selectedAlbum;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedAlbum = album;
+                                _selectedFolder = album.name;
+                                _isRecentsExpanded = false;
+                              });
+                              _loadMedia(refresh: true);
+                            },
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                              child: Row(
+                                children: [
+                                  Icon(_getAlbumIcon(album), color: isSelected ? Colors.white : Colors.grey, size: 18),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(album.name, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontSize: 16), overflow: TextOverflow.ellipsis),
+                                  ),
+                                  if (isSelected) ...[
+                                    const Spacer(),
+                                    Icon(Icons.check, color: Colors.grey, size: 18),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                ],
+              ),
+
+            // Bottom buttons
+            Container(
+              color: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildSourceButton(icon: Icons.photo_library, label: 'Gallery', source: 'gallery'),
+                  _buildSourceButton(icon: Icons.camera_alt, label: 'Camera', source: 'camera'),
+                  _buildSourceButton(icon: Icons.insert_drive_file, label: 'Files', source: 'files'),
+                ],
+              ),
+            ),
+
+            // ============================================================
+            // 🔥 ГРИД - ОРИГИНАЛЬНЫЙ ДИЗАЙН ВЫБОРА
+            // ============================================================
+            Expanded(
+              child: Container(
+                color: Colors.black,
+                padding: const EdgeInsets.all(2),
+                child: _mediaItems.isEmpty
+                    ? const Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.photo_library_outlined, color: Colors.grey, size: 40),
+                            SizedBox(height: 8),
+                            Text('No media found', style: TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      )
+                    : NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200 &&
+                              !_isLoadingMore &&
+                              _hasMore) {
+                            _loadMedia();
+                          }
+                          return false;
+                        },
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(2),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 4,
+                            crossAxisSpacing: 2,
+                            mainAxisSpacing: 2,
+                            childAspectRatio: 1,
+                          ),
+                          itemCount: _mediaItems.length + (_isLoadingMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == _mediaItems.length && _isLoadingMore) {
+                              return Container(
+                                color: Colors.grey[900],
+                                child: const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.grey,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              );
+                            }
+                            
+                            final asset = _mediaItems[index];
+                            final selectedNumber = _getSelectedNumber(asset);
+                            final isVideo = asset.type == AssetType.video;
+                            
+                            return FutureBuilder<Uint8List?>(
+                              future: _getVideoThumbnail(asset),
+                              builder: (context, thumbSnapshot) {
+                                final hasThumbnail = thumbSnapshot.hasData && thumbSnapshot.data != null;
+                                
+                                return FutureBuilder<Duration?>(
+                                  future: _getVideoDurationForAsset(asset),
+                                  builder: (context, durationSnapshot) {
+                                    final duration = durationSnapshot.data;
+                                    
+                                    return GestureDetector(
+                                      onTap: () => _toggleSelection(asset),
+                                      child: Stack(
+                                        fit: StackFit.expand,
+                                        children: [
+                                          // ТАМБНЕЙЛ
+                                          if (hasThumbnail)
+                                            Image.memory(
+                                              thumbSnapshot.data!,
+                                              fit: BoxFit.cover,
+                                              gaplessPlayback: true,
+                                            )
+                                          else
+                                            Container(
+                                              color: Colors.grey[900],
+                                              child: const Center(
+                                                child: SizedBox(
+                                                  width: 20,
+                                                  height: 20,
+                                                  child: CircularProgressIndicator(
+                                                    color: Colors.white,
+                                                    strokeWidth: 2,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          
+                                          // ЗАТЕМНЕНИЕ ПРИ ВЫБОРЕ
+                                          if (selectedNumber != null)
+                                            Container(color: Colors.black.withOpacity(0.4)),
+                                          
+                                          // ВРЕМЯ ДЛЯ ВИДЕО (БЕЗ ФОНА)
+                                          if (isVideo && duration != null)
+                                            Positioned(
+                                              bottom: 4,
+                                              right: 4,
+                                              child: Text(
+                                                _formatDuration(duration),
+                                                style: TextStyle(
+                                                  color: Colors.white.withOpacity(0.9),
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  shadows: [
+                                                    Shadow(
+                                                      color: Colors.black.withOpacity(0.8),
+                                                      blurRadius: 4,
+                                                      offset: const Offset(0, 1),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          
+                                          // 🔥 НОМЕР ВЫБРАННОГО (ОРИГИНАЛ - ЧЕРНЫЙ КРУГ С БЕЛОЙ ЦИФРОЙ)
+                                          if (selectedNumber != null)
+                                            Positioned(
+                                              top: 4,
+                                              right: 4,
+                                              child: Container(
+                                                width: 24,
+                                                height: 24,
+                                                decoration: BoxDecoration(
+                                                  color: Colors.black.withOpacity(0.8),
+                                                  shape: BoxShape.circle,
+                                                  border: Border.all(
+                                                    color: Colors.white,
+                                                    width: 1.5,
+                                                  ),
+                                                ),
+                                                child: Center(
+                                                  child: Text(
+                                                    '$selectedNumber',
+                                                    style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 12,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getAlbumIcon(AssetPathEntity album) {
+    final name = album.name.toLowerCase();
+    if (name.contains('screenshot')) return Icons.screenshot;
+    if (name.contains('camera')) return Icons.camera_alt;
+    if (name.contains('whatsapp')) return Icons.message;
+    if (name.contains('instagram')) return Icons.photo_camera;
+    if (name.contains('download')) return Icons.download;
+    if (name.contains('favorite')) return Icons.favorite;
+    if (name.contains('video')) return Icons.videocam;
+    return Icons.photo_library;
+  }
+
+  Widget _buildSourceButton({
+    required IconData icon,
+    required String label,
+    required String source,
+  }) {
+    final isSelected = _selectedSource == source;
+    
+    return GestureDetector(
+      onTap: () => _changeSource(source),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.grey[800] : Colors.transparent,
+          borderRadius: BorderRadius.circular(30),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: isSelected ? Colors.white : Colors.grey, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.grey,
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -805,6 +1410,8 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Widget _buildFilePickerMode() {
+    final isVideo = _detectedMediaType == MediaUploadType.video;
+    
     return Scaffold(
       backgroundColor: Colors.black,
       body: SafeArea(
@@ -819,7 +1426,10 @@ class _UploadScreenState extends State<UploadScreen> {
                     onPressed: _resetFiles,
                     icon: const Icon(Icons.close, color: Colors.white, size: 26),
                   ),
-                  const Text('Selected Files', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
+                  Text(
+                    isVideo ? 'Selected Video' : 'Selected Files',
+                    style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
+                  ),
                   TextButton(
                     onPressed: _selectedFiles.isNotEmpty ? _navigateToPreviewFromFiles : null,
                     child: Text(
@@ -837,12 +1447,28 @@ class _UploadScreenState extends State<UploadScreen> {
             Container(
               height: 280,
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(color: Colors.grey[900], borderRadius: BorderRadius.circular(16)),
+              decoration: BoxDecoration(
+                color: Colors.grey[900],
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
                 child: _selectedFiles.isNotEmpty
-                    ? Image.file(_selectedFiles.first, fit: BoxFit.cover)
-                    : const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 50)),
+                    ? isVideo
+                        ? const Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.play_circle_outline, color: Colors.white, size: 60),
+                                SizedBox(height: 12),
+                                Text('Video Selected', style: TextStyle(color: Colors.white, fontSize: 16)),
+                              ],
+                            ),
+                          )
+                        : Image.file(_selectedFiles.first, fit: BoxFit.cover)
+                    : const Center(
+                        child: Icon(Icons.broken_image, color: Colors.grey, size: 50),
+                      ),
               ),
             ),
             Expanded(
@@ -866,7 +1492,11 @@ class _UploadScreenState extends State<UploadScreen> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(8),
-                          child: Image.file(file, fit: BoxFit.cover),
+                          child: isVideo
+                              ? const Center(
+                                  child: Icon(Icons.videocam, color: Colors.white, size: 40),
+                                )
+                              : Image.file(file, fit: BoxFit.cover),
                         ),
                         Container(color: Colors.black.withOpacity(0.3)),
                         Positioned(
@@ -896,246 +1526,13 @@ class _UploadScreenState extends State<UploadScreen> {
               child: ElevatedButton.icon(
                 onPressed: _openFilePicker,
                 icon: const Icon(Icons.add),
-                label: const Text('Add More Files'),
+                label: Text(isVideo ? 'Select Another Video' : 'Add More Files'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.grey[800],
                   foregroundColor: Colors.white,
                   minimumSize: const Size(double.infinity, 50),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                 ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGalleryMode() {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white, size: 26),
-                  ),
-                  const Expanded(
-                    child: Center(
-                      child: Text('New Post', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600)),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _selectedAssets.isNotEmpty ? _navigateToPreviewFromGallery : null,
-                    child: Text(
-                      _selectedAssets.isNotEmpty ? 'Next (${_selectedAssets.length})' : 'Next',
-                      style: TextStyle(
-                        color: _selectedAssets.isNotEmpty ? Colors.white : Colors.grey[600],
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Container(
-              height: 280,
-              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.grey[900],
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10, offset: const Offset(0, 4))],
-              ),
-              child: Center(
-                child: _selectedAssets.isNotEmpty && _selectedAssetsOrder.isNotEmpty
-                    ? FutureBuilder<File?>(
-                        future: _getFileForAsset(
-                          _photos.firstWhere(
-                            (a) => a.id == _selectedAssetsOrder.last,
-                            orElse: () => throw Exception('Asset not found'),
-                          ),
-                        ),
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting && snapshot.data == null) {
-                            return const Center(child: CircularProgressIndicator(color: Colors.grey, strokeWidth: 2));
-                          }
-                          if (snapshot.hasData && snapshot.data != null) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: Image.file(snapshot.data!, fit: BoxFit.cover, width: double.infinity, height: 280),
-                            );
-                          }
-                          return const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 50));
-                        },
-                      )
-                    : const Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.photo_library_outlined, color: Colors.grey, size: 50),
-                            SizedBox(height: 8),
-                            Text('Select photos', style: TextStyle(color: Colors.grey, fontSize: 16)),
-                          ],
-                        ),
-                      ),
-              ),
-            ),
-            if (_albums.isNotEmpty)
-              Column(
-                children: [
-                  GestureDetector(
-                    onTap: () => setState(() => _isRecentsExpanded = !_isRecentsExpanded),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        children: [
-                          Icon(Icons.access_time, color: Colors.grey, size: 20),
-                          const SizedBox(width: 8),
-                          Text(_selectedFolder, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w500)),
-                          const Spacer(),
-                          Icon(_isRecentsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.grey, size: 24),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (_isRecentsExpanded)
-                    Container(
-                      width: double.infinity,
-                      color: Colors.grey[900],
-                      child: Column(
-                        children: _albums.map((album) {
-                          final isSelected = album == _selectedAlbum;
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _selectedAlbum = album;
-                                _selectedFolder = album.name;
-                                _isRecentsExpanded = false;
-                              });
-                              _loadPhotos(refresh: true);
-                            },
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                              child: Row(
-                                children: [
-                                  Icon(_getAlbumIcon(album), color: isSelected ? Colors.white : Colors.grey, size: 18),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(album.name, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontSize: 16), overflow: TextOverflow.ellipsis),
-                                  ),
-                                  if (isSelected) ...[
-                                    const Spacer(),
-                                    Icon(Icons.check, color: Colors.grey, size: 18),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                ],
-              ),
-            Container(
-              color: Colors.black,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildSourceButton(icon: Icons.photo_library, label: 'Gallery', source: 'gallery'),
-                  _buildSourceButton(icon: Icons.camera_alt, label: 'Camera', source: 'camera'),
-                  _buildSourceButton(icon: Icons.insert_drive_file, label: 'Files', source: 'files'),
-                ],
-              ),
-            ),
-            Expanded(
-              child: Container(
-                color: Colors.black,
-                padding: const EdgeInsets.all(2),
-                child: _photos.isEmpty
-                    ? const Center(child: Text('No photos', style: TextStyle(color: Colors.grey)))
-                    : NotificationListener<ScrollNotification>(
-                        onNotification: (notification) {
-                          if (notification.metrics.pixels >= notification.metrics.maxScrollExtent - 200 &&
-                              !_isLoadingMore &&
-                              _hasMore) {
-                            _loadPhotos();
-                          }
-                          return false;
-                        },
-                        child: GridView.builder(
-                          padding: const EdgeInsets.all(2),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            crossAxisSpacing: 2,
-                            mainAxisSpacing: 2,
-                            childAspectRatio: 1,
-                          ),
-                          itemCount: _photos.length + (_isLoadingMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index == _photos.length && _isLoadingMore) {
-                              return Container(
-                                color: Colors.grey[900],
-                                child: const Center(child: CircularProgressIndicator(color: Colors.grey, strokeWidth: 2)),
-                              );
-                            }
-                            
-                            final asset = _photos[index];
-                            final selectedNumber = _getSelectedNumber(asset);
-                            
-                            return FutureBuilder<File?>(
-                              future: _getFileForAsset(asset),
-                              builder: (context, snapshot) {
-                                return GestureDetector(
-                                  onTap: () => _toggleSelection(asset),
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      if (snapshot.hasData && snapshot.data != null)
-                                        Image.file(
-                                          snapshot.data!,
-                                          fit: BoxFit.cover,
-                                          gaplessPlayback: true,
-                                        )
-                                      else
-                                        Container(
-                                          color: Colors.grey[900],
-                                          child: const Center(child: Icon(Icons.broken_image, color: Colors.grey, size: 30)),
-                                        ),
-                                      if (selectedNumber != null) Container(color: Colors.black.withOpacity(0.4)),
-                                      if (selectedNumber != null)
-                                        Positioned(
-                                          top: 4,
-                                          right: 4,
-                                          child: Container(
-                                            width: 24,
-                                            height: 24,
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withOpacity(0.8),
-                                              shape: BoxShape.circle,
-                                              border: Border.all(color: Colors.white, width: 1.5),
-                                            ),
-                                            child: Center(
-                                              child: Text('$selectedNumber', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                        ),
-                      ),
               ),
             ),
           ],

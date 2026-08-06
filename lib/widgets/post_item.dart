@@ -1,5 +1,3 @@
-// lib/widgets/post_item.dart
-
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -14,6 +12,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import 'package:video_player/video_player.dart';
 
 import '../services/metrics_service.dart';
 import '../controllers/post_controller.dart';
@@ -24,10 +24,9 @@ import '../services/follow_service.dart';
 import '../screens/post_options_screen.dart';
 import '../services/auth_service.dart';
 import 'progressive_image.dart';
-
-// 👇 TAG IMPORTS
 import '../models/post_tag.dart';
 import '../widgets/post_tags_overlay.dart';
+import 'video_player_widget.dart';
 
 mixin SafeActionMixin {
   final Map<String, bool> _actionInProgress = {};
@@ -65,7 +64,6 @@ class PostItem extends StatefulWidget {
   final Function(String, bool)? onLikeChanged;
   final Function(String, bool)? onSaveChanged;
   final VoidCallback? onLinkClick;
-  
   final bool isVisible;
   final int priority;
 
@@ -107,6 +105,8 @@ class _PostItemState extends State<PostItem>
   final MetricsService _metrics = Get.find<MetricsService>();
   final PostController _postController = Get.find<PostController>();
 
+  String get _postId => widget.post['id']?.toString() ?? '';
+
   late AnimationController _heartAnimationController;
   late AnimationController _likeIconController;
   late AnimationController _saveIconController;
@@ -130,7 +130,6 @@ class _PostItemState extends State<PostItem>
   late List<String> _imageUrls = [];
   bool _isCarousel = false;
 
-  // AVATAR CACHE
   final Map<String, String> _avatarCache = {};
   StreamSubscription<bool>? _followSubscription;
   bool _isExpanded = false;
@@ -143,13 +142,32 @@ class _PostItemState extends State<PostItem>
   
   static final Map<String, Widget> _previewWidgetCache = {};
 
+  bool _wasVisible = false;
+
   @override
   void initState() {
     super.initState();
+    print('🎬 [VIDEO] ========== INIT STATE ==========');
+    print('🎬 [VIDEO] PostId: $_postId');
+    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
+    print('🎬 [VIDEO] widget.isVisible: ${widget.isVisible}');
+    print('🎬 [VIDEO] post keys: ${widget.post.keys}');
+    print('🎬 [VIDEO] mediaType: ${widget.post['mediaType']}');
+    print('🎬 [VIDEO] videoUrl: ${widget.post['videoUrl']}');
+    print('🎬 [VIDEO] ====================================');
+    
     _initializeCarousel();
     _validateImageUrl();
     _loadFollowStatus();
     _initAnimations();
+    
+    _wasVisible = widget.isVisible;
+    
+    if (_isVideoPost()) {
+      print('🎬 [VIDEO] Video post detected');
+    } else {
+      print('🎬 [VIDEO] Not a video post');
+    }
     
     for (int i = 0; i < _imageUrls.length; i++) {
       _showTagsForCarouselIndex[i] = false;
@@ -165,25 +183,99 @@ class _PostItemState extends State<PostItem>
     });
   }
 
-  void _preloadAllCarouselImages() {
-    if (!mounted) return;
-    for (int i = 0; i < _imageUrls.length; i++) {
-      final url = _imageUrls[i];
-      if (url.isNotEmpty && url != _fallbackImageUrl) {
-        precacheImage(CachedNetworkImageProvider(url), context);
-      }
+  @override
+  void didUpdateWidget(PostItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    print('🔄 [VIDEO] didUpdateWidget for $_postId');
+    print('🔄 [VIDEO] new post: ${widget.post.keys}');
+    print('🔄 [VIDEO] mediaType: ${widget.post['mediaType']}, videoUrl: ${widget.post['videoUrl']}');
+    if (oldWidget.post['videoUrl'] != widget.post['videoUrl'] ||
+        oldWidget.post['mediaType'] != widget.post['mediaType']) {
+      print('🔄 [VIDEO] Video data changed, rebuilding');
+      if (mounted) setState(() {});
     }
   }
 
-  void _preloadMultipleImages() {
-    for (int i = _currentCarouselIndex + 1; i <= _currentCarouselIndex + 3; i++) {
-      if (i < _imageUrls.length) {
-        final url = _imageUrls[i];
-        if (url.isNotEmpty && url != _fallbackImageUrl) {
-          precacheImage(CachedNetworkImageProvider(url), context);
+  bool _isVideoPost() {
+    final mediaType = widget.post['mediaType']?.toString() ?? '';
+    if (mediaType == 'video') {
+      return true;
+    }
+    
+    final videoUrl = widget.post['videoUrl']?.toString() ?? '';
+    if (videoUrl.isNotEmpty) {
+      return true;
+    }
+    
+    for (var key in widget.post.keys) {
+      final value = widget.post[key];
+      if (value != null && value.toString().isNotEmpty) {
+        final str = value.toString().toLowerCase();
+        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
+          return true;
         }
       }
     }
+    
+    return false;
+  }
+
+  String? _getVideoUrl() {
+    final videoUrl = widget.post['videoUrl']?.toString();
+    if (videoUrl != null && videoUrl.isNotEmpty) {
+      return videoUrl;
+    }
+    
+    for (var key in widget.post.keys) {
+      final value = widget.post[key];
+      if (value != null && value.toString().isNotEmpty) {
+        final str = value.toString().toLowerCase();
+        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
+          return value.toString();
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  String? _getThumbnailUrl() => widget.post['thumbnailUrl']?.toString();
+
+  // ============================================================
+  // 🔥 VISIBILITY CHANGED - ОСНОВНОЕ ИСПРАВЛЕНИЕ
+  // ============================================================
+  void _onVisibilityChanged(VisibilityInfo info) {
+    final visible = info.visibleFraction > 0.5;
+    print('🎬 [VIDEO] ========== VISIBILITY CHANGED ==========');
+    print('🎬 [VIDEO] PostId: $_postId');
+    print('🎬 [VIDEO] visibleFraction: ${info.visibleFraction}');
+    print('🎬 [VIDEO] visible: $visible, wasVisible: $_wasVisible');
+    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
+    
+    if (visible != _wasVisible) {
+      _wasVisible = visible;
+      
+      // 🔥 ПРИНУДИТЕЛЬНО ПЕРЕСТРАИВАЕМ ВИДЖЕТ, ЧТОБЫ ПЕРЕДАТЬ НОВОЕ ЗНАЧЕНИЕ В VideoPlayerWidget
+      if (mounted) {
+        setState(() {});
+      }
+      
+      if (visible) {
+        print('🎬 [VIDEO] Post became visible');
+        if (widget.onPostVisible != null && !_didCallPostVisible) {
+          print('🎬 [VIDEO] Calling onPostVisible');
+          widget.onPostVisible!.call();
+          _didCallPostVisible = true;
+        }
+      } else {
+        print('🎬 [VIDEO] Post became invisible');
+        if (_didCallPostVisible && widget.onPostHidden != null) {
+          widget.onPostHidden!.call();
+          _didCallPostVisible = false;
+        }
+      }
+    }
+    print('🎬 [VIDEO] =========================================');
   }
 
   void _initAnimations() {
@@ -248,38 +340,15 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _preloadAllCarouselImages();
-    
-    if (!_didCallPostVisible && widget.onPostVisible != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          widget.onPostVisible!.call();
-          _didCallPostVisible = true;
-        }
-      });
-    }
-  }
-
   void _initializeCarousel() {
     _imageUrls = _getImageUrls();
     _isCarousel = _imageUrls.length > 1;
-    
     for (int i = 0; i < _imageUrls.length; i++) {
       _showTagsForCarouselIndex[i] = false;
     }
-    
     if (_isCarousel) {
       _carouselController = PageController();
     }
-  }
-
-  void _toggleTagsForCarouselIndex(int index) {
-    setState(() {
-      _showTagsForCarouselIndex[index] = !(_showTagsForCarouselIndex[index] ?? false);
-    });
   }
 
   List<String> _getImageUrls() {
@@ -314,13 +383,28 @@ class _PostItemState extends State<PostItem>
         urls.insert(0, imageUrl);
       }
 
+      if (urls.isEmpty && _isVideoPost()) {
+        final thumbnail = _getThumbnailUrl();
+        if (thumbnail != null && thumbnail.isNotEmpty) {
+          urls.add(thumbnail);
+        }
+      }
     } catch (e) {}
 
     if (urls.isEmpty) {
       urls.add(_fallbackImageUrl);
     }
-
     return urls;
+  }
+
+  bool _isValidUrl(String url) {
+    if (url.isEmpty) return false;
+    try {
+      final uri = Uri.parse(url);
+      return uri.isAbsolute && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
+    } catch (e) {
+      return false;
+    }
   }
 
   void _validateImageUrl() {
@@ -345,14 +429,31 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  bool _isValidUrl(String url) {
-    if (url.isEmpty) return false;
-    try {
-      final uri = Uri.parse(url);
-      return uri.isAbsolute && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
-    } catch (e) {
-      return false;
+  void _preloadAllCarouselImages() {
+    if (!mounted) return;
+    for (int i = 0; i < _imageUrls.length; i++) {
+      final url = _imageUrls[i];
+      if (url.isNotEmpty && url != _fallbackImageUrl) {
+        precacheImage(CachedNetworkImageProvider(url), context);
+      }
     }
+  }
+
+  void _preloadMultipleImages() {
+    for (int i = _currentCarouselIndex + 1; i <= _currentCarouselIndex + 3; i++) {
+      if (i < _imageUrls.length) {
+        final url = _imageUrls[i];
+        if (url.isNotEmpty && url != _fallbackImageUrl) {
+          precacheImage(CachedNetworkImageProvider(url), context);
+        }
+      }
+    }
+  }
+
+  void _toggleTagsForCarouselIndex(int index) {
+    setState(() {
+      _showTagsForCarouselIndex[index] = !(_showTagsForCarouselIndex[index] ?? false);
+    });
   }
 
   Future<void> _loadFollowStatus() async {
@@ -374,61 +475,6 @@ class _PostItemState extends State<PostItem>
         if (mounted) setState(() => _isFollowing = newStatus);
       }, onError: (error) {});
     } catch (e) {}
-  }
-
-  String _getUserAvatar(String? url) {
-    if (url == null || url.isEmpty) {
-      return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
-    }
-    
-    if (_avatarCache.containsKey(url)) {
-      return _avatarCache[url]!;
-    }
-    
-    if (_isValidUrl(url)) {
-      _avatarCache[url] = url;
-      return url;
-    }
-    
-    return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
-  }
-
-  @override
-  void dispose() {
-    if (_didCallPostVisible && widget.onPostHidden != null) {
-      widget.onPostHidden!.call();
-    }
-    disposeActions();
-    _followSubscription?.cancel();
-    _heartAnimationController.dispose();
-    _likeIconController.dispose();
-    _saveIconController.dispose();
-    _followAnimationController.dispose();
-    if (_isCarousel) {
-      _carouselController.dispose();
-    }
-    _avatarCache.clear();
-    super.dispose();
-  }
-
-  void _navigateToProfile(String userId) {
-    if (!mounted) return;
-    final currentUser = _auth.currentUser;
-    if (currentUser != null && userId == currentUser.uid) {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => profile.ProfileScreen()));
-    } else if (userId.isNotEmpty) {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
-    } else {
-      _showSnackBar('User profile not available', Colors.orange);
-    }
-  }
-
-  void _animateFollowButton() {
-    if (!mounted) return;
-    setState(() => _followButtonAnimating = true);
-    _followAnimationController.forward().then((_) {
-      if (mounted) setState(() => _followButtonAnimating = false);
-    });
   }
 
   Future<void> _toggleFollow() async {
@@ -469,35 +515,38 @@ class _PostItemState extends State<PostItem>
     _actionCompleted('follow');
   }
 
-  Future<void> _sendLikeNotification(String postId, String postOwnerId) async {
+  void _animateFollowButton() {
+    if (!mounted) return;
+    setState(() => _followButtonAnimating = true);
+    _followAnimationController.forward().then((_) {
+      if (mounted) setState(() => _followButtonAnimating = false);
+    });
+  }
+
+  void _navigateToProfile(String userId) {
+    if (!mounted) return;
     final currentUser = _auth.currentUser;
-    if (currentUser == null) return;
-    
-    if (postOwnerId == currentUser.uid) return;
-    
-    try {
-      final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
-      final userData = userDoc.data() ?? {};
-      final userName = userData['username'] ?? currentUser.displayName ?? 'User';
-      final userAvatar = userData['avatarUrl'] ?? currentUser.photoURL ?? '';
-      
-      await _firestore.collection('notifications').add({
-        'userId': postOwnerId,
-        'type': 'like',
-        'senderId': currentUser.uid,
-        'senderName': userName,
-        'senderAvatar': userAvatar,
-        'postId': postId,
-        'title': 'New Like',
-        'body': 'liked your post',
-        'isRead': false,
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-      
-      print('✅ Like notification sent to: $postOwnerId');
-    } catch (e) {
-      print('❌ Error sending like notification: $e');
+    if (currentUser != null && userId == currentUser.uid) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => const profile.ProfileScreen()));
+    } else if (userId.isNotEmpty) {
+      Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
+    } else {
+      _showSnackBar('User profile not available', Colors.orange);
     }
+  }
+
+  String _getUserAvatar(String? url) {
+    if (url == null || url.isEmpty) {
+      return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
+    }
+    if (_avatarCache.containsKey(url)) {
+      return _avatarCache[url]!;
+    }
+    if (_isValidUrl(url)) {
+      _avatarCache[url] = url;
+      return url;
+    }
+    return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
   }
 
   Future<void> _toggleLike() async {
@@ -584,15 +633,34 @@ class _PostItemState extends State<PostItem>
     _actionCompleted('save');
   }
 
-  void _handleDoubleTap() {
-    if (!mounted) return;
-    final postId = widget.post['id']?.toString() ?? '';
-    final isLiked = _postController.isPostLiked(postId);
-    if (isLiked || _isLongPressInProgress) return;
-
-    HapticFeedback.lightImpact();
-    _startLikeAnimation();
-    _toggleLike();
+  Future<void> _sendLikeNotification(String postId, String postOwnerId) async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+    if (postOwnerId == currentUser.uid) return;
+    
+    try {
+      final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
+      final userData = userDoc.data() ?? {};
+      final userName = userData['username'] ?? currentUser.displayName ?? 'User';
+      final userAvatar = userData['avatarUrl'] ?? currentUser.photoURL ?? '';
+      
+      await _firestore.collection('notifications').add({
+        'userId': postOwnerId,
+        'type': 'like',
+        'senderId': currentUser.uid,
+        'senderName': userName,
+        'senderAvatar': userAvatar,
+        'postId': postId,
+        'title': 'New Like',
+        'body': 'liked your post',
+        'isRead': false,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+      
+      print('✅ Like notification sent to: $postOwnerId');
+    } catch (e) {
+      print('❌ Error sending like notification: $e');
+    }
   }
 
   void _showCommentsSheet() {
@@ -644,6 +712,17 @@ class _PostItemState extends State<PostItem>
         },
       ),
     );
+  }
+
+  void _handleDoubleTap() {
+    if (!mounted) return;
+    final postId = widget.post['id']?.toString() ?? '';
+    final isLiked = _postController.isPostLiked(postId);
+    if (isLiked || _isLongPressInProgress) return;
+
+    HapticFeedback.lightImpact();
+    _startLikeAnimation();
+    _toggleLike();
   }
 
   void _startLikeAnimation() {
@@ -701,57 +780,312 @@ class _PostItemState extends State<PostItem>
         .toList();
   }
 
-  Widget _buildTikTokIndicators() {
-    final totalImages = _imageUrls.length;
-    final currentIndex = _currentCarouselIndex;
+  // ============================================================
+  // 🔥 BUILD VIDEO PLAYER CONTENT
+  // ============================================================
+  Widget _buildVideoPlayerContent() {
+    final videoUrl = _getVideoUrl();
     
-    if (totalImages <= 3) {
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(totalImages, (index) {
-          final isCurrent = index == currentIndex;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            width: isCurrent ? 8 : 6,
-            height: isCurrent ? 8 : 6,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
-            ),
-          );
-        }),
+    if (videoUrl == null || videoUrl.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, color: Colors.white70, size: 48),
+              SizedBox(height: 12),
+              Text('Video unavailable', style: TextStyle(color: Colors.white70)),
+            ],
+          ),
+        ),
       );
     }
     
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        _buildIndicator(index: 0, isCurrent: currentIndex == 0),
-        _buildIndicator(index: 1, isCurrent: currentIndex > 0 && currentIndex < totalImages - 1),
-        _buildIndicator(index: 2, isCurrent: currentIndex == totalImages - 1),
-      ],
+    return VideoPlayerWidget(
+      videoUrl: videoUrl,
+      showControls: true,
+      isVisible: _wasVisible,
     );
   }
 
-  Widget _buildIndicator({required int index, required bool isCurrent}) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOut,
-      width: isCurrent ? 10 : 6,
-      height: isCurrent ? 10 : 6,
-      margin: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
+  Widget _buildTagsOverlay() {
+    final allTags = _getTagsFromPost(widget.post);
+    final tagsForThisImage = allTags
+        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+        .toList();
+    final hasTags = tagsForThisImage.isNotEmpty;
+
+    if (!hasTags) return const SizedBox.shrink();
+
+    return Positioned.fill(
+      child: PostTagsOverlay(
+        tags: tagsForThisImage,
+        isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
+        onTagTap: (tag) async {
+          print('🔗 [TAGS] Tag tapped: ${tag.url}');
+          widget.onLinkClick?.call();
+          final url = Uri.parse(tag.url);
+          if (await canLaunchUrl(url)) {
+            await launchUrl(url, mode: LaunchMode.externalApplication);
+          } else {
+            _showSnackBar('Cannot open link', Colors.red);
+          }
+        },
+        onTagMoved: (tag, newX, newY) {
+          print('📍 [TAGS] Tag moved: ${tag.id} -> ($newX, $newY)');
+        },
       ),
     );
   }
 
-  // ============================================================
-  // 🔥 ИЗОБРАЖЕНИЕ ДЛЯ AUTO (С ТЭГАМИ)
-  // ============================================================
+  Widget _buildFullScreenVideoPost() {
+    return _buildFullScreenVideoPostContent();
+  }
+
+  Widget _buildFullScreenVideoPostContent() {
+    final hasCaption = widget.post['caption'] != null && 
+                      widget.post['caption'].toString().isNotEmpty;
+    
+    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    final double tabBarHeight = 54 + 16 + 16;
+    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
+
+    return GestureDetector(
+      onLongPress: () {
+        HapticFeedback.heavyImpact();
+        setState(() => _isLongPressInProgress = true);
+        _showPostOptions();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) setState(() => _isLongPressInProgress = false);
+        });
+      },
+      onDoubleTapDown: (TapDownDetails details) {
+        if (_isLongPressInProgress) return;
+        if (!mounted) return;
+        final box = context.findRenderObject() as RenderBox?;
+        if (box != null && box.hasSize) {
+          final localPosition = box.globalToLocal(details.globalPosition);
+          if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
+              localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
+            setState(() => _tapPosition = localPosition);
+          } else {
+            setState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
+          }
+        } else {
+          setState(() => _tapPosition = const Offset(150, 300));
+        }
+      },
+      onDoubleTap: _handleDoubleTap,
+      behavior: HitTestBehavior.translucent,
+      child: Container(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _buildVideoPlayerContent(),
+            _buildTagsOverlay(),
+            Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: bottomPadding,
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: hasCaption ? 2 : 5,
+                    left: 0,
+                    right: 60,
+                    child: _buildUserInfoAndCaption(),
+                  ),
+                  Positioned(
+                    bottom: hasCaption ? 2 : 5,
+                    right: 0,
+                    child: _buildActionButtons(),
+                  ),
+                ],
+              ),
+            ),
+            if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
+              Positioned(
+                left: _tapPosition!.dx - 50,
+                top: _tapPosition!.dy - 50,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: AnimatedBuilder(
+                    animation: _heartAnimationController,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, _heartVerticalAnimation.value),
+                        child: Opacity(
+                          opacity: _heartOpacityAnimation.value,
+                          child: Transform.scale(
+                            scale: _heartScaleAnimation.value,
+                            child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFullScreenPost() {
+    final postId = widget.post['id']?.toString() ?? '';
+    final imageUrl = _getCurrentImageUrl();
+    
+    final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
+    final hasCaption = freshPost['caption'] != null && 
+                      freshPost['caption'].toString().isNotEmpty;
+    
+    final fitModes = freshPost['fitModes'] as List? ?? [];
+    String mode = 'contain';
+    if (_currentCarouselIndex < fitModes.length) {
+      mode = fitModes[_currentCarouselIndex]?.toString() ?? 'contain';
+    } else if (fitModes.isNotEmpty) {
+      mode = fitModes.first?.toString() ?? 'contain';
+    }
+    final isFullScreenMode = mode == 'cover';
+    
+    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
+    final double tabBarHeight = 54 + 16 + 16;
+    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
+
+    return GestureDetector(
+      onLongPress: () {
+        HapticFeedback.heavyImpact();
+        setState(() => _isLongPressInProgress = true);
+        _showPostOptions();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) setState(() => _isLongPressInProgress = false);
+        });
+      },
+      onDoubleTapDown: (TapDownDetails details) {
+        if (_isLongPressInProgress) return;
+        if (!mounted) return;
+        final box = context.findRenderObject() as RenderBox?;
+        if (box != null && box.hasSize) {
+          final localPosition = box.globalToLocal(details.globalPosition);
+          if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
+              localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
+            setState(() => _tapPosition = localPosition);
+          } else {
+            setState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
+          }
+        } else {
+          setState(() => _tapPosition = const Offset(150, 300));
+        }
+      },
+      onDoubleTap: _handleDoubleTap,
+      onTap: () {
+        final allTags = _getTagsFromPost(freshPost);
+        final hasTags = allTags
+            .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
+            .isNotEmpty;
+        if (hasTags) {
+          _toggleTagsForCarouselIndex(_currentCarouselIndex);
+        }
+      },
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (_isCarousel && _imageUrls.length > 1)
+              _buildCarousel()
+            else
+              isFullScreenMode
+                  ? _buildFullImage(imageUrl)
+                  : _buildAutoImage(imageUrl),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: true,
+                child: Container(
+                  height: 80,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.2),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (_isCarousel && _imageUrls.length > 1)
+              Positioned(
+                bottom: bottomPadding + 10,
+                left: 0,
+                right: 0,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: _buildTikTokIndicators(),
+                ),
+              ),
+            if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
+              Positioned(
+                left: _tapPosition!.dx - 50,
+                top: _tapPosition!.dy - 50,
+                child: IgnorePointer(
+                  ignoring: true,
+                  child: AnimatedBuilder(
+                    animation: _heartAnimationController,
+                    builder: (context, child) {
+                      return Transform.translate(
+                        offset: Offset(0, _heartVerticalAnimation.value),
+                        child: Opacity(
+                          opacity: _heartOpacityAnimation.value,
+                          child: Transform.scale(
+                            scale: _heartScaleAnimation.value,
+                            child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                bottom: bottomPadding,
+              ),
+              child: Stack(
+                children: [
+                  Positioned(
+                    bottom: hasCaption ? 2 : 5,
+                    left: 0,
+                    right: 60,
+                    child: _buildUserInfoAndCaption(),
+                  ),
+                  Positioned(
+                    bottom: hasCaption ? 2 : 5,
+                    right: 0,
+                    child: _buildActionButtons(),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -801,9 +1135,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 ИЗОБРАЖЕНИЕ ДЛЯ FULL (С ТЭГАМИ)
-  // ============================================================
   Widget _buildFullImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -850,9 +1181,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 КАРУСЕЛЬ — AUTO (С ТЭГАМИ)
-  // ============================================================
   Widget _buildAutoCarouselItem(String url, int index) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -900,9 +1228,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 КАРУСЕЛЬ — FULL (С ТЭГАМИ)
-  // ============================================================
   Widget _buildFullCarouselItem(String url, int index) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -947,9 +1272,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 КАРУСЕЛЬ
-  // ============================================================
   Widget _buildCarousel() {
     final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
     final fitModes = freshPost['fitModes'] as List? ?? [];
@@ -985,6 +1307,54 @@ class _PostItemState extends State<PostItem>
               : _buildAutoCarouselItem(url, index),
         );
       },
+    );
+  }
+
+  Widget _buildTikTokIndicators() {
+    final totalImages = _imageUrls.length;
+    final currentIndex = _currentCarouselIndex;
+    
+    if (totalImages <= 3) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List.generate(totalImages, (index) {
+          final isCurrent = index == currentIndex;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOut,
+            width: isCurrent ? 8 : 6,
+            height: isCurrent ? 8 : 6,
+            margin: const EdgeInsets.symmetric(horizontal: 4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
+            ),
+          );
+        }),
+      );
+    }
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildIndicator(index: 0, isCurrent: currentIndex == 0),
+        _buildIndicator(index: 1, isCurrent: currentIndex > 0 && currentIndex < totalImages - 1),
+        _buildIndicator(index: 2, isCurrent: currentIndex == totalImages - 1),
+      ],
+    );
+  }
+
+  Widget _buildIndicator({required int index, required bool isCurrent}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      width: isCurrent ? 10 : 6,
+      height: isCurrent ? 10 : 6,
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
+      ),
     );
   }
 
@@ -1223,6 +1593,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _buildActionButtons - ИКОНКА ВОЛШЕБНОЙ ПАЛОЧКИ
+  // ============================================================
   Widget _buildActionButtons() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -1234,6 +1607,7 @@ class _PostItemState extends State<PostItem>
       final likesCount = freshPost['likes'] ?? 0;
       final commentsCount = freshPost['comments'] ?? 0;
       final savesCount = freshPost['saves'] ?? 0;
+      
       final allTags = _getTagsFromPost(freshPost);
       final tagsForThisImage = allTags
           .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
@@ -1268,6 +1642,7 @@ class _PostItemState extends State<PostItem>
               scaleAnimation: _saveIconScale,
               iconSize: 28,
             ),
+            // 🔥 ИКОНКА ТЭГОВ - ВОЛШЕБНАЯ ПАЛОЧКА (✨)
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 16),
               GestureDetector(
@@ -1277,7 +1652,7 @@ class _PostItemState extends State<PostItem>
                 child: const SizedBox(
                   width: 32,
                   child: Icon(
-                    Icons.location_on_outlined,
+                    Icons.auto_awesome,  // ✨ Волшебная палочка
                     color: Colors.white,
                     size: 28,
                   ),
@@ -1288,13 +1663,6 @@ class _PostItemState extends State<PostItem>
         ),
       );
     });
-  }
-
-  Widget _buildLoadingWidget() {
-    return Container(
-      color: Colors.grey[800],
-      child: const Center(child: CircularProgressIndicator(color: Colors.white)),
-    );
   }
 
   Widget _buildErrorWidget() {
@@ -1327,15 +1695,21 @@ class _PostItemState extends State<PostItem>
   Widget _buildPreviewPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
+
+    if (_isVideoPost()) {
+      return _buildVideoPreview();
+    }
+
+    final cacheKey = 'photo_$postId';
+    if (_previewWidgetCache.containsKey(cacheKey)) {
+      return _previewWidgetCache[cacheKey]!;
+    }
+
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
         .where((tag) => tag.id.contains('_0'))
         .toList();
     final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-
-    if (_previewWidgetCache.containsKey(postId)) {
-      return _previewWidgetCache[postId]!;
-    }
 
     final cachedWidget = RepaintBoundary(
       key: ValueKey('preview_${postId}_fixed'),
@@ -1405,171 +1779,36 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    _previewWidgetCache[postId] = cachedWidget;
+    _previewWidgetCache[cacheKey] = cachedWidget;
     return cachedWidget;
   }
 
-  // ============================================================
-  // 🔥 ОСНОВНОЙ _buildFullScreenPost — БЕЗ ТЭГОВ В КОРНЕВОМ STACK
-  // ============================================================
-  Widget _buildFullScreenPost() {
-    final postId = widget.post['id']?.toString() ?? '';
+  Widget _buildVideoPreview() {
     final imageUrl = _getCurrentImageUrl();
-    
-    final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
-    final hasCaption = freshPost['caption'] != null && 
-                      freshPost['caption'].toString().isNotEmpty;
-    
-    final fitModes = freshPost['fitModes'] as List? ?? [];
-    String mode = 'contain';
-    if (_currentCarouselIndex < fitModes.length) {
-      mode = fitModes[_currentCarouselIndex]?.toString() ?? 'contain';
-    } else if (fitModes.isNotEmpty) {
-      mode = fitModes.first?.toString() ?? 'contain';
-    }
-    final isFullScreenMode = mode == 'cover';
-    
-    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    final double tabBarHeight = 54 + 16 + 16;
-    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
-
-    // Тэги уже внутри изображений — не добавляем их сюда
-    
     return GestureDetector(
-      onLongPress: () {
-        HapticFeedback.heavyImpact();
-        setState(() => _isLongPressInProgress = true);
-        _showPostOptions();
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) setState(() => _isLongPressInProgress = false);
-        });
-      },
-      onDoubleTapDown: (TapDownDetails details) {
-        if (_isLongPressInProgress) return;
-        if (!mounted) return;
-        final box = context.findRenderObject() as RenderBox?;
-        if (box != null && box.hasSize) {
-          final localPosition = box.globalToLocal(details.globalPosition);
-          if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
-              localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
-            setState(() => _tapPosition = localPosition);
-          } else {
-            setState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
-          }
-        } else {
-          setState(() => _tapPosition = const Offset(150, 300));
-        }
-      },
-      onDoubleTap: _handleDoubleTap,
-      onTap: () {
-        // Переключаем видимость тегов для текущего индекса
-        final allTags = _getTagsFromPost(freshPost);
-        final hasTags = allTags
-            .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-            .isNotEmpty;
-        if (hasTags) {
-          _toggleTagsForCarouselIndex(_currentCarouselIndex);
-        }
-      },
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        color: Colors.black,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // ===== ИЗОБРАЖЕНИЕ (теги уже внутри) =====
-            if (_isCarousel && _imageUrls.length > 1)
-              _buildCarousel()
-            else
-              isFullScreenMode
-                  ? _buildFullImage(imageUrl)
-                  : _buildAutoImage(imageUrl),
-
-            // ===== ГРАДИЕНТ СНИЗУ =====
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: true,
-                child: Container(
-                  height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.2),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+      onTap: widget.onTap,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CachedNetworkImage(
+            imageUrl: imageUrl,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            placeholder: (context, url) => Container(color: Colors.grey[900]),
+            errorWidget: (context, url, error) => Container(
+              color: Colors.grey[900],
+              child: const Icon(Icons.broken_image, color: Colors.grey),
             ),
-            
-            // ===== ИНДИКАТОРЫ КАРУСЕЛИ =====
-            if (_isCarousel && _imageUrls.length > 1)
-              Positioned(
-                bottom: bottomPadding + 10,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: _buildTikTokIndicators(),
-                ),
-              ),
-              
-            // ===== АНИМАЦИЯ ЛАЙКА =====
-            if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
-              Positioned(
-                left: _tapPosition!.dx - 50,
-                top: _tapPosition!.dy - 50,
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: AnimatedBuilder(
-                    animation: _heartAnimationController,
-                    builder: (context, child) {
-                      return Transform.translate(
-                        offset: Offset(0, _heartVerticalAnimation.value),
-                        child: Opacity(
-                          opacity: _heartOpacityAnimation.value,
-                          child: Transform.scale(
-                            scale: _heartScaleAnimation.value,
-                            child: const Icon(Icons.favorite, color: Colors.white, size: 100),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              
-            // ===== НИЖНЯЯ ПАНЕЛЬ =====
-            Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                bottom: bottomPadding,
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    bottom: hasCaption ? 2 : 5,
-                    left: 0,
-                    right: 60,
-                    child: _buildUserInfoAndCaption(),
-                  ),
-                  Positioned(
-                    bottom: hasCaption ? 2 : 5,
-                    right: 0,
-                    child: _buildActionButtons(),
-                  ),
-                ],
-              ),
+          ),
+          const Center(
+            child: Icon(
+              Icons.play_circle_outline,
+              color: Colors.white,
+              size: 60,
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -1577,6 +1816,36 @@ class _PostItemState extends State<PostItem>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    
+    if (_isVideoPost()) {
+      return RepaintBoundary(
+        child: VisibilityDetector(
+          key: Key('video_${widget.post['id']}'),
+          onVisibilityChanged: _onVisibilityChanged,
+          child: widget.isFullScreen ? _buildFullScreenVideoPost() : _buildPreviewPost(),
+        ),
+      );
+    }
+    
     return widget.isFullScreen ? _buildFullScreenPost() : _buildPreviewPost();
+  }
+
+  @override
+  void dispose() {
+    if (_didCallPostVisible && widget.onPostHidden != null) {
+      widget.onPostHidden!.call();
+    }
+    disposeActions();
+    _followSubscription?.cancel();
+    _heartAnimationController.dispose();
+    _likeIconController.dispose();
+    _saveIconController.dispose();
+    _followAnimationController.dispose();
+    
+    if (_isCarousel) {
+      _carouselController.dispose();
+    }
+    _avatarCache.clear();
+    super.dispose();
   }
 }

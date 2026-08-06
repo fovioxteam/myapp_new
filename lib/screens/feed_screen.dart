@@ -1,3 +1,5 @@
+// lib/screens/feed_screen.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -341,6 +343,9 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _loadFollowingPosts
+  // ============================================================
   Future<void> _loadFollowingPosts() async {
     try {
       if (_followingUsers.isEmpty) {
@@ -372,7 +377,14 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded: ${snapshot.docs.length} posts');
       
       if (snapshot.docs.isNotEmpty) {
-        final newPosts = await _processPosts(snapshot);
+        final newPosts = <Map<String, dynamic>>[];
+        for (var doc in snapshot.docs) {
+          final processed = await _postController.getProcessedPost(doc);
+          if (processed != null) {
+            print('📦 [FOLLOWING] Post ${processed['id']}: mediaType=${processed['mediaType']}, videoUrl=${processed['videoUrl']}');
+            newPosts.add(processed);
+          }
+        }
         
         if (!mounted) return;
         
@@ -404,6 +416,9 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _loadMoreFollowing
+  // ============================================================
   Future<void> _loadMoreFollowing() async { 
     if (!_hasMoreFollowing || _isLoadingMoreFollowing || !mounted) return;
     
@@ -438,7 +453,14 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded more: ${snapshot.docs.length}');
       
       if (snapshot.docs.isNotEmpty) {
-        final newPosts = await _processPosts(snapshot);
+        final newPosts = <Map<String, dynamic>>[];
+        for (var doc in snapshot.docs) {
+          final processed = await _postController.getProcessedPost(doc);
+          if (processed != null) {
+            print('📦 [FOLLOWING-MORE] Post ${processed['id']}: mediaType=${processed['mediaType']}, videoUrl=${processed['videoUrl']}');
+            newPosts.add(processed);
+          }
+        }
         
         if (!mounted) return;
         
@@ -465,75 +487,6 @@ class _FeedScreenState extends State<FeedScreen>
       _isLoadingMoreFollowing = false;
       if (mounted) setState(() {});
     }
-  }
-
-  Future<List<Map<String, dynamic>>> _processPosts(QuerySnapshot snapshot) async {
-    final List<Map<String, dynamic>> processedPosts = [];
-    
-    for (final doc in snapshot.docs) {
-      try {
-        final data = doc.data() as Map<String, dynamic>;
-        final postId = doc.id;
-        
-        final authorId = data['userId'] as String?;
-        String userName = 'Unknown';
-        String userAvatar = '';
-        
-        if (authorId != null) {
-          if (_usersCache.containsKey(authorId)) {
-            final authorData = _usersCache[authorId]!;
-            userName = authorData['username'] ?? 'Unknown';
-            userAvatar = authorData['avatarUrl'] ?? '';
-          } else {
-            final authorDoc = await _firestore.collection('users').doc(authorId).get();
-            if (authorDoc.exists) {
-              final authorData = authorDoc.data() ?? {};
-              userName = authorData['username'] ?? 'Unknown';
-              userAvatar = authorData['avatarUrl'] ?? '';
-              _usersCache[authorId] = {'username': userName, 'avatarUrl': userAvatar};
-            }
-          }
-        }
-        
-        List<String> images = [];
-        if (data['images'] is List) {
-          images = List<String>.from(data['images'] ?? []);
-        } else if (data['imageUrls'] is List) {
-          images = List<String>.from(data['imageUrls'] ?? []);
-        } else if (data['url'] != null) {
-          images = [data['url'].toString()];
-        }
-        
-        final imageUrl = images.isNotEmpty ? images.first : '';
-        
-        final post = {
-          'id': postId,
-          'userId': authorId,
-          'userName': userName,
-          'userAvatar': userAvatar,
-          'imageUrl': imageUrl,
-          'url': imageUrl,
-          'images': images,
-          'imageUrls': images,
-          'imageCount': images.length,
-          'singleFitMode': data['singleFitMode'],
-          'fitModes': data['fitModes'] ?? List.filled(images.length, 'cover'),
-          'caption': data['caption']?.toString() ?? '',
-          'likes': (data['likes'] ?? 0) as int,
-          'comments': (data['comments'] ?? 0) as int,
-          'saves': (data['saves'] ?? 0) as int,
-          'createdAt': data['createdAt'],
-          'hashtags': List<String>.from(data['hashtags'] ?? []),
-        };
-        
-        processedPosts.add(post);
-        
-      } catch (e) {
-        print('Error processing post: $e');
-      }
-    }
-    
-    return processedPosts;
   }
 
   void _preloadNextPosts(int currentIndex) {

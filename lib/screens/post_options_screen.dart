@@ -1,6 +1,5 @@
-// lib/screens/post_options_screen.dart
-
 import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -11,6 +10,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:photo_manager/photo_manager.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
@@ -60,6 +60,218 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     'Other',
   ];
 
+  // ============================================================
+  // 🔥 ПРОВЕРКА - ВИДЕО ЛИ ЭТО
+  // ============================================================
+  bool _isVideoPost() {
+    final mediaType = widget.post['mediaType']?.toString() ?? '';
+    if (mediaType == 'video') return true;
+    
+    final videoUrl = widget.post['videoUrl']?.toString() ?? '';
+    if (videoUrl.isNotEmpty) return true;
+    
+    return false;
+  }
+
+  // ============================================================
+  // 🔥 ПОЛУЧЕНИЕ URL ДЛЯ СОХРАНЕНИЯ
+  // ============================================================
+  String? _getMediaUrl() {
+    // Для видео
+    if (_isVideoPost()) {
+      final videoUrl = widget.post['videoUrl']?.toString();
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        return videoUrl;
+      }
+    }
+    
+    // Для фото
+    String? imageUrl = widget.post['imageUrl']?.toString();
+    if (imageUrl == null || imageUrl.isEmpty) {
+      imageUrl = widget.post['url']?.toString();
+    }
+    if (imageUrl == null || imageUrl.isEmpty) {
+      final imageUrls = widget.post['imageUrls'];
+      if (imageUrls is List && imageUrls.isNotEmpty) {
+        imageUrl = imageUrls[0]?.toString();
+      }
+    }
+    
+    return imageUrl;
+  }
+
+  // ============================================================
+  // 🔥 ДИАЛОГ РАЗРЕШЕНИЙ
+  // ============================================================
+  Future<bool?> _showPermissionDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        title: const Text(
+          'Storage Permission Needed',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        content: const Text(
+          'Please allow access to save media to your gallery',
+          style: TextStyle(color: Colors.white70),
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Open Settings', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // 🔥 СОХРАНЕНИЕ ВИДЕО
+  // ============================================================
+  Future<void> _saveVideo(String videoUrl) async {
+    try {
+      print('🎬 [SAVE] Starting video download: $videoUrl');
+      
+      PermissionState perm = await PhotoManager.requestPermissionExtend();
+      if (!perm.isAuth) {
+        final shouldOpenSettings = await _showPermissionDialog();
+        if (shouldOpenSettings == true) {
+          await PhotoManager.openSetting();
+          perm = await PhotoManager.requestPermissionExtend();
+        }
+      }
+      
+      if (!perm.isAuth) {
+        _showToast('Cannot save video without storage permission', isError: true);
+        return;
+      }
+
+      setState(() => _isSaving = true);
+
+      final response = await Dio().get(
+        videoUrl,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 60),
+        ),
+      );
+      
+      final bytes = response.data as Uint8List;
+      
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/foviox_video_${DateTime.now().millisecondsSinceEpoch}.mp4');
+      await tempFile.writeAsBytes(bytes);
+      
+      final assetEntity = await PhotoManager.editor.saveVideo(
+        tempFile,
+        title: "foviox_video_${DateTime.now().millisecondsSinceEpoch}.mp4",
+      );
+      
+      await tempFile.delete();
+      
+      if (assetEntity != null) {
+        _showToast('Video saved to gallery');
+        print('✅ [SAVE] Video saved: ${assetEntity.id}');
+      } else {
+        throw Exception('Failed to save video');
+      }
+
+    } catch (e) {
+      print('❌ [SAVE] Error saving video: $e');
+      _showToast('Failed to save video: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // ============================================================
+  // 🔥 СОХРАНЕНИЕ ИЗОБРАЖЕНИЯ
+  // ============================================================
+  Future<void> _saveImage(String imageUrl) async {
+    try {
+      print('📸 [SAVE] Starting image download: $imageUrl');
+      
+      PermissionState perm = await PhotoManager.requestPermissionExtend();
+      if (!perm.isAuth) {
+        final shouldOpenSettings = await _showPermissionDialog();
+        if (shouldOpenSettings == true) {
+          await PhotoManager.openSetting();
+          perm = await PhotoManager.requestPermissionExtend();
+        }
+      }
+      
+      if (!perm.isAuth) {
+        _showToast('Cannot save image without storage permission', isError: true);
+        return;
+      }
+
+      setState(() => _isSaving = true);
+
+      final response = await Dio().get(
+        imageUrl,
+        options: Options(
+          responseType: ResponseType.bytes,
+          receiveTimeout: const Duration(seconds: 30),
+        ),
+      );
+      
+      Uint8List bytes = response.data;
+
+      if (bytes.length > 1024 * 1024) {
+        final compressed = await FlutterImageCompress.compressWithList(
+          bytes,
+          quality: 85,
+        );
+        if (compressed != null) bytes = compressed;
+      }
+
+      await PhotoManager.editor.saveImage(
+        bytes,
+        title: "foviox_${DateTime.now().millisecondsSinceEpoch}.jpg",
+      );
+      
+      _showToast('Image saved to gallery');
+
+    } catch (e) {
+      print('❌ [SAVE] Error saving image: $e');
+      _showToast('Failed to save image: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  // ============================================================
+  // 🔥 ОСНОВНОЙ МЕТОД СОХРАНЕНИЯ - "SAVE POST"
+  // ============================================================
+  Future<void> _savePost() async {
+    if (_isSaving) return;
+
+    final mediaUrl = _getMediaUrl();
+    if (mediaUrl == null || mediaUrl.isEmpty) {
+      _showToast('No media to save', isError: true);
+      return;
+    }
+
+    if (_isVideoPost()) {
+      await _saveVideo(mediaUrl);
+    } else {
+      await _saveImage(mediaUrl);
+    }
+  }
+
+  // ============================================================
+  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
+  // ============================================================
+  
   void _showToast(String message, {bool isError = false}) {
     Fluttertoast.showToast(
       msg: message,
@@ -232,89 +444,6 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.black, // 👈 черный фон
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8), // 👈 минимальные отступы
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Индикатор (полоска) - светлая на черном
-            Container(
-              margin: const EdgeInsets.only(top: 4, bottom: 8), // 👈 еще меньше
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[700],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-
-            // Список опций
-            if (_isOwnPost)
-              _buildOption(
-                icon: CupertinoIcons.delete,
-                label: _isDeleting ? 'Deleting...' : 'Delete Post',
-                onTap: _isDeleting ? null : _deletePost,
-              ),
-
-            if (_isOwnPost) const Divider(color: Color.fromARGB(255, 0, 0, 0)),
-
-            _buildOption(
-              icon: CupertinoIcons.share,
-              label: _isSharing ? 'Sharing...' : 'Share',
-              onTap: _isSharing ? null : _sharePost,
-            ),
-
-            _buildOption(
-              icon: CupertinoIcons.arrow_down_doc,
-              label: _isSaving ? 'Saving...' : 'Save Image',
-              onTap: _isSaving ? null : _saveImage,
-            ),
-
-            if (!_isOwnPost) ...[
-              const Divider(color: Color.fromARGB(255, 0, 0, 0)),
-              _buildOption(
-                icon: CupertinoIcons.flag,
-                label: _isReporting ? 'Reporting...' : 'Report',
-                onTap: _isReporting ? null : _reportPost,
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildOption({
-    required IconData icon,
-    required String label,
-    VoidCallback? onTap,
-  }) {
-    return CupertinoButton(
-      onPressed: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10), // 👈 уменьшил вертикальный паддинг
-      child: Row(
-        children: [
-          Icon(icon, color: onTap == null ? Colors.grey[600] : Colors.white),
-          const SizedBox(width: 16),
-          Text(
-            label,
-            style: TextStyle(
-              color: onTap == null ? Colors.grey[600] : Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ========== УДАЛЕНИЕ ПОСТА ==========
   Future<void> _deletePost() async {
     if (_isDeleting) return;
 
@@ -366,106 +495,6 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
     setState(() => _isDeleting = false);
   }
 
-  // ========== СОХРАНЕНИЕ ИЗОБРАЖЕНИЯ ==========
-  Future<void> _saveImage() async {
-    String? imageUrl = widget.post['imageUrl']?.toString();
-    
-    if (imageUrl == null || imageUrl.isEmpty) {
-      imageUrl = widget.post['url']?.toString();
-    }
-    if (imageUrl == null || imageUrl.isEmpty) {
-      final imageUrls = widget.post['imageUrls'];
-      if (imageUrls is List && imageUrls.isNotEmpty) {
-        imageUrl = imageUrls[0]?.toString();
-      }
-    }
-    
-    if (imageUrl == null || imageUrl.isEmpty) {
-      _showToast('No image to save', isError: true);
-      return;
-    }
-
-    setState(() => _isSaving = true);
-
-    try {
-      PermissionState perm = await PhotoManager.requestPermissionExtend();
-      
-      if (!perm.isAuth) {
-        final shouldOpenSettings = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            backgroundColor: Colors.grey[900],
-            title: const Text(
-              'Storage Permission Needed',
-              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-            ),
-            content: const Text(
-              'Please allow access to save images to your gallery',
-              style: TextStyle(color: Colors.white70),
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Open Settings', style: TextStyle(color: Colors.white)),
-              ),
-            ],
-          ),
-        );
-        
-        if (shouldOpenSettings == true) {
-          await PhotoManager.openSetting();
-          perm = await PhotoManager.requestPermissionExtend();
-        }
-      }
-      
-      if (!perm.isAuth) {
-        _showToast('Cannot save image without storage permission', isError: true);
-        if (mounted) setState(() => _isSaving = false);
-        return;
-      }
-
-      final response = await Dio().get(
-        imageUrl,
-        options: Options(
-          responseType: ResponseType.bytes,
-          receiveTimeout: const Duration(seconds: 30),
-        ),
-      );
-      
-      Uint8List bytes = response.data;
-
-      if (bytes.length > 1024 * 1024) {
-        final compressed = await FlutterImageCompress.compressWithList(
-          bytes,
-          quality: 85,
-        );
-        if (compressed != null) bytes = compressed;
-      }
-
-      await PhotoManager.editor.saveImage(
-        bytes,
-        title: "foviox_${DateTime.now().millisecondsSinceEpoch}.jpg",
-      );
-      
-      _showToast('Image saved to gallery');
-
-    } catch (e) {
-      print('❌ Save error: $e');
-      _showToast('Failed to save image', isError: true);
-    }
-
-    if (mounted) setState(() => _isSaving = false);
-  }
-
-  // ========== ПОДЕЛИТЬСЯ ==========
   Future<void> _sharePost() async {
     setState(() => _isSharing = true);
 
@@ -483,5 +512,91 @@ class _PostOptionsScreenState extends State<PostOptionsScreen> {
       setState(() => _isSharing = false);
       Get.back();
     }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 🔥 ОДНА ИКОНКА И ОДИН ТЕКСТ ДЛЯ ВСЕХ ТИПОВ ПОСТОВ
+    const saveIcon = CupertinoIcons.arrow_down_doc;
+    const saveLabel = 'Save Post';
+    
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.black,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 4, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[700],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+
+            // Список опций
+            if (_isOwnPost)
+              _buildOption(
+                icon: CupertinoIcons.delete,
+                label: _isDeleting ? 'Deleting...' : 'Delete Post',
+                onTap: _isDeleting ? null : _deletePost,
+              ),
+
+            if (_isOwnPost) const Divider(color: Color.fromARGB(255, 0, 0, 0)),
+
+            _buildOption(
+              icon: CupertinoIcons.share,
+              label: _isSharing ? 'Sharing...' : 'Share',
+              onTap: _isSharing ? null : _sharePost,
+            ),
+
+            _buildOption(
+              icon: saveIcon,
+              label: _isSaving ? 'Saving...' : saveLabel,
+              onTap: _isSaving ? null : _savePost,
+            ),
+
+            // 🔥 REPORT ВСЕГДА ПОСЛЕДНИЙ (как и было)
+            if (!_isOwnPost) ...[
+              const Divider(color: Color.fromARGB(255, 0, 0, 0)),
+              _buildOption(
+                icon: CupertinoIcons.flag,
+                label: _isReporting ? 'Reporting...' : 'Report',
+                onTap: _isReporting ? null : _reportPost,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOption({
+    required IconData icon,
+    required String label,
+    VoidCallback? onTap,
+  }) {
+    return CupertinoButton(
+      onPressed: onTap,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(icon, color: onTap == null ? Colors.grey[600] : Colors.white),
+          const SizedBox(width: 16),
+          Text(
+            label,
+            style: TextStyle(
+              color: onTap == null ? Colors.grey[600] : Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

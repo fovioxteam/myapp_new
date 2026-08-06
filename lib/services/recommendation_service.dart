@@ -232,6 +232,30 @@ class RecommendationService {
     }
   }
 
+  // ============================================================
+  // 🔥 ЕДИНЫЙ МЕТОД ОБРАБОТКИ ПОСТА
+  // ============================================================
+  Map<String, dynamic> _processPost(DocumentSnapshot doc) {
+    final data = doc.data() as Map<String, dynamic>;
+    final postId = doc.id;
+    
+    // 🔥 ИЗВЛЕКАЕМ mediaType И videoUrl
+    final mediaType = data['mediaType']?.toString() ?? 'photo';
+    final videoUrl = data['videoUrl']?.toString();
+    final thumbnailUrl = data['thumbnailUrl']?.toString();
+    
+    print('📦 [RECOMMENDATION] Post $postId: mediaType=$mediaType, videoUrl=$videoUrl');
+    
+    return {
+      'id': postId,
+      ...data,
+      // 🔥 ЯВНО ДОБАВЛЯЕМ ПОЛЯ (ДАЖЕ ЕСЛИ ИХ НЕТ)
+      'mediaType': mediaType,
+      'videoUrl': videoUrl,
+      'thumbnailUrl': thumbnailUrl,
+    };
+  }
+
   // ===== 1. ПОДПИСКИ (30%) =====
   Future<List<Map<String, dynamic>>> _getFollowingPosts(
     String userId,
@@ -255,9 +279,7 @@ class RecommendationService {
       
       final List<Map<String, dynamic>> result = [];
       for (final doc in snapshot.docs) {
-        final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        result.add(data);
+        result.add(_processPost(doc));
       }
       return result;
     } catch (e) {
@@ -300,9 +322,7 @@ class RecommendationService {
           final snapshot = await query.get();
           
           for (final doc in snapshot.docs) {
-            final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-            data['id'] = doc.id;
-            allPosts.add(data);
+            allPosts.add(_processPost(doc));
           }
         } catch (e) {
           print('❌ [Recommendation] Error fetching category $category: $e');
@@ -337,9 +357,7 @@ class RecommendationService {
       
       final List<Map<String, dynamic>> result = [];
       for (final doc in snapshot.docs) {
-        final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        result.add(data);
+        result.add(_processPost(doc));
       }
       return result;
     } catch (e) {
@@ -362,9 +380,7 @@ class RecommendationService {
 
       final List<Map<String, dynamic>> result = [];
       for (final doc in snapshot.docs) {
-        final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        result.add(data);
+        result.add(_processPost(doc));
       }
       
       result.shuffle();
@@ -386,9 +402,7 @@ class RecommendationService {
 
       final List<Map<String, dynamic>> result = [];
       for (final doc in snapshot.docs) {
-        final Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
-        data['id'] = doc.id;
-        result.add(data);
+        result.add(_processPost(doc));
       }
       return result;
     } catch (e) {

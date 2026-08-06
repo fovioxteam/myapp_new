@@ -1,5 +1,3 @@
-// lib/screens/security_settings_screen.dart
-
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -16,6 +14,7 @@ import '../main.dart';
 import '../controllers/post_controller.dart';
 import '../controllers/messages_controller.dart';
 import '../controllers/profile_controller.dart';
+import '../services/r2_service.dart'; // 🔥 ДОБАВЛЕН ИМПОРТ
 
 class SecuritySettingsScreen extends StatefulWidget {
   const SecuritySettingsScreen({super.key});
@@ -315,10 +314,8 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
   }
 
   Future<void> _logoutAllDevices(BuildContext context) async {
-    // 🔥 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ
     final user = _auth.currentUser;
     if (user == null) {
-      // Если пользователя нет, просто переходим на главный экран
       if (context.mounted) {
         Navigator.of(context).popUntil((route) => route.isFirst);
         Navigator.of(context).pushAndRemoveUntil(
@@ -332,10 +329,8 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     try {
       setState(() => _isLoading = true);
       
-      // Останавливаем все listeners
       await _stopAllListeners();
       
-      // Выход для веба и мобильных
       if (kIsWeb) {
         await _auth.signOut();
         try {
@@ -693,6 +688,9 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
     await _stopAllListeners();
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД УДАЛЕНИЯ АККАУНТА
+  // ============================================================
   Future<void> _deleteAccount(BuildContext context) async {
     // 🔥 ПРОВЕРЯЕМ, ЕСТЬ ЛИ ПОЛЬЗОВАТЕЛЬ
     final user = _auth.currentUser;
@@ -732,11 +730,60 @@ class _SecuritySettingsScreenState extends State<SecuritySettingsScreen> {
         return;
       }
       
+      // ============================================================
+      // 🔥 1. УДАЛЯЕМ ВСЕ ВИДЕО ИЗ R2
+      // ============================================================
+      print('🗑️ [DELETE ACCOUNT] Starting deletion for user: ${user.uid}');
+      
+      try {
+        // Получаем все посты пользователя
+        final postsSnapshot = await _firestore
+            .collection('posts')
+            .where('userId', isEqualTo: user.uid)
+            .get();
+        
+        print('📦 [DELETE ACCOUNT] Found ${postsSnapshot.docs.length} posts');
+        
+        final r2Service = R2Service();
+        int videosDeleted = 0;
+        int postsWithVideo = 0;
+        
+        for (final doc in postsSnapshot.docs) {
+          final data = doc.data();
+          final videoUrl = data['videoUrl']?.toString();
+          
+          if (videoUrl != null && videoUrl.isNotEmpty) {
+            postsWithVideo++;
+            try {
+              await r2Service.deleteFile(videoUrl);
+              videosDeleted++;
+              print('🗑️ [DELETE ACCOUNT] Video deleted: $videoUrl');
+            } catch (e) {
+              print('⚠️ [DELETE ACCOUNT] Failed to delete video: $e');
+            }
+          }
+        }
+        
+        print('🗑️ [DELETE ACCOUNT] Found $postsWithVideo videos, deleted $videosDeleted from R2');
+        
+      } catch (e) {
+        print('⚠️ [DELETE ACCOUNT] Error deleting videos from R2: $e');
+      }
+      
+      // ============================================================
+      // 🔥 2. ОСТАНАВЛИВАЕМ ВСЕ СЕРВИСЫ
+      // ============================================================
       await _stopAllServices();
       
+      // ============================================================
+      // 🔥 3. ВЫЗЫВАЕМ CLOUD FUNCTION ДЛЯ УДАЛЕНИЯ ДАННЫХ ИЗ FIRESTORE
+      // ============================================================
       final callable = _functions.httpsCallable('deleteUserAccount');
       await callable.call({'userId': user.uid});
       
+      // ============================================================
+      // 🔥 4. УДАЛЯЕМ АККАУНТ ИЗ AUTH
+      // ============================================================
       await user.delete();
       
       if (!kIsWeb) {
