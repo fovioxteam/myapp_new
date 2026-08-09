@@ -106,6 +106,10 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # ✅ ДОБАВЬТЕ ЭТИ СТРОКИ:
+  config:
+    enable-swift-package-manager: false
+
   assets:
     - assets/splash/
     - assets/logo/
