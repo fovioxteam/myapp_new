@@ -68,6 +68,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     print('🔥 [CAPTION] Media type: ${widget.mediaType}');
     print('🔥 [CAPTION] Total files: ${widget.selectedFiles.length}');
     print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
+    print('🔥 [CAPTION] fitModes: ${widget.fitModes}');
   }
 
   @override
@@ -224,7 +225,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           );
         }
         
-        // Пока грузится - показываем заглушку
         return Container(
           color: Colors.grey[900],
           child: const Center(
@@ -279,11 +279,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
       final tagsJson = widget.tags.map((e) => e.toJson()).toList();
 
+      // 🔥 ОБЩИЙ fitModes ДЛЯ ВСЕХ ТИПОВ
+      final fitModesToSave = widget.fitModes ?? 
+          List.filled(widget.selectedFiles.length, 'contain');
+
       if (_isVideo) {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('🎬 [CAPTION] ========== CREATING VIDEO POST ==========');
         print('🎬 [CAPTION] Username: $userName');
         print('🎬 [CAPTION] Tags count: ${widget.tags.length}');
+        print('🎬 [CAPTION] fitModesToSave: $fitModesToSave');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         setState(() {
@@ -315,6 +320,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
         
+        // 🔥 ДОБАВЛЯЕМ fitModes В POSTDATA
         final Map<String, dynamic> postData = {
           'id': docId,
           'userId': user.uid,
@@ -324,6 +330,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'videoUrl': videoUrl,
           'thumbnailUrl': thumbnailUrl ?? '',
           'imageUrls': [thumbnailUrl ?? ''],
+          'fitModes': fitModesToSave, // 🔥 ЭТО ВАЖНО!
+          'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
           'caption': fullCaption,
           'hashtags': _selectedHashtags,
           'likes': 0,
@@ -339,7 +347,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'hotScore': 0.0,
         };
 
-        print('🎬 [CAPTION] postData BEFORE saving: mediaType=${postData['mediaType']}, videoUrl=${postData['videoUrl']}');
+        print('🎬 [CAPTION] postData BEFORE saving: mediaType=${postData['mediaType']}, videoUrl=${postData['videoUrl']}, fitModes=${postData['fitModes']}');
 
         await docRef.set(postData);
 
@@ -365,7 +373,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         newPost['videoUrl'] = videoUrl;
         newPost['thumbnailUrl'] = thumbnailUrl ?? '';
 
-        print('🔍 [CAPTION] newPost before addPostsToStorage: mediaType=${newPost['mediaType']}, videoUrl=${newPost['videoUrl']}');
+        print('🔍 [CAPTION] newPost before addPostsToStorage: mediaType=${newPost['mediaType']}, videoUrl=${newPost['videoUrl']}, fitModes=${newPost['fitModes']}');
 
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
 
@@ -375,6 +383,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         print('📸 [CAPTION] Username: $userName');
         print('📸 [CAPTION] Total images: ${widget.selectedFiles.length}');
         print('📸 [CAPTION] Tags count: ${widget.tags.length}');
+        print('📸 [CAPTION] fitModesToSave: $fitModesToSave');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
         List<String> imageUrls = [];
@@ -451,9 +460,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           _uploadStatus = 'Saving post...';
           _uploadProgress = 0.95;
         });
-
-        final fitModesToSave = widget.fitModes ?? 
-            List.filled(widget.selectedFiles.length, 'contain');
 
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
@@ -649,9 +655,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ============================================================
-                    // 🔥 ПРЕВЬЮ - ТАМБНЕЙЛ ВИДЕО ИЛИ ФОТО (БЕЗ ИКОНКИ PLAY)
-                    // ============================================================
                     Center(
                       child: SizedBox(
                         width: MediaQuery.of(context).size.width * 0.5,

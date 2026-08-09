@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 import '../services/recommendation_service.dart';
 import '../services/r2_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -38,6 +39,12 @@ class PostController extends GetxController {
   static const int maxAuthorCache = 200;
   static const int maxImageCache = 200;
 
+  // 🔥 КЭШ ДЛЯ ВИДЕО (предзагрузка)
+  static const int _maxVideoCache = 15;
+  final Set<String> _preloadedVideos = {};
+  final Map<String, DateTime> _videoCacheTime = {};
+  final Map<String, VideoPlayerController> _videoControllers = {};
+
   // 🔥 ПАГИНАЦИЯ
   DocumentSnapshot? _lastFeedDoc;
   bool _hasMoreFeed = true;
@@ -69,6 +76,11 @@ class PostController extends GetxController {
       sub.cancel();
     }
     clearCache();
+    // 🔥 ОЧИСТКА ВИДЕО КОНТРОЛЛЕРОВ
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    _videoControllers.clear();
     super.onClose();
   }
 
@@ -332,6 +344,101 @@ class PostController extends GetxController {
   }
 
   // ============================================================
+  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО
+  // ============================================================
+  
+  void preloadVideo(String videoUrl) {
+    if (videoUrl.isEmpty || _preloadedVideos.contains(videoUrl)) return;
+    
+    _preloadedVideos.add(videoUrl);
+    _videoCacheTime[videoUrl] = DateTime.now();
+    
+    print('📹 [PRELOAD] Preloading video: $videoUrl');
+    
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(videoUrl),
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: true,
+        ),
+      );
+      
+      _videoControllers[videoUrl] = controller;
+      
+      controller.initialize().then((_) {
+        print('✅ [PRELOAD] Video preloaded: $videoUrl');
+        // Не держим контроллер, просто инициализируем для кэша
+        controller.dispose();
+        _videoControllers.remove(videoUrl);
+      }).catchError((e) {
+        print('❌ [PRELOAD] Failed to preload: $e');
+        _preloadedVideos.remove(videoUrl);
+        _videoControllers.remove(videoUrl);
+      });
+    } catch (e) {
+      print('❌ [PRELOAD] Error: $e');
+      _preloadedVideos.remove(videoUrl);
+    }
+    
+    _cleanVideoCache();
+  }
+  
+  void _cleanVideoCache() {
+    final now = DateTime.now();
+    final toRemove = <String>[];
+    
+    for (var entry in _videoCacheTime.entries) {
+      if (now.difference(entry.value).inMinutes > 10) {
+        toRemove.add(entry.key);
+      }
+    }
+    
+    for (var url in toRemove) {
+      _preloadedVideos.remove(url);
+      _videoCacheTime.remove(url);
+      if (_videoControllers.containsKey(url)) {
+        _videoControllers[url]?.dispose();
+        _videoControllers.remove(url);
+      }
+    }
+    
+    if (_preloadedVideos.length > _maxVideoCache) {
+      final sorted = _videoCacheTime.entries.toList()
+        ..sort((a, b) => a.value.compareTo(b.value));
+      
+      final toRemoveOld = sorted.take(_preloadedVideos.length - _maxVideoCache).toList();
+      for (var entry in toRemoveOld) {
+        _preloadedVideos.remove(entry.key);
+        _videoCacheTime.remove(entry.key);
+        if (_videoControllers.containsKey(entry.key)) {
+          _videoControllers[entry.key]?.dispose();
+          _videoControllers.remove(entry.key);
+        }
+      }
+    }
+  }
+  
+  bool isVideoPreloaded(String videoUrl) {
+    return _preloadedVideos.contains(videoUrl);
+  }
+  
+  void preloadFeedVideos(List<Map<String, dynamic>> posts, {int maxPreload = 5}) {
+    int count = 0;
+    for (var post in posts) {
+      if (count >= maxPreload) break;
+      
+      final mediaType = post['mediaType']?.toString() ?? '';
+      if (mediaType == 'video') {
+        final videoUrl = post['videoUrl']?.toString();
+        if (videoUrl != null && videoUrl.isNotEmpty) {
+          preloadVideo(videoUrl);
+          count++;
+        }
+      }
+    }
+  }
+
+  // ============================================================
   // 🔥 _processPost
   // ============================================================
   Future<Map<String, dynamic>?> _processPost(DocumentSnapshot doc, {bool forceRefresh = false}) async {
@@ -343,6 +450,7 @@ class PostController extends GetxController {
       print('🔍 [PROCESS] Post ID: $postId');
       print('🔍 [PROCESS] mediaType: ${data['mediaType']}');
       print('🔍 [PROCESS] videoUrl: ${data['videoUrl']}');
+      print('🔍 [PROCESS] fitModes: ${data['fitModes']}');
       print('🔍 [PROCESS] ==========================================');
 
       if (!forceRefresh && _loadedPostIds.contains(postId)) {
@@ -363,12 +471,15 @@ class PostController extends GetxController {
 
       List<String> fitModes = [];
       final dynamic fitModesRaw = data['fitModes'];
-      if (fitModesRaw is List) {
-        fitModes = fitModesRaw.map((e) => e?.toString() ?? 'cover').toList();
+      if (fitModesRaw is List && fitModesRaw.isNotEmpty) {
+        fitModes = fitModesRaw.map((e) => e?.toString() ?? 'contain').toList();
+        print('🔍 [PROCESS] Using saved fitModes: $fitModes');
       } else {
-        fitModes = List.filled(imageUrls.length, 'cover');
+        fitModes = List.filled(imageUrls.length, 'contain');
+        print('🔍 [PROCESS] No fitModes saved, using default: $fitModes');
       }
-      while (fitModes.length < imageUrls.length) fitModes.add('cover');
+      
+      while (fitModes.length < imageUrls.length) fitModes.add('contain');
       if (fitModes.length > imageUrls.length) {
         fitModes = fitModes.sublist(0, imageUrls.length);
       }
@@ -425,6 +536,7 @@ class PostController extends GetxController {
       };
 
       print('🔍 [PROCESS] RESULT: mediaType=${result['mediaType']}, videoUrl=${result['videoUrl']}');
+      print('🔍 [PROCESS] RESULT: fitModes=${result['fitModes']}');
 
       _loadedPostIds.add(postId);
       return result;
@@ -457,6 +569,24 @@ class PostController extends GetxController {
     return post?['thumbnailUrl']?.toString();
   }
 
+  List<String>? getFitModes(String postId) {
+    final post = posts[postId];
+    final fitModes = post?['fitModes'] as List?;
+    if (fitModes != null) {
+      return fitModes.map((e) => e?.toString() ?? 'contain').toList();
+    }
+    return null;
+  }
+
+  BoxFit getFitModeForIndex(String postId, int index) {
+    final fitModes = getFitModes(postId);
+    if (fitModes != null && index < fitModes.length) {
+      final mode = fitModes[index];
+      return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
+    }
+    return BoxFit.contain;
+  }
+
   // ========== 🔥 ГЛАВНЫЙ МЕТОД ОБНОВЛЕНИЯ ПОСТА ==========
   
   void _updatePostInAllLists(String postId, Map<String, dynamic> updatedPost) {
@@ -467,7 +597,6 @@ class PostController extends GetxController {
     if (existingPost != null && existingPost['tags'] != null) {
       updatedPost['tags'] = existingPost['tags'];
     }
-    // 🔥 СОХРАНЯЕМ mediaType И videoUrl при обновлении
     if (existingPost != null) {
       if (updatedPost['mediaType'] == null && existingPost['mediaType'] != null) {
         updatedPost['mediaType'] = existingPost['mediaType'];
@@ -554,16 +683,14 @@ class PostController extends GetxController {
   }
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД УДАЛЕНИЯ - ЗАГРУЖАЕТ ИЗ FIRESTORE ПРИ НЕОБХОДИМОСТИ
+  // 🔥 УДАЛЕНИЕ ПОСТА
   // ============================================================
   Future<void> deletePost(String postId) async {
     print('🔥 DELETE START: $postId');
     
-    // 🔥 1. ПЫТАЕМСЯ ПОЛУЧИТЬ ПОСТ ИЗ КЭША
     var post = posts[postId];
     var videoUrl = post?['videoUrl']?.toString();
     
-    // 🔥 2. ЕСЛИ В КЭШЕ НЕТ videoUrl - ЗАГРУЖАЕМ ИЗ FIRESTORE
     if (videoUrl == null || videoUrl.isEmpty) {
       print('🔍 [DELETE] videoUrl not in cache, fetching from Firestore...');
       try {
@@ -573,7 +700,6 @@ class PostController extends GetxController {
           videoUrl = data['videoUrl']?.toString();
           print('🔍 [DELETE] Found in Firestore: videoUrl=$videoUrl');
           
-          // Обновляем кэш
           if (videoUrl != null && videoUrl.isNotEmpty) {
             if (post != null) {
               post['videoUrl'] = videoUrl;
@@ -594,14 +720,12 @@ class PostController extends GetxController {
     removePostFromAllLists(postId);
     
     try {
-      // 🔥 УДАЛЯЕМ ИЗ FIRESTORE
       await _firestore.collection('posts').doc(postId).delete();
       await Future.wait([
         _deleteCollection('likes', postId),
         _deleteCollection('comments', postId),
       ]);
       
-      // 🔥 УДАЛЯЕМ ВИДЕО ИЗ R2 (ЕСЛИ ЕСТЬ)
       if (videoUrl != null && videoUrl.isNotEmpty) {
         print('🗑️ [DELETE] Attempting to delete from R2: $videoUrl');
         try {
@@ -622,7 +746,7 @@ class PostController extends GetxController {
   }
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ addPostsToStorage
+  // 🔥 addPostsToStorage
   // ============================================================
   void addPostsToStorage(List<Map<String, dynamic>> newPosts, {bool markAsInFeed = false}) {
     for (var post in newPosts) {
@@ -632,8 +756,9 @@ class PostController extends GetxController {
       final String? mediaType = post['mediaType']?.toString();
       final String? videoUrl = post['videoUrl']?.toString();
       final String? thumbnailUrl = post['thumbnailUrl']?.toString();
+      final fitModes = post['fitModes'];
 
-      print('📦 [ADD] Post $postId: mediaType=$mediaType, videoUrl=$videoUrl');
+      print('📦 [ADD] Post $postId: mediaType=$mediaType, videoUrl=$videoUrl, fitModes=$fitModes');
 
       if (markAsInFeed) post['isInFeed'] = true;
       
@@ -656,6 +781,11 @@ class PostController extends GetxController {
       if (thumbnailUrl != null && thumbnailUrl.isNotEmpty && thumbnailUrl != 'null') {
         postCopy['thumbnailUrl'] = thumbnailUrl;
       }
+      
+      if (fitModes != null) {
+        postCopy['fitModes'] = fitModes;
+        print('📦 [ADD] Saved fitModes: $fitModes');
+      }
 
       posts[postId] = postCopy;
       
@@ -670,11 +800,16 @@ class PostController extends GetxController {
           preloadPostImages(urls);
         }
       }
+      
+      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ЕСЛИ ЭТО ВИДЕО
+      if (mediaType == 'video' && videoUrl != null && videoUrl.isNotEmpty) {
+        preloadVideo(videoUrl);
+      }
     }
   }
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _syncPostToOriginalLists
+  // 🔥 _syncPostToOriginalLists
   // ============================================================
   void _syncPostToOriginalLists(String postId, Map<String, dynamic> postData) {
     final freshPost = posts[postId];
@@ -689,6 +824,10 @@ class PostController extends GetxController {
       } else {
         postCopy['mediaType'] = 'photo';
       }
+    }
+    
+    if (postData['fitModes'] != null) {
+      postCopy['fitModes'] = postData['fitModes'];
     }
     
     final feedIndex = feedPosts.indexWhere((p) => p['id'] == postId);
@@ -798,6 +937,10 @@ class PostController extends GetxController {
         } else {
           _hasMoreFeed = false;
         }
+        
+        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ЛЕНТЫ
+        preloadFeedVideos(feedPosts, maxPreload: 5);
+        
         print('✅ [FEED] Guest feed loaded: ${feedPosts.length} posts');
         return;
       }
@@ -827,6 +970,10 @@ class PostController extends GetxController {
         feedPosts.addAll(newPosts);
       }
       _hasMoreFeed = recommendedPosts.length == RecommendationService.FETCH_LIMIT;
+      
+      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ЛЕНТЫ
+      preloadFeedVideos(feedPosts, maxPreload: 5);
+      
       print('✅ [FEED] Feed loaded: ${feedPosts.length} posts');
     } catch (e) {
       print('❌ [FEED] Error loading feed: $e');
@@ -871,7 +1018,7 @@ class PostController extends GetxController {
       for (var doc in snapshot.docs) {
         final processedPost = await _processPost(doc, forceRefresh: refresh);
         if (processedPost != null) {
-          print('📦 [USER-LOAD] Post ${processedPost['id']}: mediaType=${processedPost['mediaType']}, videoUrl=${processedPost['videoUrl']}');
+          print('📦 [USER-LOAD] Post ${processedPost['id']}: mediaType=${processedPost['mediaType']}, videoUrl=${processedPost['videoUrl']}, fitModes=${processedPost['fitModes']}');
           newPosts.add(processedPost);
         }
       }
@@ -1160,6 +1307,15 @@ class PostController extends GetxController {
     searchPosts.insert(0, postCopy);
     singlePost[postId] = postCopy;
     _subscribeToSinglePost(postId);
+    
+    // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ НОВОГО ПОСТА
+    final mediaType = postData['mediaType']?.toString() ?? '';
+    if (mediaType == 'video') {
+      final videoUrl = postData['videoUrl']?.toString();
+      if (videoUrl != null && videoUrl.isNotEmpty) {
+        preloadVideo(videoUrl);
+      }
+    }
   }
 
   // ========== 🔍 ГЕТТЕРЫ ==========
@@ -1207,6 +1363,7 @@ class PostController extends GetxController {
     print('📊 User posts keys: ${userPosts.keys}');
     print('📊 Avatar cache: $_avatarUrlCache');
     print('📊 Username cache: $_usernameCache');
+    print('📊 Preloaded videos: ${_preloadedVideos.length}');
     print('📊 =========================');
   }
 }

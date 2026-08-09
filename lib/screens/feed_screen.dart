@@ -161,6 +161,9 @@ class _FeedScreenState extends State<FeedScreen>
         _loadUserSaves(),
       ]);
       
+      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ЛЕНТЫ
+      _preloadFeedVideos();
+      
       if (!mounted) return;
       
     } catch (e) {
@@ -174,6 +177,17 @@ class _FeedScreenState extends State<FeedScreen>
           _isLoading = false;
         });
       }
+    }
+  }
+
+  // ============================================================
+  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО
+  // ============================================================
+  void _preloadFeedVideos() {
+    final posts = _postController.feedPosts;
+    if (posts.isNotEmpty) {
+      _postController.preloadFeedVideos(posts, maxPreload: 5);
+      print('📹 [FEED] Preloading videos for ${posts.length} posts');
     }
   }
 
@@ -396,6 +410,9 @@ class _FeedScreenState extends State<FeedScreen>
           _hasMoreFollowing = snapshot.docs.length == 10;
         });
         
+        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ FOLLOWING
+        _postController.preloadFeedVideos(newPosts, maxPreload: 3);
+        
         print('Processed ${_followingPostIds.length} following posts');
       } else {
         setState(() {
@@ -466,6 +483,9 @@ class _FeedScreenState extends State<FeedScreen>
         
         _postController.addPostsToStorage(newPosts);
         
+        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ НОВЫХ ПОСТОВ
+        _postController.preloadFeedVideos(newPosts, maxPreload: 3);
+        
         final newIds = newPosts.map((p) => p['id'] as String).toList();
         
         setState(() {
@@ -497,10 +517,21 @@ class _FeedScreenState extends State<FeedScreen>
         final post = _postController.getPostFromStorage(nextPostId);
         
         if (post != null) {
+          // Предзагрузка изображений
           final imageUrls = (post['imageUrls'] as List<dynamic>? ?? [post['url']]).cast<String>();
           for (var url in imageUrls.take(1)) {
             if (url.isNotEmpty && !_preloadedUrls.contains(url)) {
               _preloadedUrls.add(url);
+              unawaited(precacheImage(CachedNetworkImageProvider(url), context));
+            }
+          }
+          
+          // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ СЛЕДУЮЩИХ ПОСТОВ
+          final mediaType = post['mediaType']?.toString() ?? '';
+          if (mediaType == 'video') {
+            final videoUrl = post['videoUrl']?.toString();
+            if (videoUrl != null && videoUrl.isNotEmpty) {
+              _postController.preloadVideo(videoUrl);
             }
           }
         }
@@ -596,6 +627,7 @@ class _FeedScreenState extends State<FeedScreen>
           _metrics.startWatching(postId);
         }
         
+        // 🔥 ПРЕДЗАГРУЗКА СЛЕДУЮЩИХ ПОСТОВ ПРИ СКРОЛЛЕ
         _preloadNextPosts(page);
         
         final int remainingPosts = _forYouPostIds.length - page;

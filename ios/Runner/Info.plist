@@ -26,15 +26,38 @@
 		<string>$(FLUTTER_BUILD_NUMBER)</string>
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
+
+		<!-- ✅ РАЗРЕШЕНИЯ (УЖЕ ЕСТЬ) -->
 		<key>NSPhotoLibraryUsageDescription</key>
-		<string>This app needs access to your photos to upload and share content.</string>
+		<string>Для загрузки и публикации фото и видео</string>
 		<key>NSCameraUsageDescription</key>
-		<string>This app needs access to your camera to take photos.</string>
+		<string>Для съемки фото и видео в приложении</string>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>This app needs access to your microphone for video recording.</string>
+		<string>Для записи звука при создании видео</string>
 		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>This app needs access to save photos to your library.</string>
-		<!-- 🔥 DEEP LINKING -->
+		<string>Для сохранения фото и видео в галерею</string>
+
+		<!-- ✅ НОВОЕ: ДОСТУП К КОНТАКТАМ (ЕСЛИ НУЖНО) -->
+		<!--
+		<key>NSContactsUsageDescription</key>
+		<string>Для поиска друзей по контактам</string>
+		-->
+
+		<!-- ✅ НОВОЕ: PUSH-УВЕДОМЛЕНИЯ -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+			<string>audio</string>
+		</array>
+
+		<!-- ✅ НОВОЕ: APP TRANSPORT SECURITY (ДЛЯ HTTP) -->
+		<key>NSAppTransportSecurity</key>
+		<dict>
+			<key>NSAllowsArbitraryLoads</key>
+			<true/>
+		</dict>
+
+		<!-- ✅ DEEP LINKING -->
 		<key>FlutterDeepLinkingEnabled</key>
 		<true/>
 		<key>CFBundleURLTypes</key>
@@ -43,28 +66,35 @@
 				<key>CFBundleTypeRole</key>
 				<string>Editor</string>
 				<key>CFBundleURLName</key>
-				<string>com.example.myapp_new</string>
+				<string>com.yourcompany.foviox</string>
 				<key>CFBundleURLSchemes</key>
 				<array>
 					<string>foviox</string>
 				</array>
 			</dict>
 		</array>
-		<!-- 🔥 ПОЛНОЭКРАННЫЙ РЕЖИМ -->
+
+		<!-- ✅ НОВОЕ: APP LINKS (ДЛЯ WEB-ССЫЛОК) -->
+		<key>FlutterDeepLinkingEnabled</key>
+		<true/>
+
+		<!-- ✅ ПОЛНОЭКРАННЫЙ РЕЖИМ -->
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
 		<key>UIStatusBarHidden</key>
 		<false/>
-		<!-- 🔥 СКРЫВАЕМ СТАТУС-БАР -->
 		<key>UIStatusBarStyle</key>
 		<string>UIStatusBarStyleLightContent</string>
-		<!-- 🔥 НАСТРОЙКИ ДЛЯ EDGE-TO-EDGE -->
+
+		<!-- ✅ EDGE-TO-EDGE -->
 		<key>UIViewEdgeAntialiasing</key>
 		<true/>
 		<key>UILaunchStoryboardName</key>
 		<string>LaunchScreen</string>
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
+
+		<!-- ✅ ОРИЕНТАЦИЯ -->
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
@@ -75,6 +105,23 @@
 			<string>UIInterfaceOrientationPortraitUpsideDown</string>
 			<string>UIInterfaceOrientationLandscapeLeft</string>
 			<string>UIInterfaceOrientationLandscapeRight</string>
+		</array>
+
+		<!-- ✅ НОВОЕ: FIREBASE (ЕСЛИ ИСПОЛЬЗУЕТЕ) -->
+		<key>FirebaseScreenReportingEnabled</key>
+		<true/>
+
+		<!-- ✅ НОВОЕ: РАЗРЕШЕНИЕ НА ОТСЛЕЖИВАНИЕ (ДЛЯ РЕКЛАМЫ) -->
+		<!--
+		<key>NSUserTrackingUsageDescription</key>
+		<string>Для показа персонализированной рекламы</string>
+		-->
+
+		<!-- ✅ НОВОЕ: ФОНОВОЕ ВОСПРОИЗВЕДЕНИЕ ВИДЕО -->
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>audio</string>
+			<string>remote-notification</string>
 		</array>
 	</dict>
 </plist>

@@ -242,7 +242,27 @@ class _PostItemState extends State<PostItem>
   String? _getThumbnailUrl() => widget.post['thumbnailUrl']?.toString();
 
   // ============================================================
-  // 🔥 VISIBILITY CHANGED - ОСНОВНОЕ ИСПРАВЛЕНИЕ
+  // 🔥 GET FIT MODE
+  // ============================================================
+  BoxFit _getFitModeForIndex(int index) {
+    final fitModes = widget.post['fitModes'] as List? ?? [];
+    String mode = 'contain';
+    
+    print('🔍 [FIT] fitModes: $fitModes, index: $index');
+    
+    if (index < fitModes.length) {
+      mode = fitModes[index]?.toString() ?? 'contain';
+    } else if (fitModes.isNotEmpty) {
+      mode = fitModes.first?.toString() ?? 'contain';
+    }
+    
+    print('🔍 [FIT] mode: $mode');
+    
+    return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
+  }
+
+  // ============================================================
+  // 🔥 VISIBILITY
   // ============================================================
   void _onVisibilityChanged(VisibilityInfo info) {
     final visible = info.visibleFraction > 0.5;
@@ -255,7 +275,6 @@ class _PostItemState extends State<PostItem>
     if (visible != _wasVisible) {
       _wasVisible = visible;
       
-      // 🔥 ПРИНУДИТЕЛЬНО ПЕРЕСТРАИВАЕМ ВИДЖЕТ, ЧТОБЫ ПЕРЕДАТЬ НОВОЕ ЗНАЧЕНИЕ В VideoPlayerWidget
       if (mounted) {
         setState(() {});
       }
@@ -802,10 +821,15 @@ class _PostItemState extends State<PostItem>
       );
     }
     
+    final BoxFit fit = _getFitModeForIndex(_currentCarouselIndex);
+    print('🎬 [POST-ITEM] fit for video: $fit');
+    
     return VideoPlayerWidget(
       videoUrl: videoUrl,
       showControls: true,
       isVisible: _wasVisible,
+      thumbnailUrl: _getThumbnailUrl(),
+      fit: fit,
     );
   }
 
@@ -839,6 +863,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 FULL SCREEN VIDEO POST
+  // ============================================================
   Widget _buildFullScreenVideoPost() {
     return _buildFullScreenVideoPostContent();
   }
@@ -936,6 +963,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 FULL SCREEN PHOTO POST
+  // ============================================================
   Widget _buildFullScreenPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
@@ -944,14 +974,8 @@ class _PostItemState extends State<PostItem>
     final hasCaption = freshPost['caption'] != null && 
                       freshPost['caption'].toString().isNotEmpty;
     
-    final fitModes = freshPost['fitModes'] as List? ?? [];
-    String mode = 'contain';
-    if (_currentCarouselIndex < fitModes.length) {
-      mode = fitModes[_currentCarouselIndex]?.toString() ?? 'contain';
-    } else if (fitModes.isNotEmpty) {
-      mode = fitModes.first?.toString() ?? 'contain';
-    }
-    final isFullScreenMode = mode == 'cover';
+    final BoxFit fit = _getFitModeForIndex(_currentCarouselIndex);
+    final bool isFullScreenMode = fit == BoxFit.cover;
     
     final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
     final double tabBarHeight = 54 + 16 + 16;
@@ -1086,6 +1110,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 IMAGE BUILDERS
+  // ============================================================
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -1181,6 +1208,49 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 CAROUSEL
+  // ============================================================
+  Widget _buildCarousel() {
+    final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
+    final fitModes = freshPost['fitModes'] as List? ?? [];
+    
+    return PageView.builder(
+      controller: _carouselController,
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      itemCount: _imageUrls.length,
+      allowImplicitScrolling: true,
+      onPageChanged: (index) {
+        if (!mounted) return;
+        setState(() {
+          _currentCarouselIndex = index;
+          for (int i = 0; i < _imageUrls.length; i++) {
+            _showTagsForCarouselIndex[i] = false;
+          }
+        });
+        _preloadMultipleImages();
+      },
+      itemBuilder: (context, index) {
+        final url = _imageUrls[index];
+        String mode = 'contain';
+        if (index < fitModes.length) {
+          mode = fitModes[index]?.toString() ?? 'contain';
+        } else if (fitModes.isNotEmpty) {
+          mode = fitModes.first?.toString() ?? 'contain';
+        }
+        final isFullScreenMode = mode == 'cover';
+        
+        return RepaintBoundary(
+          key: ValueKey('carousel_page_$index'),
+          child: isFullScreenMode
+              ? _buildFullCarouselItem(url, index)
+              : _buildAutoCarouselItem(url, index),
+        );
+      },
+    );
+  }
+
   Widget _buildAutoCarouselItem(String url, int index) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -1272,44 +1342,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  Widget _buildCarousel() {
-    final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
-    final fitModes = freshPost['fitModes'] as List? ?? [];
-    
-    return PageView.builder(
-      controller: _carouselController,
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      itemCount: _imageUrls.length,
-      allowImplicitScrolling: true,
-      onPageChanged: (index) {
-        if (!mounted) return;
-        setState(() {
-          _currentCarouselIndex = index;
-          for (int i = 0; i < _imageUrls.length; i++) {
-            _showTagsForCarouselIndex[i] = false;
-          }
-        });
-        _preloadMultipleImages();
-      },
-      itemBuilder: (context, index) {
-        final url = _imageUrls[index];
-        String mode = 'cover';
-        if (index < fitModes.length) {
-          mode = fitModes[index]?.toString() ?? 'cover';
-        }
-        final isFullScreenMode = mode == 'cover';
-        
-        return RepaintBoundary(
-          key: ValueKey('carousel_page_$index'),
-          child: isFullScreenMode
-              ? _buildFullCarouselItem(url, index)
-              : _buildAutoCarouselItem(url, index),
-        );
-      },
-    );
-  }
-
   Widget _buildTikTokIndicators() {
     final totalImages = _imageUrls.length;
     final currentIndex = _currentCarouselIndex;
@@ -1358,6 +1390,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 USER INFO & CAPTION
+  // ============================================================
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -1538,6 +1573,9 @@ class _PostItemState extends State<PostItem>
     });
   }
 
+  // ============================================================
+  // 🔥 ACTION BUTTONS
+  // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
@@ -1593,9 +1631,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _buildActionButtons - ИКОНКА ВОЛШЕБНОЙ ПАЛОЧКИ
-  // ============================================================
   Widget _buildActionButtons() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -1642,7 +1677,6 @@ class _PostItemState extends State<PostItem>
               scaleAnimation: _saveIconScale,
               iconSize: 28,
             ),
-            // 🔥 ИКОНКА ТЭГОВ - ВОЛШЕБНАЯ ПАЛОЧКА (✨)
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 16),
               GestureDetector(
@@ -1652,7 +1686,7 @@ class _PostItemState extends State<PostItem>
                 child: const SizedBox(
                   width: 32,
                   child: Icon(
-                    Icons.auto_awesome,  // ✨ Волшебная палочка
+                    Icons.auto_awesome,
                     color: Colors.white,
                     size: 28,
                   ),
@@ -1665,6 +1699,9 @@ class _PostItemState extends State<PostItem>
     });
   }
 
+  // ============================================================
+  // 🔥 ERROR & PREVIEW
+  // ============================================================
   Widget _buildErrorWidget() {
     return Container(
       color: Colors.grey[900],

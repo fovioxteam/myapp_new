@@ -544,6 +544,9 @@ class _HomePainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
+// ============================================================
+// 🔥 MAINAPP - БЕЗ АНИМАЦИИ НАВИГАЦИИ
+// ============================================================
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
 
@@ -656,7 +659,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
   
   void _onItemTapped(int index) {
     if (index == 2) {
-      // Проверяем авторизацию перед созданием поста
       final authService = AuthService.instance;
       if (!authService.isLoggedIn) {
         authService.requireAuth();
@@ -672,19 +674,16 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       return;
     }
     
-    // Двойное нажатие на домик (индекс 0) — обновить ленту
     if (index == 0 && _selectedIndex == 0) {
       _refreshFeed();
       return;
     }
     
-    // Двойное нажатие на профиль (индекс 4) — обновить профиль
     if (index == 4 && _selectedIndex == 4) {
       _refreshProfile();
       return;
     }
     
-    // Обычное переключение вкладки
     _scaleController.forward(from: 0.0);
     setState(() {
       _selectedIndex = index;
@@ -702,10 +701,8 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     if (_isRefreshingProfile) return;
     setState(() => _isRefreshingProfile = true);
     
-    // Обновляем экран профиля (пересоздаем виджет)
     _screens[4] = const ProfileScreen();
     
-    // Обновляем данные профиля через контроллер
     final userId = _authController.firebaseUser.value?.uid;
     if (userId != null && userId.isNotEmpty) {
       await Future.wait([
@@ -731,10 +728,8 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       backgroundColor: _backgroundColor,
       body: Stack(
         children: [
-          // Основной контент
           IndexedStack(index: _selectedIndex, children: _screens),
           
-          // НИЖНИЙ БЛЮР
           Positioned(
             bottom: 0,
             left: 0,
@@ -758,7 +753,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            // Фон таббара с размытием
+            // ФОН ТАББАРА
             ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -791,6 +786,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
                 ),
               ),
             ),
+            
             // Анимированный кружок
             AnimatedPositioned(
               duration: const Duration(milliseconds: 500),
@@ -823,6 +819,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
                 ),
               ),
             ),
+            
             // Иконки
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
