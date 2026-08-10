@@ -1,12 +1,11 @@
-// lib/controllers/auth_controller.dart
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import '../services/auth_service.dart'; // 👈 ДОБАВИТЬ
+import 'package:sign_in_with_apple/sign_in_with_apple.dart'; // 🔥 ДОБАВИТЬ ЭТУ СТРОКУ!
+import '../services/auth_service.dart';
 
 class AuthController extends GetxController {
   static AuthController get instance => Get.find();
@@ -86,29 +85,80 @@ class AuthController extends GetxController {
     }
   }
 
+  // 🔥 НОВЫЙ КОД ДЛЯ APPLE SIGN IN
+  Future<void> loginWithApple() async {
+    try {
+      isLoading.value = true;
+      
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      
+      final oAuthProvider = OAuthProvider('apple.com');
+      final credential = oAuthProvider.credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+      
+      final userCredential = await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+      
+      if (user == null) throw Exception('User is null');
+      await _handleUser(user);
+      
+    } catch (e) {
+      print('❌ Apple login error: $e');
+      Get.snackbar(
+        'Error',
+        'Apple login failed',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red.shade50,
+        colorText: Colors.red.shade900,
+      );
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // 🔥 ОБНОВЛЕННЫЙ _handleUser ДЛЯ РАБОТЫ С APPLE
   Future<void> _handleUser(User user, [GoogleSignInAccount? googleUser]) async {
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
     if (!userDoc.exists) {
       await _createNewUser(user, googleUser);
     } else {
-      // 🔥 ОБНОВЛЯЕМ AUTH SERVICE
       await AuthService.instance.onUserLoggedIn();
       _goToApp();
     }
   }
 
-  Future<void> _createNewUser(User user, GoogleSignInAccount? googleUser) async {
+  Future<void> _createNewUser(User user, [GoogleSignInAccount? googleUser]) async {
     try {
-      final generatedUsername = _generateUsername();
+      // Для Apple получаем имя из user.displayName
+      final displayName = googleUser?.displayName ?? user.displayName ?? '';
+      final photoUrl = googleUser?.photoUrl ?? user.photoURL ?? '';
+      
+      // Если имя не пришло от Apple, генерируем username
+      String generatedUsername;
+      if (displayName.isNotEmpty) {
+        // Убираем пробелы и делаем lowercase
+        generatedUsername = displayName.replaceAll(' ', '').toLowerCase();
+        // Проверяем уникальность (можно добавить проверку)
+      } else {
+        final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
+        generatedUsername = 'user$randomNum';
+      }
 
       final userData = {
         'uid': user.uid,
         'email': user.email ?? '',
         'username': generatedUsername,
         'username_lowercase': generatedUsername.toLowerCase(),
-        'displayName': googleUser?.displayName ?? user.displayName ?? '',
-        'avatarUrl': googleUser?.photoUrl ?? user.photoURL ?? '',
+        'displayName': displayName.isNotEmpty ? displayName : generatedUsername,
+        'avatarUrl': photoUrl,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'followersCount': 0,
@@ -121,9 +171,8 @@ class AuthController extends GetxController {
       await _firestore.collection('users').doc(user.uid).set(userData);
 
       username.value = generatedUsername;
-      avatarUrl.value = googleUser?.photoUrl ?? user.photoURL ?? '';
+      avatarUrl.value = photoUrl;
 
-      // 🔥 ОБНОВЛЯЕМ AUTH SERVICE
       await AuthService.instance.onUserLoggedIn();
 
       print('✅ New user created');
@@ -136,14 +185,6 @@ class AuthController extends GetxController {
   String _generateUsername() {
     final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
     return 'user$randomNum';
-  }
-
-  Future<void> loginWithApple() async {
-    Get.snackbar(
-      'Coming soon',
-      'Apple Sign In will be added later',
-      snackPosition: SnackPosition.BOTTOM,
-    );
   }
 
   void _goToApp() {
@@ -160,7 +201,6 @@ class AuthController extends GetxController {
       username.value = '';
       avatarUrl.value = '';
 
-      // 🔥 СОЗДАЁМ НОВОГО ГОСТЯ
       await AuthService.instance.logout();
 
       Get.offAllNamed('/welcome');
