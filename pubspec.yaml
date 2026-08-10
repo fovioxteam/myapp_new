@@ -106,7 +106,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # ✅ ДОБАВЬТЕ ЭТИ СТРОКИ:
   config:
     enable-swift-package-manager: false
 
@@ -119,6 +118,7 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/logo/app_icon.png"
+  remove_alpha_ios: true   # ← ДОБАВЛЕНО! УБИРАЕТ ПРОЗРАЧНОСТЬ ДЛЯ iOS
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/logo/app_icon.png"
   min_sdk_android: 21
