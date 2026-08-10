@@ -114,9 +114,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           _isInitialized = true;
         });
         
-        // ✅ ПЛАВНО УБИРАЕМ ТАМБНЕЙЛ ПОСЛЕ ЗАГРУЗКИ
+        // ✅ ПЛАВНО УБИРАЕМ ТАМБНЕЙЛ ТОЛЬКО ПОСЛЕ ТОГО, КАК ВИДЕО ЗАГРУЗИЛОСЬ
         if (_showThumbnail) {
-          await Future.delayed(const Duration(milliseconds: 200));
+          // Даём видео время на подготовку кадра
+          await Future.delayed(const Duration(milliseconds: 150));
           if (mounted) {
             setState(() {
               _thumbnailOpacity = 0.0;
@@ -184,28 +185,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         child: Stack(
           alignment: Alignment.center,
           children: [
-            // ✅ ВИДЕО (всегда поверх тамбнейла)
-            if (_isInitialized && _controller != null)
-              Center(
-                child: widget.fit == BoxFit.cover
-                    ? SizedBox.expand(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: _controller!.value.size.width,
-                            height: _controller!.value.size.height,
-                            child: VideoPlayer(_controller!),
-                          ),
-                        ),
-                      )
-                    : AspectRatio(
-                        aspectRatio: _controller!.value.aspectRatio,
-                        child: VideoPlayer(_controller!),
-                      ),
-              ),
-            
-            // ✅ ТАМБНЕЙЛ ТОЛЬКО ПОКА ВИДЕО НЕ ЗАГРУЗИЛОСЬ
-            if (hasThumbnail && !_isInitialized && _showThumbnail)
+            // ✅ ТАМБНЕЙЛ ПОВЕРХ ВСЕГО (пока видео не готово)
+            if (hasThumbnail && _showThumbnail)
               AnimatedOpacity(
                 opacity: _thumbnailOpacity,
                 duration: const Duration(milliseconds: 300),
@@ -244,7 +225,27 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                       ),
               ),
             
-            // ✅ ЛОАДЕР - ЕСЛИ ВИДЕО НЕ ПРЕДЗАГРУЖЕНО И НЕТ ТАМБНЕЙЛА
+            // ✅ ВИДЕО (под тамбнейлом)
+            if (_isInitialized && _controller != null)
+              Center(
+                child: widget.fit == BoxFit.cover
+                    ? SizedBox.expand(
+                        child: FittedBox(
+                          fit: BoxFit.cover,
+                          child: SizedBox(
+                            width: _controller!.value.size.width,
+                            height: _controller!.value.size.height,
+                            child: VideoPlayer(_controller!),
+                          ),
+                        ),
+                      )
+                    : AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: VideoPlayer(_controller!),
+                      ),
+              ),
+            
+            // ✅ ЛОАДЕР - только если нет тамбнейла
             if (!_isInitialized && !hasThumbnail && !isPreloaded)
               Container(
                 color: Colors.black.withOpacity(0.5),
@@ -269,22 +270,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                         ),
                       ),
                     ],
-                  ),
-                ),
-              ),
-            
-            // ✅ БЫСТРЫЙ ЛОАДЕР - ЕСЛИ ВИДЕО ПРЕДЗАГРУЖЕНО
-            if (!_isInitialized && isPreloaded && !hasThumbnail)
-              Container(
-                color: Colors.black.withOpacity(0.2),
-                child: const Center(
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2,
-                    ),
                   ),
                 ),
               ),
