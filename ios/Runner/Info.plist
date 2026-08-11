@@ -27,7 +27,32 @@
 		<key>LSRequiresIPhoneOS</key>
 		<true/>
 
-		<!-- ✅ РАЗРЕШЕНИЯ (УЖЕ ЕСТЬ) -->
+		<!-- ✅ URL SCHEMES (ИСПРАВЛЕНО ДЛЯ GOOGLE SIGN-IN И DEEP LINKS) -->
+		<key>CFBundleURLTypes</key>
+		<array>
+			<!-- Схема для Google Auth (REVERSED_CLIENT_ID из GoogleService-Info.plist) -->
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>com.googleusercontent.apps.370877420307-7sbprm77lg96b4svsmr792k5a3pqhrs4</string>
+				</array>
+			</dict>
+			<!-- Кастомная схема для Deep Links приложения -->
+			<dict>
+				<key>CFBundleTypeRole</key>
+				<string>Editor</string>
+				<key>CFBundleURLName</key>
+				<string>com.foviox.app</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>foviox</string>
+				</array>
+			</dict>
+		</array>
+
+		<!-- ✅ РАЗРЕШЕНИЯ -->
 		<key>NSPhotoLibraryUsageDescription</key>
 		<string>Для загрузки и публикации фото и видео</string>
 		<key>NSCameraUsageDescription</key>
@@ -37,56 +62,31 @@
 		<key>NSPhotoLibraryAddUsageDescription</key>
 		<string>Для сохранения фото и видео в галерею</string>
 
-		<!-- ✅ НОВОЕ: ДОСТУП К КОНТАКТАМ (ЕСЛИ НУЖНО) -->
-		<!--
-		<key>NSContactsUsageDescription</key>
-		<string>Для поиска друзей по контактам</string>
-		-->
-
-		<!-- ✅ НОВОЕ: PUSH-УВЕДОМЛЕНИЯ -->
+		<!-- ✅ ФОНОВЫЕ РЕЖИМЫ (УБРАН ДУБЛИКАТ) -->
 		<key>UIBackgroundModes</key>
 		<array>
 			<string>remote-notification</string>
 			<string>audio</string>
 		</array>
 
-		<!-- ✅ НОВОЕ: APP TRANSPORT SECURITY (ДЛЯ HTTP) -->
+		<!-- ✅ APP TRANSPORT SECURITY -->
 		<key>NSAppTransportSecurity</key>
 		<dict>
 			<key>NSAllowsArbitraryLoads</key>
 			<true/>
 		</dict>
 
-		<!-- ✅ DEEP LINKING -->
-		<key>FlutterDeepLinkingEnabled</key>
-		<true/>
-		<key>CFBundleURLTypes</key>
-		<array>
-			<dict>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>CFBundleURLName</key>
-				<string>com.yourcompany.foviox</string>
-				<key>CFBundleURLSchemes</key>
-				<array>
-					<string>foviox</string>
-				</array>
-			</dict>
-		</array>
-
-		<!-- ✅ НОВОЕ: APP LINKS (ДЛЯ WEB-ССЫЛОК) -->
+		<!-- ✅ DEEP LINKING (УБРАН ДУБЛИКАТ) -->
 		<key>FlutterDeepLinkingEnabled</key>
 		<true/>
 
-		<!-- ✅ ПОЛНОЭКРАННЫЙ РЕЖИМ -->
+		<!-- ✅ ОФОРМЛЕНИЕ И СТАТУС-БАР -->
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>UIStatusBarStyle</key>
 		<string>UIStatusBarStyleLightContent</string>
-
-		<!-- ✅ EDGE-TO-EDGE -->
 		<key>UIViewEdgeAntialiasing</key>
 		<true/>
 		<key>UILaunchStoryboardName</key>
@@ -94,7 +94,7 @@
 		<key>UIMainStoryboardFile</key>
 		<string>Main</string>
 
-		<!-- ✅ ОРИЕНТАЦИЯ -->
+		<!-- ✅ ОРИЕНТАЦИЯ ЭКРАНА -->
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
@@ -107,21 +107,8 @@
 			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 
-		<!-- ✅ НОВОЕ: FIREBASE (ЕСЛИ ИСПОЛЬЗУЕТЕ) -->
+		<!-- ✅ FIREBASE -->
 		<key>FirebaseScreenReportingEnabled</key>
 		<true/>
-
-		<!-- ✅ НОВОЕ: РАЗРЕШЕНИЕ НА ОТСЛЕЖИВАНИЕ (ДЛЯ РЕКЛАМЫ) -->
-		<!--
-		<key>NSUserTrackingUsageDescription</key>
-		<string>Для показа персонализированной рекламы</string>
-		-->
-
-		<!-- ✅ НОВОЕ: ФОНОВОЕ ВОСПРОИЗВЕДЕНИЕ ВИДЕО -->
-		<key>UIBackgroundModes</key>
-		<array>
-			<string>audio</string>
-			<string>remote-notification</string>
-		</array>
 	</dict>
 </plist>
