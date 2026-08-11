@@ -1574,19 +1574,22 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS
+  // 🔥 ACTION BUTTONS (УВЕЛИЧЕНЫ И С ТАКТИЛЬНОСТЬЮ)
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
     required int count,
     Animation<double>? scaleAnimation,
-    double iconSize = 28,
+    double iconSize = 34,  // 🔥 Было 28, стало 34
   }) {
     Widget button = GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.mediumImpact();  // 🔥 Тактильный отклик
+        onTap();
+      },
       child: SizedBox(
-        width: 32,
+        width: 40,  // 🔥 Было 32, стало 40
         child: Icon(
           icon,
           color: Colors.white,
@@ -1612,13 +1615,13 @@ class _PostItemState extends State<PostItem>
       mainAxisSize: MainAxisSize.min,
       children: [
         button,
-        const SizedBox(height: 2),
+        const SizedBox(height: 4),
         Text(
           _formatNumber(count),
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
             shadows: [
               Shadow(
                 color: Colors.black45,
@@ -1650,7 +1653,7 @@ class _PostItemState extends State<PostItem>
       final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
 
       return SizedBox(
-        width: 50,
+        width: 56,  // 🔥 Было 50, стало 56
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1660,35 +1663,36 @@ class _PostItemState extends State<PostItem>
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
               count: likesCount,
               scaleAnimation: _likeIconScale,
-              iconSize: 32,
+              iconSize: 36,  // 🔥 Было 32, стало 36
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),  // 🔥 Было 16, стало 18
             _buildActionButton(
               onTap: _showCommentsSheet,
               icon: CupertinoIcons.chat_bubble,
               count: commentsCount,
-              iconSize: 28,
+              iconSize: 32,  // 🔥 Было 28, стало 32
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             _buildActionButton(
               onTap: _toggleSave,
               icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
               count: savesCount,
               scaleAnimation: _saveIconScale,
-              iconSize: 28,
+              iconSize: 32,
             ),
             if (hasTagsForThisImage) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               GestureDetector(
                 onTap: () {
+                  HapticFeedback.mediumImpact();
                   _toggleTagsForCarouselIndex(_currentCarouselIndex);
                 },
                 child: const SizedBox(
-                  width: 32,
+                  width: 40,
                   child: Icon(
                     Icons.auto_awesome,
                     color: Colors.white,
-                    size: 28,
+                    size: 32,  // 🔥 Было 28, стало 32
                   ),
                 ),
               ),

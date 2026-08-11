@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:sign_in_with_apple/sign_in_with_apple.dart'; // 🔥 ДОБАВЬ ЭТУ СТРОКУ!
 import '../services/auth_service.dart';
 
 class AuthController extends GetxController {
@@ -68,7 +69,7 @@ class AuthController extends GetxController {
         final userCredential = await _auth.signInWithCredential(credential);
         final user = userCredential.user;
         if (user == null) throw Exception('User is null');
-        await _handleUser(user, googleUser);
+        await _handleUser(user, googleUser: googleUser);
       }
     } catch (e) {
       print('🔥 Google login error: $e');
@@ -84,25 +85,45 @@ class AuthController extends GetxController {
     }
   }
 
-  // ========== APPLE SIGN IN (ПРОСТАЯ ВЕРСИЯ) ==========
+  // ========== APPLE SIGN IN ==========
   Future<void> loginWithApple() async {
     try {
       isLoading.value = true;
-      
-      // 🔥 БЕЗ СЛОЖНОСТЕЙ — ПРОСТОЙ ВАРИАНТ
-      Get.snackbar(
-        'Coming Soon',
-        'Apple Sign In will be added soon',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.grey.shade100,
-        colorText: Colors.black,
+
+      print('🍎 [APPLE] Starting Apple Sign In...');
+
+      final appleCredential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
       );
-      
+
+      print('🍎 [APPLE] Got credential');
+
+      final oAuthProvider = OAuthProvider('apple.com');
+      final credential = oAuthProvider.credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode,
+      );
+
+      final userCredential = await _auth.signInWithCredential(credential);
+      final user = userCredential.user;
+
+      if (user == null) throw Exception('User is null');
+
+      await _handleUser(
+        user,
+        isApple: true,
+        appleDisplayName: user.displayName,
+        appleEmail: user.email,
+      );
+
     } catch (e) {
-      print('❌ Apple login error: $e');
+      print('❌ [APPLE] Error: $e');
       Get.snackbar(
         'Error',
-        'Apple login failed',
+        'Apple login failed: ${e.toString()}',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red.shade50,
         colorText: Colors.red.shade900,
@@ -112,28 +133,81 @@ class AuthController extends GetxController {
     }
   }
 
-  Future<void> _handleUser(User user, [GoogleSignInAccount? googleUser]) async {
+  // ========== ОБНОВЛЁННЫЙ _handleUser ==========
+  Future<void> _handleUser(
+    User user, {
+    GoogleSignInAccount? googleUser,
+    bool isApple = false,
+    String? appleDisplayName,
+    String? appleEmail,
+  }) async {
     final userDoc = await _firestore.collection('users').doc(user.uid).get();
 
     if (!userDoc.exists) {
-      await _createNewUser(user, googleUser);
+      await _createNewUser(
+        user,
+        googleUser: googleUser,
+        isApple: isApple,
+        appleDisplayName: appleDisplayName,
+        appleEmail: appleEmail,
+      );
     } else {
       await AuthService.instance.onUserLoggedIn();
       _goToApp();
     }
   }
 
-  Future<void> _createNewUser(User user, [GoogleSignInAccount? googleUser]) async {
+  // ========== ОБНОВЛЁННЫЙ _createNewUser ==========
+  Future<void> _createNewUser(
+    User user, {
+    GoogleSignInAccount? googleUser,
+    bool isApple = false,
+    String? appleDisplayName,
+    String? appleEmail,
+  }) async {
     try {
-      final generatedUsername = _generateUsername();
+      String displayName = '';
+      String photoUrl = '';
+      String email = user.email ?? '';
+
+      if (isApple) {
+        // 🔥 APPLE ПОЛЬЗОВАТЕЛЬ
+        displayName = appleDisplayName ?? user.displayName ?? '';
+        photoUrl = user.photoURL ?? '';
+        email = appleEmail ?? user.email ?? '';
+        print('🍎 [APPLE] Creating user: displayName=$displayName, email=$email');
+      } else {
+        // 🔥 GOOGLE ПОЛЬЗОВАТЕЛЬ
+        displayName = googleUser?.displayName ?? user.displayName ?? '';
+        photoUrl = googleUser?.photoUrl ?? user.photoURL ?? '';
+        email = googleUser?.email ?? user.email ?? '';
+      }
+
+      String generatedUsername;
+      if (displayName.isNotEmpty) {
+        generatedUsername = displayName.replaceAll(' ', '').toLowerCase();
+        // Проверка уникальности
+        final existingUser = await _firestore
+            .collection('users')
+            .where('username_lowercase', isEqualTo: generatedUsername.toLowerCase())
+            .get();
+
+        if (existingUser.docs.isNotEmpty) {
+          final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
+          generatedUsername = '${generatedUsername}_$randomNum';
+        }
+      } else {
+        final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
+        generatedUsername = 'user$randomNum';
+      }
 
       final userData = {
         'uid': user.uid,
-        'email': user.email ?? '',
+        'email': email,
         'username': generatedUsername,
         'username_lowercase': generatedUsername.toLowerCase(),
-        'displayName': googleUser?.displayName ?? user.displayName ?? '',
-        'avatarUrl': googleUser?.photoUrl ?? user.photoURL ?? '',
+        'displayName': displayName.isNotEmpty ? displayName : generatedUsername,
+        'avatarUrl': photoUrl,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
         'followersCount': 0,
@@ -146,14 +220,15 @@ class AuthController extends GetxController {
       await _firestore.collection('users').doc(user.uid).set(userData);
 
       username.value = generatedUsername;
-      avatarUrl.value = googleUser?.photoUrl ?? user.photoURL ?? '';
+      avatarUrl.value = photoUrl;
 
       await AuthService.instance.onUserLoggedIn();
 
-      print('✅ New user created');
+      print('✅ New user created (${isApple ? "Apple" : "Google"})');
       _goToApp();
     } catch (e) {
       print('❌ Create user error: $e');
+      Get.snackbar('Error', 'Failed to create user profile');
     }
   }
 
