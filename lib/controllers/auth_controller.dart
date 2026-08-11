@@ -1,10 +1,11 @@
+import 'dart:io' show Platform; // 🔥 ДОБАВЬ ЭТУ СТРОКУ!
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:sign_in_with_apple/sign_in_with_apple.dart'; // 🔥 ДОБАВЬ ЭТУ СТРОКУ!
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../services/auth_service.dart';
 
 class AuthController extends GetxController {
@@ -48,6 +49,7 @@ class AuthController extends GetxController {
     }
   }
 
+  // ==================== GOOGLE SIGN IN ====================
   Future<void> loginWithGoogle() async {
     try {
       isLoading.value = true;
@@ -60,7 +62,10 @@ class AuthController extends GetxController {
         await _handleUser(user);
       } else {
         final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-        if (googleUser == null) return;
+        if (googleUser == null) {
+          isLoading.value = false;
+          return;
+        }
         final googleAuth = await googleUser.authentication;
         final credential = GoogleAuthProvider.credential(
           accessToken: googleAuth.accessToken,
@@ -75,7 +80,7 @@ class AuthController extends GetxController {
       print('🔥 Google login error: $e');
       Get.snackbar(
         'Error',
-        'Google login failed',
+        'Google login failed: $e',
         snackPosition: SnackPosition.BOTTOM,
         backgroundColor: Colors.red.shade50,
         colorText: Colors.red.shade900,
@@ -85,10 +90,23 @@ class AuthController extends GetxController {
     }
   }
 
-  // ========== APPLE SIGN IN ==========
+  // ==================== APPLE SIGN IN ====================
   Future<void> loginWithApple() async {
     try {
       isLoading.value = true;
+
+      // 🔥 ПРОВЕРКА: Apple Sign In работает ТОЛЬКО на iOS!
+      if (!Platform.isIOS) {
+        Get.snackbar(
+          'Not Available',
+          'Apple Sign In is only available on iOS devices',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.orange.shade50,
+          colorText: Colors.orange.shade900,
+        );
+        isLoading.value = false;
+        return;
+      }
 
       print('🍎 [APPLE] Starting Apple Sign In...');
 
@@ -133,7 +151,7 @@ class AuthController extends GetxController {
     }
   }
 
-  // ========== ОБНОВЛЁННЫЙ _handleUser ==========
+  // ==================== ОБРАБОТЧИК ПОЛЬЗОВАТЕЛЯ ====================
   Future<void> _handleUser(
     User user, {
     GoogleSignInAccount? googleUser,
@@ -157,7 +175,7 @@ class AuthController extends GetxController {
     }
   }
 
-  // ========== ОБНОВЛЁННЫЙ _createNewUser ==========
+  // ==================== СОЗДАНИЕ НОВОГО ПОЛЬЗОВАТЕЛЯ ====================
   Future<void> _createNewUser(
     User user, {
     GoogleSignInAccount? googleUser,
@@ -171,13 +189,13 @@ class AuthController extends GetxController {
       String email = user.email ?? '';
 
       if (isApple) {
-        // 🔥 APPLE ПОЛЬЗОВАТЕЛЬ
+        // APPLE
         displayName = appleDisplayName ?? user.displayName ?? '';
         photoUrl = user.photoURL ?? '';
         email = appleEmail ?? user.email ?? '';
         print('🍎 [APPLE] Creating user: displayName=$displayName, email=$email');
       } else {
-        // 🔥 GOOGLE ПОЛЬЗОВАТЕЛЬ
+        // GOOGLE
         displayName = googleUser?.displayName ?? user.displayName ?? '';
         photoUrl = googleUser?.photoUrl ?? user.photoURL ?? '';
         email = googleUser?.email ?? user.email ?? '';
@@ -228,7 +246,7 @@ class AuthController extends GetxController {
       _goToApp();
     } catch (e) {
       print('❌ Create user error: $e');
-      Get.snackbar('Error', 'Failed to create user profile');
+      Get.snackbar('Error', 'Failed to create user profile: $e');
     }
   }
 
