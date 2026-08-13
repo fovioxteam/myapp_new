@@ -1233,7 +1233,7 @@ exports.testDelete = functions
   });
 
 // ============================================
-// 🔥 ALGOLIA TRIGGERS
+// 🔥 ALGOLIA TRIGGERS - ИСПРАВЛЕННЫЕ
 // ============================================
 
 exports.onPostCreatedForAlgolia = functions
@@ -1248,23 +1248,30 @@ exports.onPostCreatedForAlgolia = functions
     const { postsIndex } = initAlgolia(algoliaKey);
     if (!postsIndex) return;
 
+    // ✅ ИСПРАВЛЕННЫЙ ОБЪЕКТ - ДОБАВЛЕНЫ mediaType, videoUrl, fitModes
     const record = {
       objectID: postId,
       caption: data.caption || "",
       hashtags: data.hashtags || [],
-      imageUrl: data.imageUrls?.[0] || "",
+      imageUrl: data.imageUrls?.[0] || data.imageUrl || "",
       thumbnailUrl: data.thumbnailUrl || "",
       likes: data.likes || 0,
       comments: data.comments || 0,
-      createdAt: Date.now(),
+      createdAt: data.createdAt || Date.now(),
       userId: data.userId,
       userName: data.userName,
       userAvatar: data.userAvatar || "",
+      
+      // 🔥🔥🔥 ДОБАВЛЯЕМ ЭТИ ПОЛЯ 🔥🔥🔥
+      mediaType: data.mediaType || 'photo',
+      videoUrl: data.videoUrl || '',
+      fitModes: data.fitModes || [],
+      imageUrls: data.imageUrls || [],
     };
 
     try {
       await postsIndex.saveObject(record);
-      console.log(`✅ [Algolia] Indexed post: ${postId}`);
+      console.log(`✅ [Algolia] Indexed post: ${postId}, mediaType: ${record.mediaType}, videoUrl: ${record.videoUrl}`);
     } catch (e) {
       console.error(`❌ [Algolia] Error indexing post: ${e}`);
     }
@@ -1283,14 +1290,49 @@ exports.onPostUpdatedForAlgolia = functions
     const { postsIndex } = initAlgolia(algoliaKey);
     if (!postsIndex) return;
 
-    if (newData.likes !== oldData.likes || newData.comments !== oldData.comments || newData.caption !== oldData.caption) {
+    // ✅ ИСПРАВЛЕННОЕ ОБНОВЛЕНИЕ - ДОБАВЛЕНЫ МЕДИА-ПОЛЯ
+    const updates = { objectID: postId };
+    let hasUpdates = false;
+
+    // Основные поля
+    if (newData.likes !== oldData.likes) {
+      updates.likes = newData.likes || 0;
+      hasUpdates = true;
+    }
+    if (newData.comments !== oldData.comments) {
+      updates.comments = newData.comments || 0;
+      hasUpdates = true;
+    }
+    if (newData.caption !== oldData.caption) {
+      updates.caption = newData.caption || "";
+      hasUpdates = true;
+    }
+    if (newData.imageUrls?.[0] !== oldData.imageUrls?.[0]) {
+      updates.imageUrl = newData.imageUrls?.[0] || "";
+      hasUpdates = true;
+    }
+    
+    // 🔥 МЕДИА-ПОЛЯ
+    if (newData.mediaType !== oldData.mediaType) {
+      updates.mediaType = newData.mediaType || 'photo';
+      hasUpdates = true;
+    }
+    if (newData.videoUrl !== oldData.videoUrl) {
+      updates.videoUrl = newData.videoUrl || '';
+      hasUpdates = true;
+    }
+    if (JSON.stringify(newData.fitModes) !== JSON.stringify(oldData.fitModes)) {
+      updates.fitModes = newData.fitModes || [];
+      hasUpdates = true;
+    }
+    if (JSON.stringify(newData.imageUrls) !== JSON.stringify(oldData.imageUrls)) {
+      updates.imageUrls = newData.imageUrls || [];
+      hasUpdates = true;
+    }
+
+    if (hasUpdates) {
       try {
-        await postsIndex.partialUpdateObject({
-          objectID: postId,
-          likes: newData.likes || 0,
-          comments: newData.comments || 0,
-          caption: newData.caption || "",
-        });
+        await postsIndex.partialUpdateObject(updates);
         console.log(`✅ [Algolia] Updated post: ${postId}`);
       } catch (e) {
         console.error(`❌ [Algolia] Update error: ${e}`);

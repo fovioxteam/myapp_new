@@ -1,3 +1,5 @@
+// lib/widgets/profile_posts_grid.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -53,6 +55,32 @@ class ProfilePostsGrid extends StatelessWidget {
     }
 
     return '';
+  }
+
+  // ============================================================
+  // 🔥 МЕТОД ДЛЯ ОПРЕДЕЛЕНИЯ ВИДЕО
+  // ============================================================
+  bool _isVideoPost(Map<String, dynamic> post) {
+    // 1. ПРОВЕРЯЕМ ПО mediaType
+    final mediaType = post['mediaType']?.toString() ?? '';
+    if (mediaType == 'video') return true;
+    
+    // 2. ПРОВЕРЯЕМ ПО videoUrl
+    final videoUrl = post['videoUrl']?.toString() ?? '';
+    if (videoUrl.isNotEmpty) return true;
+    
+    // 3. ПРОВЕРЯЕМ ПО РАСШИРЕНИЮ
+    for (var key in post.keys) {
+      final value = post[key];
+      if (value != null && value.toString().isNotEmpty) {
+        final str = value.toString().toLowerCase();
+        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   @override
@@ -112,8 +140,9 @@ class ProfilePostsGrid extends StatelessWidget {
         final imageUrl = _getThumbnailUrl(post);
         final postId = post['id']?.toString() ?? '';
         
-        final isVideo = post['mediaType']?.toString() == 'video' || 
-                       (post['videoUrl'] != null && post['videoUrl'].toString().isNotEmpty);
+        // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ МЕТОД
+        final isVideo = _isVideoPost(post);
+        final isPhoto = !isVideo;
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,
@@ -156,16 +185,22 @@ class ProfilePostsGrid extends StatelessWidget {
                   ),
 
                 // ============================================================
-                // 🔥 ИКОНКА ТОЛЬКО ДЛЯ ФОТО (ВИДЕО - БЕЗ ИКОНКИ)
+                // 🔥 НОВАЯ ИКОНКА ДЛЯ ФОТО (КАК В ПОИСКЕ)
                 // ============================================================
-                if (!isVideo)
+                if (isPhoto)
                   Positioned(
                     top: 8,
                     right: 8,
                     child: const Icon(
-                      CupertinoIcons.square_on_square,
+                      CupertinoIcons.square_fill_on_square_fill,
                       color: Colors.white,
                       size: 18,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 4,
+                        ),
+                      ],
                     ),
                   ),
               ],

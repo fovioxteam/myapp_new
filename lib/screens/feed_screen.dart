@@ -68,6 +68,7 @@ class _FeedScreenState extends State<FeedScreen>
   
   Timer? _preloadTimer;
   Timer? _analyticsTimer;
+  Timer? _preloadDebounceTimer; // 🔥 ДЛЯ ДЕБАУНСА
 
   final ScrollController _forYouScrollController = ScrollController();
   final ScrollController _followingScrollController = ScrollController();
@@ -204,6 +205,7 @@ class _FeedScreenState extends State<FeedScreen>
     // 🔥 ВОССТАНАВЛИВАЕМ ЧЕРНЫЕ ИКОНКИ
     StatusBarService().setDarkStatusBar();
     
+    _preloadDebounceTimer?.cancel();
     _updateDebounceTimer?.cancel();
     _forYouPageController.dispose();
     _followingPageController.dispose();
@@ -217,7 +219,7 @@ class _FeedScreenState extends State<FeedScreen>
   }
 
   // ============================================================
-  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
+  // 🔥 ОПТИМИЗИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ
   // ============================================================
 
   Future<void> _checkPermissions() async {
@@ -238,38 +240,35 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
+  // ⚡ ОПТИМИЗИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ - ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА
   Future<void> _initializeApp() async {
     if (_isInitialized || !mounted) return;
-    
     _isInitialized = true;
-    
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+
+    setState(() => _isLoading = true);
 
     try {
+      // ⚡ Грузим ПАРАЛЛЕЛЬНО только то, что нужно для быстрого первого экрана
       await Future.wait([
-        _loadRealData(),
+        _postController.loadFeedPosts(refresh: true),
         _loadUserLikes(),
         _loadUserSaves(),
       ]);
-      
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+
       _preloadFeedVideos();
-      
-      if (!mounted) return;
+
+      // 🚀 Подписки запрашиваем фоново, НЕ блокируя UI
+      unawaited(_loadFollowingUsers());
       
     } catch (e) {
       print('Error loading initial data: $e');
       if (!mounted) return;
       _showError('Failed to load feed. Please try again.');
-      
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -302,11 +301,7 @@ class _FeedScreenState extends State<FeedScreen>
   Future<void> _loadRealData() async {
     try {
       await _postController.loadFeedPosts(refresh: true);
-      
       if (!mounted) return;
-      
-      await _loadFollowingUsers();
-      
     } catch (e) {
       print('Error loading real data: $e');
       rethrow;
@@ -359,6 +354,10 @@ class _FeedScreenState extends State<FeedScreen>
       print('Error loading user saves: $e');
     }
   }
+
+  // ============================================================
+  // 🔥 ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА FOLLOWING (ПАРАЛЛЕЛЬНАЯ)
+  // ============================================================
 
   Future<void> _loadFollowingUsers() async {
     final user = _auth.currentUser;
@@ -413,6 +412,7 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
+  // ⚡ ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА ПОСТОВ - ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА
   Future<void> _loadFollowingPosts() async {
     try {
       if (_followingUsers.isEmpty) {
@@ -420,6 +420,7 @@ class _FeedScreenState extends State<FeedScreen>
         setState(() {
           _followingPostIds = [];
           _hasMoreFollowing = false;
+          _loadingFollowing = false;
         });
         return;
       }
@@ -444,15 +445,14 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded: ${snapshot.docs.length} posts');
       
       if (snapshot.docs.isNotEmpty) {
-        final newPosts = <Map<String, dynamic>>[];
-        for (var doc in snapshot.docs) {
-          final processed = await _postController.getProcessedPost(doc);
-          if (processed != null) {
-            print('📦 [FOLLOWING] Post ${processed['id']}: mediaType=${processed['mediaType']}, videoUrl=${processed['videoUrl']}');
-            newPosts.add(processed);
-          }
-        }
-        
+        // ⚡ ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ВСЕХ ДОКУМЕНТОВ
+        final processedResults = await Future.wait(
+          snapshot.docs.map((doc) => _postController.getProcessedPost(doc)),
+        );
+
+        final List<Map<String, dynamic>> newPosts = 
+            processedResults.whereType<Map<String, dynamic>>().toList();
+
         if (!mounted) return;
         
         _postController.addPostsToStorage(newPosts);
@@ -461,6 +461,7 @@ class _FeedScreenState extends State<FeedScreen>
           _followingPostIds = newPosts.map((p) => p['id'] as String).toList();
           _lastFollowingDoc = snapshot.docs.last;
           _hasMoreFollowing = snapshot.docs.length == 10;
+          _loadingFollowing = false;
         });
         
         _postController.preloadFeedVideos(newPosts, maxPreload: 3);
@@ -470,6 +471,7 @@ class _FeedScreenState extends State<FeedScreen>
         setState(() {
           _followingPostIds = [];
           _hasMoreFollowing = false;
+          _loadingFollowing = false;
         });
         print('No posts from followed users');
       }
@@ -480,6 +482,7 @@ class _FeedScreenState extends State<FeedScreen>
         setState(() {
           _followingPostIds = [];
           _hasMoreFollowing = false;
+          _loadingFollowing = false;
         });
       }
     }
@@ -519,14 +522,13 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded more: ${snapshot.docs.length}');
       
       if (snapshot.docs.isNotEmpty) {
-        final newPosts = <Map<String, dynamic>>[];
-        for (var doc in snapshot.docs) {
-          final processed = await _postController.getProcessedPost(doc);
-          if (processed != null) {
-            print('📦 [FOLLOWING-MORE] Post ${processed['id']}: mediaType=${processed['mediaType']}, videoUrl=${processed['videoUrl']}');
-            newPosts.add(processed);
-          }
-        }
+        // ⚡ ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА
+        final processedResults = await Future.wait(
+          snapshot.docs.map((doc) => _postController.getProcessedPost(doc)),
+        );
+
+        final List<Map<String, dynamic>> newPosts = 
+            processedResults.whereType<Map<String, dynamic>>().toList();
         
         if (!mounted) return;
         
@@ -554,6 +556,58 @@ class _FeedScreenState extends State<FeedScreen>
     } finally {
       _isLoadingMoreFollowing = false;
       if (mounted) setState(() {});
+    }
+  }
+
+  // ============================================================
+  // 🔥 ПЛАВНЫЙ onPageChanged С ДЕБАУНСОМ (БЕЗ ФРИЗОВ)
+  // ============================================================
+
+  void _handleForYouPageChanged(int page) {
+    _currentForYouPage = page;
+    _forYouCurrentPage.value = page;
+
+    // ⚡ 1. Дебаунс прелоада и аналитики — не забиваем Main Thread во время свайпа
+    _preloadDebounceTimer?.cancel();
+    _preloadDebounceTimer = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
+
+      if (page < _forYouPostIds.length) {
+        final postId = _forYouPostIds[page];
+        _logPostView(postId, page, 'for_you');
+        _metrics.startWatching(postId);
+      }
+
+      _preloadNextPosts(page);
+    });
+
+    // ⚡ 2. Бесшовная пагинация (триггерится мгновенно)
+    final int remainingPosts = _forYouPostIds.length - page;
+    if (remainingPosts <= 15 && 
+        _postController.hasMoreFeed && 
+        !_isLoadingMoreForYou &&
+        !_postController.isLoadingMore) {
+      _isLoadingMoreForYou = true;
+      print('🔥 [TikTok] Background preload: $remainingPosts posts left');
+      _postController.loadMoreFeedPosts().then((_) {
+        _isLoadingMoreForYou = false;
+      });
+    }
+  }
+
+  void _handleFollowingPageChanged(int page) {
+    _currentFollowingPage = page;
+    _followingCurrentPage.value = page;
+    
+    if (page < _followingPostIds.length) {
+      final postId = _followingPostIds[page];
+      _logPostView(postId, page, 'following');
+      _metrics.startWatching(postId);
+    }
+    
+    final int remainingPosts = _followingPostIds.length - page;
+    if (remainingPosts <= 10 && _hasMoreFollowing && !_isLoadingMoreFollowing) {
+      _loadMoreFollowing();
     }
   }
 
@@ -645,6 +699,40 @@ class _FeedScreenState extends State<FeedScreen>
     Get.to(() => const UploadScreen());
   }
 
+  // ============================================================
+  // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПОСТРОЕНИЯ КАРТОЧКИ
+  // ============================================================
+
+  Widget _buildPostItem(String postId) {
+    final post = _postController.getPostFromStorage(postId);
+
+    if (post == null) {
+      return const Center(
+        child: SizedBox(
+          width: 40,
+          height: 40,
+          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+        ),
+      );
+    }
+
+    return PostItem(
+      key: ValueKey(postId),
+      post: post,
+      isFullScreen: true,
+      useMockData: false,
+      followingUsers: _followingUsers,
+      likedPosts: _likedPosts,
+      savedPosts: _savedPosts,
+      onPostVisible: () => _metrics.startWatching(postId),
+      onPostHidden: () => _metrics.stopWatching(postId),
+    );
+  }
+
+  // ============================================================
+  // 🔥 ЧИСТЫЙ _buildForYouContent
+  // ============================================================
+
   Widget _buildForYouContent() {
     if (_forYouPostIds.isEmpty) {
       return const Center(
@@ -663,109 +751,17 @@ class _FeedScreenState extends State<FeedScreen>
       controller: _forYouPageController,
       scrollDirection: Axis.vertical,
       itemCount: _forYouPostIds.length,
-      onPageChanged: (int page) {
-        _currentForYouPage = page;
-        _forYouCurrentPage.value = page;
-        
-        if (page < _forYouPostIds.length) {
-          final postId = _forYouPostIds[page];
-          _logPostView(postId, page, 'for_you');
-          _metrics.startWatching(postId);
-        }
-        
-        _preloadNextPosts(page);
-        
-        final int remainingPosts = _forYouPostIds.length - page;
-        if (remainingPosts <= 15 && 
-            _postController.hasMoreFeed && 
-            !_isLoadingMoreForYou &&
-            !_postController.isLoadingMore) {
-          _isLoadingMoreForYou = true;
-          print('🔥 [TikTok] Background preload: $remainingPosts posts left');
-          _postController.loadMoreFeedPosts().then((_) {
-            _isLoadingMoreForYou = false;
-          });
-        }
-      },
+      onPageChanged: _handleForYouPageChanged,
       itemBuilder: (context, index) {
         final postId = _forYouPostIds[index];
-        final post = _postController.getPostFromStorage(postId);
-        
-        if (post == null) {
-          return const Center(
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            ),
-          );
-        }
-        
-        final bool showLoader = index == _forYouPostIds.length - 1 && 
-                                _postController.isLoadingMore &&
-                                _forYouPostIds.length - _currentForYouPage <= 3;
-        
-        if (showLoader) {
-          return Stack(
-            alignment: Alignment.center,
-            children: [
-              PostItem(
-                key: ValueKey(postId),
-                post: post,
-                isFullScreen: true,
-                useMockData: false,
-                followingUsers: _followingUsers,
-                likedPosts: _likedPosts,
-                savedPosts: _savedPosts,
-                onPostVisible: () => _metrics.startWatching(postId),
-                onPostHidden: () => _metrics.stopWatching(postId),
-              ),
-              Positioned(
-                bottom: 100,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
-                        ),
-                      ),
-                      SizedBox(width: 12),
-                      Text(
-                        'Loading...',
-                        style: TextStyle(color: Colors.white, fontSize: 14),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          );
-        }
-        
-        return PostItem(
-          key: ValueKey(postId),
-          post: post,
-          isFullScreen: true,
-          useMockData: false,
-          followingUsers: _followingUsers,
-          likedPosts: _likedPosts,
-          savedPosts: _savedPosts,
-          onPostVisible: () => _metrics.startWatching(postId),
-          onPostHidden: () => _metrics.stopWatching(postId),
-        );
+        return _buildPostItem(postId);
       },
     );
   }
+
+  // ============================================================
+  // 🔥 _buildFollowingContent (обновлен)
+  // ============================================================
 
   Widget _buildFollowingContent() {
     if (_loadingFollowing) {
@@ -800,21 +796,7 @@ class _FeedScreenState extends State<FeedScreen>
       controller: _followingPageController,
       scrollDirection: Axis.vertical,
       itemCount: _followingPostIds.length + (_hasMoreFollowing ? 1 : 0),
-      onPageChanged: (int page) {
-        _currentFollowingPage = page;
-        _followingCurrentPage.value = page;
-        
-        if (page < _followingPostIds.length) {
-          final postId = _followingPostIds[page];
-          _logPostView(postId, page, 'following');
-          _metrics.startWatching(postId);
-        }
-        
-        final int remainingPosts = _followingPostIds.length - page;
-        if (remainingPosts <= 10 && _hasMoreFollowing && !_isLoadingMoreFollowing) {
-          _loadMoreFollowing();
-        }
-      },
+      onPageChanged: _handleFollowingPageChanged,
       itemBuilder: (context, index) {
         if (index == _followingPostIds.length && _hasMoreFollowing) {
           return const Center(
@@ -830,29 +812,7 @@ class _FeedScreenState extends State<FeedScreen>
         }
         
         final postId = _followingPostIds[index];
-        final post = _postController.getPostFromStorage(postId);
-        
-        if (post == null) {
-          return const Center(
-            child: SizedBox(
-              width: 40,
-              height: 40,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-            ),
-          );
-        }
-        
-        return PostItem(
-          key: ValueKey(postId),
-          post: post,
-          isFullScreen: true,
-          useMockData: false,
-          followingUsers: _followingUsers,
-          likedPosts: _likedPosts,
-          savedPosts: _savedPosts,
-          onPostVisible: () => _metrics.startWatching(postId),
-          onPostHidden: () => _metrics.stopWatching(postId),
-        );
+        return _buildPostItem(postId);
       },
     );
   }
@@ -951,7 +911,7 @@ class _FeedScreenState extends State<FeedScreen>
                     controller: _tabController,
                     isScrollable: true,
                     tabAlignment: TabAlignment.center,
-                    labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 16),
                     labelColor: Colors.white,
                     unselectedLabelColor: Colors.white.withOpacity(0.7),
                     indicatorColor: Colors.white,
@@ -959,12 +919,14 @@ class _FeedScreenState extends State<FeedScreen>
                     indicatorSize: TabBarIndicatorSize.label,
                     dividerColor: Colors.transparent,
                     labelStyle: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
                       fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
                     ),
                     unselectedLabelStyle: const TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
                       fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
                     ),
                     onTap: (index) {
                       unawaited(_analytics.logEvent(

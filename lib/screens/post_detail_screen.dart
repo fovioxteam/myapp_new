@@ -1,3 +1,5 @@
+// lib/screens/post_detail_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:get/get.dart';
@@ -179,15 +181,14 @@ class _PostDetailScreenState extends State<PostDetailScreen>
   }
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _buildPostItem - ОБНОВЛЯЕТ ПОСТ ИЗ КЭША
+  // 🔥 ИСПРАВЛЕННЫЙ _buildPostItem - ПРОСТО ПЕРЕДАЕТ PostItem
   // ============================================================
   Widget _buildPostItem(Map<String, dynamic> postData, bool isCurrentPost) {
     final postId = postData['id']?.toString() ?? '';
     
-    // 🔥 БЕРЕМ СВЕЖИЙ ПОСТ ИЗ КОНТРОЛЛЕРА
+    // Берем свежий пост из контроллера
     var freshPost = _postController.getPostFromStorage(postId);
     
-    // 🔥 ЕСЛИ В КЭШЕ НЕТ - ОБНОВЛЯЕМ ИЗ postData
     if (freshPost == null) {
       print('📦 [PostDetailScreen] Post $postId not in cache, using provided data');
       freshPost = postData;
@@ -202,13 +203,14 @@ class _PostDetailScreenState extends State<PostDetailScreen>
       return _postWidgetCache[cacheKey]!;
     }
     
+    // ✅ ПРОСТО ПЕРЕДАЕМ PostItem - ОН САМ РАЗБЕРЕТСЯ С ВИДЕО
     final widgetItem = PostItem(
       key: ValueKey('post_$postId'),
       post: freshPost,
       isFullScreen: true,
       useMockData: false,
-      likedPosts: null,
-      savedPosts: null,
+      likedPosts: widget.likedPosts,
+      savedPosts: widget.savedPosts,
       followingUsers: widget.followingUsers,
       onLikeChanged: widget.onLikeChanged,
       onSaveChanged: widget.onSaveChanged,

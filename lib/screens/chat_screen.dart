@@ -87,13 +87,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _unreadService.setActiveChat(widget.chatId);
     _unreadService.markChatAsRead(widget.chatId);
     
-    // 🔥 ПРОВЕРЯЕМ: ЕСТЬ ЛИ УЖЕ КОНТРОЛЛЕР
     final controllerExists = Get.isRegistered<ChatController>(tag: widget.chatId);
     
     if (controllerExists) {
       _chatController = Get.find<ChatController>(tag: widget.chatId);
       print('✅ Found existing ChatController for ${widget.chatId}');
-      // 🔥 ЕСЛИ ЕСТЬ - СРАЗУ СТАВИМ ИНИЦИАЛИЗИРОВАННЫМ И НЕ ПОКАЗЫВАЕМ ЛОАДЕР
       _isInitialized = true;
     } else {
       print('⚠️ ChatController not found, creating new one for ${widget.chatId}');
@@ -267,15 +265,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         isGroup: widget.isGroup,
       );
       
-      // 🔥 ТОЛЬКО ДЛЯ НОВЫХ КОНТРОЛЛЕРОВ ПОКАЗЫВАЕМ ЛОАДЕР
       if (showLoader) {
         setState(() {
           _isInitialized = true;
         });
       } else {
-        // Для существующего контроллера - сразу говорим что готово
         _isInitialized = true;
-        // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСОК, ЕСЛИ ОН ПУСТОЙ
         if (_chatController.messages.isEmpty) {
           _chatController.refreshMessages();
         }
@@ -304,8 +299,24 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     }
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _loadMoreMessages - СОХРАНЯЕТ ПОЗИЦИЮ СКРОЛЛА
+  // ============================================================
   Future<void> _loadMoreMessages() async {
     if (_isLoadingMore || !_hasMoreMessages || _chatController.messages.isEmpty) return;
+    
+    // 🔥 СОХРАНЯЕМ ID ПЕРВОГО ВИДИМОГО СООБЩЕНИЯ
+    String? firstVisibleMessageId;
+    double? scrollOffset;
+    
+    if (_scrollController.hasClients) {
+      // Находим первое видимое сообщение
+      final firstVisibleIndex = (_scrollController.offset / 80).floor();
+      if (firstVisibleIndex < _chatController.messages.length) {
+        firstVisibleMessageId = _chatController.messages[firstVisibleIndex]['id'];
+        scrollOffset = _scrollController.offset;
+      }
+    }
     
     setState(() {
       _isLoadingMore = true;
@@ -350,6 +361,39 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         
         _chatController.addMessages(moreMessages);
         _hasMoreMessages = snapshot.docs.length == _messagesPerPage;
+        
+        // 🔥 ВОССТАНАВЛИВАЕМ ПОЗИЦИЮ ПОСЛЕ ЗАГРУЗКИ
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!_scrollController.hasClients) return;
+          
+          if (firstVisibleMessageId != null) {
+            // Ищем индекс сообщения, которое было первым
+            final newIndex = _chatController.messages.indexWhere(
+              (msg) => msg['id'] == firstVisibleMessageId
+            );
+            
+            if (newIndex != -1) {
+              // Восстанавливаем позицию по индексу
+              final newOffset = newIndex * 80.0; // Примерная высота сообщения
+              _scrollController.jumpTo(newOffset);
+            } else if (scrollOffset != null) {
+              // Если не нашли по ID, используем сохраненный оффсет с корректировкой
+              final oldListHeight = _scrollController.position.maxScrollExtent;
+              final newListHeight = _scrollController.position.maxScrollExtent;
+              final heightDifference = newListHeight - oldListHeight;
+              final newOffset = (scrollOffset ?? 0) + heightDifference;
+              _scrollController.jumpTo(newOffset);
+            }
+          } else if (scrollOffset != null) {
+            // Используем оффсет, если нет ID
+            final oldListHeight = _scrollController.position.maxScrollExtent;
+            final newListHeight = _scrollController.position.maxScrollExtent;
+            final heightDifference = newListHeight - oldListHeight;
+            final newOffset = (scrollOffset ?? 0) + heightDifference;
+            _scrollController.jumpTo(newOffset);
+          }
+        });
+        
       } else {
         _hasMoreMessages = false;
       }
@@ -715,7 +759,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // 🔥 БЕЗОПАСНЫЕ ВИДЖЕТЫ С ПРОВЕРКОЙ
   Widget _buildMessagesCount() {
     if (!_isInitialized || _chatController == null) {
       return const SizedBox.shrink();
@@ -794,14 +837,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     });
   }
 
-  // 🔥 ОСНОВНОЙ СПИСОК СООБЩЕНИЙ - БЕЗ ЛИШНЕГО ЛОАДЕРА
   Widget _buildMessagesList() {
-    // 🔥 ЕСЛИ КОНТРОЛЛЕР УЖЕ ИНИЦИАЛИЗИРОВАН И ЕСТЬ СООБЩЕНИЯ - ПОКАЗЫВАЕМ СРАЗУ
     if (_isInitialized && _chatController != null && _chatController.messages.isNotEmpty) {
       return _buildMessagesListView();
     }
     
-    // 🔥 ЕСЛИ КОНТРОЛЛЕР НОВЫЙ И ЕЩЁ НЕТ СООБЩЕНИЙ - ПОКАЗЫВАЕМ ЛОАДЕР
     if (!_isInitialized || _chatController == null) {
       return const Center(
         child: CircularProgressIndicator(

@@ -3,6 +3,8 @@
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/cupertino.dart';
@@ -29,6 +31,9 @@ import 'progressive_image.dart';
 import '../models/post_tag.dart';
 import '../widgets/post_tags_overlay.dart';
 import 'video_player_widget.dart';
+
+// 🔥 ИМПОРТ ДЛЯ ROUTE OBSERVER
+import '../main.dart';
 
 mixin SafeActionMixin {
   final Map<String, bool> _actionInProgress = {};
@@ -95,7 +100,7 @@ class PostItem extends StatefulWidget {
 }
 
 class _PostItemState extends State<PostItem>
-    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, SafeActionMixin {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, SafeActionMixin, RouteAware {
   
   @override
   bool get wantKeepAlive => true;
@@ -144,7 +149,22 @@ class _PostItemState extends State<PostItem>
   
   static final Map<String, Widget> _previewWidgetCache = {};
 
+  // ============================================================
+  // 🔥 ФЛАГИ ВИДИМОСТИ ДЛЯ ВИДЕО
+  // ============================================================
   bool _wasVisible = false;
+  bool _isRouteVisible = true;
+
+  // 🔥 БЕЗОПАСНЫЙ setState
+  void _safeSetState(VoidCallback fn) {
+    if (mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(fn);
+        }
+      });
+    }
+  }
 
   @override
   void initState() {
@@ -164,6 +184,7 @@ class _PostItemState extends State<PostItem>
     _initAnimations();
     
     _wasVisible = widget.isVisible;
+    _isRouteVisible = true;
     
     if (_isVideoPost()) {
       print('🎬 [VIDEO] Video post detected');
@@ -186,6 +207,16 @@ class _PostItemState extends State<PostItem>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      MyApp.routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+    } catch (e) {
+      print('RouteObserver subscription error: $e');
+    }
+  }
+
+  @override
   void didUpdateWidget(PostItem oldWidget) {
     super.didUpdateWidget(oldWidget);
     print('🔄 [VIDEO] didUpdateWidget for $_postId');
@@ -194,9 +225,97 @@ class _PostItemState extends State<PostItem>
     if (oldWidget.post['videoUrl'] != widget.post['videoUrl'] ||
         oldWidget.post['mediaType'] != widget.post['mediaType']) {
       print('🔄 [VIDEO] Video data changed, rebuilding');
-      if (mounted) setState(() {});
+      _safeSetState(() {});
     }
   }
+
+  // ============================================================
+  // 🔥 ВИДИМОСТЬ С УЧЕТОМ НАВИГАЦИИ И ЖИЗНЕННОГО ЦИКЛА
+  // ============================================================
+  
+  @override
+  void deactivate() {
+    _pauseVideoOnLeave();
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
+    try {
+      MyApp.routeObserver.unsubscribe(this);
+    } catch (e) {}
+    
+    _pauseVideoOnLeave();
+    
+    if (_didCallPostVisible && widget.onPostHidden != null) {
+      widget.onPostHidden!.call();
+    }
+    disposeActions();
+    _followSubscription?.cancel();
+    _heartAnimationController.dispose();
+    _likeIconController.dispose();
+    _saveIconController.dispose();
+    _followAnimationController.dispose();
+    
+    if (_isCarousel) {
+      _carouselController.dispose();
+    }
+    _avatarCache.clear();
+    super.dispose();
+  }
+
+  void _pauseVideoOnLeave() {
+    if (_wasVisible) {
+      _wasVisible = false;
+      _isRouteVisible = false;
+      if (_didCallPostVisible && widget.onPostHidden != null) {
+        widget.onPostHidden!.call();
+        _didCallPostVisible = false;
+      }
+      _safeSetState(() {});
+    }
+  }
+
+  // ============================================================
+  // 🔥 VISIBILITY - ОТСЛЕЖИВАНИЕ ВИДИМОСТИ ПОСТА
+  // ============================================================
+
+  void _onVisibilityChanged(VisibilityInfo info) {
+    final bool visible = info.visibleFraction >= 0.6 && _isRouteVisible;
+
+    print('🎬 [VIDEO] ========== VISIBILITY CHANGED ==========');
+    print('🎬 [VIDEO] PostId: $_postId');
+    print('🎬 [VIDEO] visibleFraction: ${info.visibleFraction}');
+    print('🎬 [VIDEO] visible: $visible, wasVisible: $_wasVisible');
+    print('🎬 [VIDEO] isRouteVisible: $_isRouteVisible');
+    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
+    
+    if (visible != _wasVisible) {
+      _wasVisible = visible;
+      
+      _safeSetState(() {});
+      
+      if (visible) {
+        print('🎬 [VIDEO] Post became visible');
+        if (widget.onPostVisible != null && !_didCallPostVisible) {
+          print('🎬 [VIDEO] Calling onPostVisible');
+          widget.onPostVisible!.call();
+          _didCallPostVisible = true;
+        }
+      } else {
+        print('🎬 [VIDEO] Post became invisible');
+        if (_didCallPostVisible && widget.onPostHidden != null) {
+          widget.onPostHidden!.call();
+          _didCallPostVisible = false;
+        }
+      }
+    }
+    print('🎬 [VIDEO] =========================================');
+  }
+
+  // ============================================================
+  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
+  // ============================================================
 
   bool _isVideoPost() {
     final mediaType = widget.post['mediaType']?.toString() ?? '';
@@ -258,39 +377,6 @@ class _PostItemState extends State<PostItem>
     print('🔍 [FIT] mode: $mode');
     
     return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
-  }
-
-  void _onVisibilityChanged(VisibilityInfo info) {
-    final visible = info.visibleFraction > 0.5;
-    print('🎬 [VIDEO] ========== VISIBILITY CHANGED ==========');
-    print('🎬 [VIDEO] PostId: $_postId');
-    print('🎬 [VIDEO] visibleFraction: ${info.visibleFraction}');
-    print('🎬 [VIDEO] visible: $visible, wasVisible: $_wasVisible');
-    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
-    
-    if (visible != _wasVisible) {
-      _wasVisible = visible;
-      
-      if (mounted) {
-        setState(() {});
-      }
-      
-      if (visible) {
-        print('🎬 [VIDEO] Post became visible');
-        if (widget.onPostVisible != null && !_didCallPostVisible) {
-          print('🎬 [VIDEO] Calling onPostVisible');
-          widget.onPostVisible!.call();
-          _didCallPostVisible = true;
-        }
-      } else {
-        print('🎬 [VIDEO] Post became invisible');
-        if (_didCallPostVisible && widget.onPostHidden != null) {
-          widget.onPostHidden!.call();
-          _didCallPostVisible = false;
-        }
-      }
-    }
-    print('🎬 [VIDEO] =========================================');
   }
 
   void _initAnimations() {
@@ -424,9 +510,7 @@ class _PostItemState extends State<PostItem>
 
   void _validateImageUrl() {
     if (_imageUrls.isEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _hasImageError = true);
-      });
+      _safeSetState(() => _hasImageError = true);
       return;
     }
 
@@ -438,9 +522,7 @@ class _PostItemState extends State<PostItem>
       }
     }
     if (!hasValidUrl) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _hasImageError = true);
-      });
+      _safeSetState(() => _hasImageError = true);
     }
   }
 
@@ -466,7 +548,7 @@ class _PostItemState extends State<PostItem>
   }
 
   void _toggleTagsForCarouselIndex(int index) {
-    setState(() {
+    _safeSetState(() {
       _showTagsForCarouselIndex[index] = !(_showTagsForCarouselIndex[index] ?? false);
     });
   }
@@ -477,17 +559,17 @@ class _PostItemState extends State<PostItem>
 
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null || currentUserId == userId) {
-      if (mounted) setState(() => _isFollowing = false);
+      _safeSetState(() => _isFollowing = false);
       return;
     }
 
     try {
       final status = await _followService.checkFollowStatus(userId);
-      if (mounted) setState(() => _isFollowing = status);
+      _safeSetState(() => _isFollowing = status);
 
       _followSubscription?.cancel();
       _followSubscription = _followService.getFollowStatusStream(userId).listen((newStatus) {
-        if (mounted) setState(() => _isFollowing = newStatus);
+        _safeSetState(() => _isFollowing = newStatus);
       }, onError: (error) {});
     } catch (e) {}
   }
@@ -518,12 +600,12 @@ class _PostItemState extends State<PostItem>
     _animateFollowButton();
 
     final previousStatus = _isFollowing;
-    if (mounted) setState(() => _isFollowing = !_isFollowing);
+    _safeSetState(() => _isFollowing = !_isFollowing);
 
     try {
       await _followService.toggleFollow(userId);
     } catch (e) {
-      if (mounted) setState(() => _isFollowing = previousStatus);
+      _safeSetState(() => _isFollowing = previousStatus);
       _showSnackBar('Failed to ${previousStatus ? 'unfollow' : 'follow'}', Colors.red);
     }
 
@@ -532,9 +614,9 @@ class _PostItemState extends State<PostItem>
 
   void _animateFollowButton() {
     if (!mounted) return;
-    setState(() => _followButtonAnimating = true);
+    _safeSetState(() => _followButtonAnimating = true);
     _followAnimationController.forward().then((_) {
-      if (mounted) setState(() => _followButtonAnimating = false);
+      _safeSetState(() => _followButtonAnimating = false);
     });
   }
 
@@ -706,7 +788,7 @@ class _PostItemState extends State<PostItem>
         postImageUrl: postImageUrl,
       ),
     ).then((_) {
-      if (mounted) setState(() {});
+      _safeSetState(() {});
     });
   }
 
@@ -742,9 +824,9 @@ class _PostItemState extends State<PostItem>
 
   void _startLikeAnimation() {
     if (!mounted) return;
-    setState(() => _showHeartAnimation = true);
+    _safeSetState(() => _showHeartAnimation = true);
     _heartAnimationController.forward(from: 0.0).then((_) {
-      if (mounted) setState(() => _showHeartAnimation = false);
+      _safeSetState(() => _showHeartAnimation = false);
     });
   }
 
@@ -823,7 +905,7 @@ class _PostItemState extends State<PostItem>
     return VideoPlayerWidget(
       videoUrl: videoUrl,
       showControls: true,
-      isVisible: _wasVisible,
+      isVisible: _wasVisible && _isRouteVisible,
       thumbnailUrl: _getThumbnailUrl(),
       fit: fit,
     );
@@ -877,10 +959,10 @@ class _PostItemState extends State<PostItem>
     return GestureDetector(
       onLongPress: () {
         HapticFeedback.heavyImpact();
-        setState(() => _isLongPressInProgress = true);
+        _safeSetState(() => _isLongPressInProgress = true);
         _showPostOptions();
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) setState(() => _isLongPressInProgress = false);
+          _safeSetState(() => _isLongPressInProgress = false);
         });
       },
       onDoubleTapDown: (TapDownDetails details) {
@@ -891,12 +973,12 @@ class _PostItemState extends State<PostItem>
           final localPosition = box.globalToLocal(details.globalPosition);
           if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
               localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
-            setState(() => _tapPosition = localPosition);
+            _safeSetState(() => _tapPosition = localPosition);
           } else {
-            setState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
+            _safeSetState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
           }
         } else {
-          setState(() => _tapPosition = const Offset(150, 300));
+          _safeSetState(() => _tapPosition = const Offset(150, 300));
         }
       },
       onDoubleTap: _handleDoubleTap,
@@ -980,10 +1062,10 @@ class _PostItemState extends State<PostItem>
     return GestureDetector(
       onLongPress: () {
         HapticFeedback.heavyImpact();
-        setState(() => _isLongPressInProgress = true);
+        _safeSetState(() => _isLongPressInProgress = true);
         _showPostOptions();
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) setState(() => _isLongPressInProgress = false);
+          _safeSetState(() => _isLongPressInProgress = false);
         });
       },
       onDoubleTapDown: (TapDownDetails details) {
@@ -994,12 +1076,12 @@ class _PostItemState extends State<PostItem>
           final localPosition = box.globalToLocal(details.globalPosition);
           if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
               localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
-            setState(() => _tapPosition = localPosition);
+            _safeSetState(() => _tapPosition = localPosition);
           } else {
-            setState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
+            _safeSetState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
           }
         } else {
-          setState(() => _tapPosition = const Offset(150, 300));
+          _safeSetState(() => _tapPosition = const Offset(150, 300));
         }
       },
       onDoubleTap: _handleDoubleTap,
@@ -1107,7 +1189,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 IMAGE BUILDERS - БЕЗ РАЗМЫТИЯ
+  // 🔥 IMAGE BUILDERS
   // ============================================================
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
@@ -1133,7 +1215,7 @@ class _PostItemState extends State<PostItem>
                     fadeOutDuration: Duration.zero,
                     placeholderFadeInDuration: Duration.zero,
                     placeholder: (context, url) => Container(
-                      color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+                      color: Colors.black,
                     ),
                     errorWidget: (context, url, error) => Container(
                       color: Colors.black,
@@ -1182,7 +1264,7 @@ class _PostItemState extends State<PostItem>
                   fadeOutDuration: Duration.zero,
                   placeholderFadeInDuration: Duration.zero,
                   placeholder: (context, url) => Container(
-                    color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+                    color: Colors.black,
                   ),
                   errorWidget: (context, url, error) => Container(
                     color: Colors.black,
@@ -1223,7 +1305,7 @@ class _PostItemState extends State<PostItem>
       allowImplicitScrolling: true,
       onPageChanged: (index) {
         if (!mounted) return;
-        setState(() {
+        _safeSetState(() {
           _currentCarouselIndex = index;
           for (int i = 0; i < _imageUrls.length; i++) {
             _showTagsForCarouselIndex[i] = false;
@@ -1273,7 +1355,7 @@ class _PostItemState extends State<PostItem>
               fadeOutDuration: Duration.zero,
               placeholderFadeInDuration: Duration.zero,
               placeholder: (context, url) => Container(
-                color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+                color: Colors.black,
               ),
               errorWidget: (context, url, error) => Container(
                 color: Colors.black,
@@ -1320,7 +1402,7 @@ class _PostItemState extends State<PostItem>
             fadeOutDuration: Duration.zero,
             placeholderFadeInDuration: Duration.zero,
             placeholder: (context, url) => Container(
-              color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+              color: Colors.black,
             ),
             errorWidget: (context, url, error) => Container(
               color: Colors.black,
@@ -1509,7 +1591,7 @@ class _PostItemState extends State<PostItem>
           if (caption.isNotEmpty) ...[
             const SizedBox(height: 12),
             GestureDetector(
-              onTap: () => setState(() => _isExpanded = !_isExpanded),
+              onTap: () => _safeSetState(() => _isExpanded = !_isExpanded),
               child: AnimatedSize(
                 duration: const Duration(milliseconds: 400),
                 curve: Curves.easeOutCubic,
@@ -1578,7 +1660,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS (УВЕЛИЧЕНЫ)
+  // 🔥 ACTION BUTTONS
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
@@ -1655,6 +1737,7 @@ class _PostItemState extends State<PostItem>
           .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
           .toList();
       final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+      final isTagsVisible = _showTagsForCarouselIndex[_currentCarouselIndex] ?? false;
 
       return SizedBox(
         width: 56,
@@ -1684,6 +1767,10 @@ class _PostItemState extends State<PostItem>
               scaleAnimation: _saveIconScale,
               iconSize: 32,
             ),
+            
+            // ============================================================
+            // 🔥 БЛОК ТЕГОВ
+            // ============================================================
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 18),
               GestureDetector(
@@ -1691,12 +1778,65 @@ class _PostItemState extends State<PostItem>
                   HapticFeedback.mediumImpact();
                   _toggleTagsForCarouselIndex(_currentCarouselIndex);
                 },
-                child: const SizedBox(
+                child: SizedBox(
                   width: 40,
-                  child: Icon(
-                    Icons.auto_awesome,
-                    color: Colors.white,
-                    size: 32,
+                  height: 40,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 🌟 1. МЯГКИЙ БЕЛЫЙ ВНЕШНИЙ ОРЕОЛ
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        opacity: isTagsVisible ? 0.9 : 0.6,
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                            sigmaX: isTagsVisible ? 14 : 9,
+                            sigmaY: isTagsVisible ? 14 : 9,
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white,
+                            size: 36,
+                          ),
+                        ),
+                      ),
+                      // 🌟 2. ЯРКИЙ БЕЛЫЙ ЦЕНТРАЛЬНЫЙ ПОДСВЕТ
+                      AnimatedOpacity(
+                        duration: const Duration(milliseconds: 300),
+                        opacity: isTagsVisible ? 1.0 : 0.8,
+                        child: ImageFiltered(
+                          imageFilter: ImageFilter.blur(
+                            sigmaX: isTagsVisible ? 5 : 3,
+                            sigmaY: isTagsVisible ? 5 : 3,
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome,
+                            color: Colors.white,
+                            size: 34,
+                          ),
+                        ),
+                      ),
+                      // 🌈 3. ОСНОВНАЯ ИКОНКА
+                      ShaderMask(
+                        shaderCallback: (Rect bounds) {
+                          return const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFFFFFFF),
+                              Color(0xFFFFFFFF),
+                              Color(0xFFFFFDE7),
+                            ],
+                            stops: [0.0, 0.6, 1.0],
+                          ).createShader(bounds);
+                        },
+                        child: const Icon(
+                          Icons.auto_awesome,
+                          color: Colors.white,
+                          size: 32,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -1727,7 +1867,7 @@ class _PostItemState extends State<PostItem>
             ElevatedButton(
               onPressed: () {
                 if (!mounted) return;
-                setState(() => _hasImageError = false);
+                _safeSetState(() => _hasImageError = false);
               },
               child: const Text("Retry"),
             ),
@@ -1782,7 +1922,7 @@ class _PostItemState extends State<PostItem>
                       memCacheWidth: 300,
                       memCacheHeight: 300,
                       placeholder: (context, url) => Container(
-                        color: Colors.grey[300], // 🔥 ПРОСТО СЕРЫЙ ФОН
+                        color: Colors.grey[300],
                       ),
                       errorWidget: (context, url, error) => Container(
                         color: Colors.grey[300],
@@ -1843,7 +1983,7 @@ class _PostItemState extends State<PostItem>
             width: double.infinity,
             height: double.infinity,
             placeholder: (context, url) => Container(
-              color: Colors.grey[900], // 🔥 ПРОСТО ТЕМНЫЙ ФОН
+              color: Colors.grey[900],
             ),
             errorWidget: (context, url, error) => Container(
               color: Colors.grey[900],
@@ -1862,6 +2002,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 BUILD
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1869,32 +2012,15 @@ class _PostItemState extends State<PostItem>
     if (_isVideoPost()) {
       return RepaintBoundary(
         child: VisibilityDetector(
-          key: Key('video_${widget.post['id']}'),
+          key: ValueKey('video_${widget.post['id']}'),
           onVisibilityChanged: _onVisibilityChanged,
-          child: widget.isFullScreen ? _buildFullScreenVideoPost() : _buildPreviewPost(),
+          child: widget.isFullScreen 
+              ? _buildFullScreenVideoPost() 
+              : _buildPreviewPost(),
         ),
       );
     }
     
     return widget.isFullScreen ? _buildFullScreenPost() : _buildPreviewPost();
-  }
-
-  @override
-  void dispose() {
-    if (_didCallPostVisible && widget.onPostHidden != null) {
-      widget.onPostHidden!.call();
-    }
-    disposeActions();
-    _followSubscription?.cancel();
-    _heartAnimationController.dispose();
-    _likeIconController.dispose();
-    _saveIconController.dispose();
-    _followAnimationController.dispose();
-    
-    if (_isCarousel) {
-      _carouselController.dispose();
-    }
-    _avatarCache.clear();
-    super.dispose();
   }
 }

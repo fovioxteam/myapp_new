@@ -51,7 +51,7 @@ dependencies:
   shared_preferences: ^2.2.2
   hive: ^2.2.3
   hive_flutter: ^1.1.0
-  path_provider: ^2.1.0
+  path_provider: ^2.1.6
 
   # Permissions & Sharing
   permission_handler: ^12.0.1
@@ -92,6 +92,7 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_native_event_loop: ^1.0.9
   ffmpeg_kit_flutter_new_min: ^3.6.2
+  flutter_cache_manager: ^3.3.1
 
 dependency_overrides:
   http: ^1.0.0

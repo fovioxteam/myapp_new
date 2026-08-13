@@ -5,6 +5,7 @@ import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get/get.dart';
 import '../controllers/post_controller.dart';
+import '../services/video_cache_service.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
@@ -35,7 +36,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   bool _isPausedByUser = false;
 
   bool _showThumbnail = true;
-  double _thumbnailOpacity = 1.0;
   bool _isLoading = true;
 
   @override
@@ -58,7 +58,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _controller = null;
       _isInitialized = false;
       _showThumbnail = true;
-      _thumbnailOpacity = 1.0;
       _isLoading = true;
       _initVideo();
     }
@@ -91,48 +90,42 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   Future<void> _initVideo() async {
     try {
+      print('📹 [VIDEO] Initializing: ${widget.videoUrl}');
+
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
         videoPlayerOptions: VideoPlayerOptions(
           mixWithOthers: true,
-          allowBackgroundPlayback: false,
         ),
       );
 
-      // 1. Инициализируем плеер
       await _controller!.initialize();
+      print('✅ [VIDEO] Controller initialized: ${_controller!.value.size}');
+
+      await _controller!.setVolume(1.0);
       await _controller!.setLooping(true);
 
       if (!mounted) return;
 
-      // 2. Ставим на автовопроизведение только если экран виден
       if (widget.isVisible) {
         await _controller!.play();
         _isPlaying = true;
+        print('▶️ [VIDEO] Playing');
       } else {
         _isPlaying = false;
+        print('⏸️ [VIDEO] Paused');
       }
 
-      // 3. Мгновенно обновляем состояние виджета (видео уже рисует 1-й кадр)
       setState(() {
         _isInitialized = true;
         _isLoading = false;
+        _showThumbnail = false;
       });
 
-      // 4. Мягко убираем тамбнейл без искусственных пауза-задержек
-      if (_showThumbnail) {
-        setState(() {
-          _thumbnailOpacity = 0.0;
-        });
-        await Future.delayed(const Duration(milliseconds: 200));
-        if (mounted) {
-          setState(() {
-            _showThumbnail = false;
-          });
-        }
-      }
+      print('✅ [VIDEO] Ready');
+
     } catch (e) {
-      print('❌ [VIDEO] Error: $e');
+      print('❌ [VIDEO] Error initializing controller: $e');
       if (mounted) {
         setState(() {
           _isInitialized = false;
@@ -164,6 +157,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   @override
   void dispose() {
+    print('🗑️ [VIDEO] Disposing');
     _controller?.dispose();
     super.dispose();
   }
@@ -175,6 +169,9 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     final isPreloaded =
         Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
 
+    // 🔥 ПРОВЕРЯЕМ, ЕСЛИ ВИДЕО ИНИЦИАЛИЗИРОВАНО
+    final bool hasVideo = _isInitialized && _controller != null;
+
     return GestureDetector(
       onTap: _togglePlayback,
       child: Container(
@@ -183,21 +180,22 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
-            // ✅ ВИДЕО (Плеер снизу, готов сразу)
-            if (_isInitialized && _controller != null)
-              Center(
-                child: AspectRatio(
-                  aspectRatio: _controller!.value.aspectRatio,
-                  child: VideoPlayer(_controller!),
+            // ✅ ВИДЕОПЛЕЕР - ЗАНИМАЕТ ВСЕ ДОСТУПНОЕ ПРОСТРАНСТВО
+            if (hasVideo)
+              Positioned.fill(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: _controller!.value.size.width,
+                    height: _controller!.value.size.height,
+                    child: VideoPlayer(_controller!),
+                  ),
                 ),
               ),
 
-            // ✅ ТАМБНЕЙЛ (Поверх видео, плавно исчезает)
+            // ✅ ТАМБНЕЙЛ
             if (hasThumbnail && _showThumbnail)
-              AnimatedOpacity(
-                opacity: _thumbnailOpacity,
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOut,
+              Positioned.fill(
                 child: CachedNetworkImage(
                   imageUrl: widget.thumbnailUrl!,
                   fit: BoxFit.cover,
@@ -205,8 +203,11 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                   errorWidget: (context, url, error) => Container(
                     color: Colors.black,
                     child: const Center(
-                      child: Icon(Icons.broken_image,
-                          color: Colors.grey, size: 40),
+                      child: Icon(
+                        Icons.broken_image,
+                        color: Colors.grey,
+                        size: 40,
+                      ),
                     ),
                   ),
                 ),
@@ -233,14 +234,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 widget.showControls &&
                 !_wasStoppedByScroll &&
                 _isInitialized)
-              AnimatedOpacity(
-                opacity: 0.85,
-                duration: const Duration(milliseconds: 150),
-                child: Icon(
-                  Icons.play_arrow,
-                  color: Colors.grey.shade400.withOpacity(0.85),
-                  size: 110,
-                ),
+              Icon(
+                Icons.play_arrow,
+                color: Colors.grey.shade400.withOpacity(0.85),
+                size: 110,
               ),
           ],
         ),

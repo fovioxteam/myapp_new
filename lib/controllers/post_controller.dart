@@ -1,3 +1,5 @@
+// lib/controllers/post_controller.dart
+
 import 'dart:async';
 import 'package:get/get.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -6,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import '../services/recommendation_service.dart';
 import '../services/r2_service.dart';
+import '../services/video_cache_service.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 class PostController extends GetxController {
@@ -39,11 +42,14 @@ class PostController extends GetxController {
   static const int maxAuthorCache = 200;
   static const int maxImageCache = 200;
 
-  // 🔥 КЭШ ДЛЯ ВИДЕО (предзагрузка)
+  // 🔥 КЭШ ДЛЯ ВИДЕО (предзагрузка в памяти)
   static const int _maxVideoCache = 15;
   final Set<String> _preloadedVideos = {};
   final Map<String, DateTime> _videoCacheTime = {};
   final Map<String, VideoPlayerController> _videoControllers = {};
+
+  // 🔥 СЕРВИС ДЛЯ ДИСКОВОГО КЕША ВИДЕО
+  final VideoCacheService _videoCacheService = VideoCacheService();
 
   // 🔥 ПАГИНАЦИЯ
   DocumentSnapshot? _lastFeedDoc;
@@ -84,7 +90,9 @@ class PostController extends GetxController {
     super.onClose();
   }
 
-  // ========== ЗАГРУЗКА ЛАЙКОВ/СОХРАНЕНИЙ ==========
+  // ============================================================
+  // 🔥 ЗАГРУЗКА ЛАЙКОВ/СОХРАНЕНИЙ
+  // ============================================================
 
   Future<void> _loadUserInteractions() async {
     final userId = _auth.currentUser?.uid;
@@ -136,7 +144,9 @@ class PostController extends GetxController {
     }
   }
 
-  // ========== 🔥 ПОЛУЧЕНИЕ ДАННЫХ АВТОРА С КЭШИРОВАНИЕМ ==========
+  // ============================================================
+  // 🔥 ПОЛУЧЕНИЕ ДАННЫХ АВТОРА С КЭШИРОВАНИЕМ
+  // ============================================================
 
   Future<Map<String, dynamic>> _getAuthorData(String userId) async {
     if (_usernameCache.containsKey(userId) && _avatarUrlCache.containsKey(userId)) {
@@ -169,7 +179,9 @@ class PostController extends GetxController {
     };
   }
 
-  // ========== МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ КЭША ==========
+  // ============================================================
+  // 🔥 МЕТОДЫ ДЛЯ ОБНОВЛЕНИЯ КЭША
+  // ============================================================
 
   void updateAvatarInCache(String userId, String newAvatarUrl) {
     _avatarUrlCache[userId] = newAvatarUrl;
@@ -226,7 +238,9 @@ class PostController extends GetxController {
     updateAvatarInCache(userId, newAvatarUrl);
   }
 
-  // ========== 🔥 ЕДИНЫЙ ПРОВАЙДЕР ДЛЯ ИЗОБРАЖЕНИЙ ==========
+  // ============================================================
+  // 🔥 ИЗОБРАЖЕНИЯ
+  // ============================================================
   
   ImageProvider getImageProvider(String url, {int width = 1080, int height = 1920}) {
     if (_imageProviderCache.containsKey(url)) {
@@ -240,8 +254,6 @@ class PostController extends GetxController {
     _imageProviderCache[url] = provider;
     return provider;
   }
-  
-  // ========== 🔥 МЕТОД ДЛЯ ПОЛУЧЕНИЯ КЭШИРОВАННОЙ МИНИАТЮРЫ ПОИСКА ==========
   
   Widget getSearchThumbnail(String postId, String imageUrl, VoidCallback onTap) {
     if (_searchThumbnailCache.containsKey(postId)) {
@@ -344,43 +356,86 @@ class PostController extends GetxController {
   }
 
   // ============================================================
-  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО
+  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО (ОПТИМИЗИРОВАННАЯ)
   // ============================================================
   
+  /// 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ПАМЯТЬ + НА ДИСК
   void preloadVideo(String videoUrl) {
-    if (videoUrl.isEmpty || _preloadedVideos.contains(videoUrl)) return;
+    if (videoUrl.isEmpty) return;
     
-    _preloadedVideos.add(videoUrl);
-    _videoCacheTime[videoUrl] = DateTime.now();
-    
-    print('📹 [PRELOAD] Preloading video: $videoUrl');
-    
-    try {
-      final controller = VideoPlayerController.networkUrl(
-        Uri.parse(videoUrl),
-        videoPlayerOptions: VideoPlayerOptions(
-          mixWithOthers: true,
-        ),
-      );
+    // 🔥 1. ПРЕДЗАГРУЗКА В ПАМЯТЬ (для быстрого доступа)
+    if (!_preloadedVideos.contains(videoUrl)) {
+      _preloadedVideos.add(videoUrl);
+      _videoCacheTime[videoUrl] = DateTime.now();
       
-      _videoControllers[videoUrl] = controller;
+      print('📹 [PRELOAD] Preloading video in memory: $videoUrl');
       
-      controller.initialize().then((_) {
-        print('✅ [PRELOAD] Video preloaded: $videoUrl');
-        // Не держим контроллер, просто инициализируем для кэша
-        controller.dispose();
-        _videoControllers.remove(videoUrl);
-      }).catchError((e) {
-        print('❌ [PRELOAD] Failed to preload: $e');
+      try {
+        final controller = VideoPlayerController.networkUrl(
+          Uri.parse(videoUrl),
+          videoPlayerOptions: VideoPlayerOptions(
+            mixWithOthers: true,
+          ),
+        );
+        
+        _videoControllers[videoUrl] = controller;
+        
+        controller.initialize().then((_) {
+          print('✅ [PRELOAD] Video preloaded in memory: $videoUrl');
+          controller.dispose();
+          _videoControllers.remove(videoUrl);
+        }).catchError((e) {
+          print('❌ [PRELOAD] Failed to preload in memory: $e');
+          _preloadedVideos.remove(videoUrl);
+          _videoControllers.remove(videoUrl);
+        });
+      } catch (e) {
+        print('❌ [PRELOAD] Error: $e');
         _preloadedVideos.remove(videoUrl);
-        _videoControllers.remove(videoUrl);
-      });
-    } catch (e) {
-      print('❌ [PRELOAD] Error: $e');
-      _preloadedVideos.remove(videoUrl);
+      }
     }
     
+    // 🔥 2. ПРЕДЗАГРУЗКА НА ДИСК (для будущего использования)
+    // НЕ БЛОКИРУЕМ UI - ЗАПУСКАЕМ В ФОНЕ
+    _videoCacheService.preCacheVideo(videoUrl);
+    
     _cleanVideoCache();
+  }
+  
+  /// 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ЛЕНТЕ (ОГРАНИЧЕННО)
+  void preloadFeedVideos(List<Map<String, dynamic>> posts, {int maxPreload = 5}) {
+    int count = 0;
+    for (var post in posts) {
+      if (count >= maxPreload) break;
+      
+      final mediaType = post['mediaType']?.toString() ?? '';
+      if (mediaType == 'video') {
+        final videoUrl = post['videoUrl']?.toString();
+        if (videoUrl != null && videoUrl.isNotEmpty) {
+          // 🔥 ПРОВЕРЯЕМ, НЕ ПРЕДЗАГРУЖЕНО ЛИ УЖЕ
+          if (!_preloadedVideos.contains(videoUrl)) {
+            preloadVideo(videoUrl);
+            count++;
+            print('📥 [PRECACHE] Preloading video $count/$maxPreload');
+          }
+        }
+      }
+    }
+  }
+  
+  /// 🔥 ПРОВЕРКА: ЗАКЕШИРОВАНО ЛИ ВИДЕО НА ДИСКЕ
+  Future<bool> isVideoCachedOnDisk(String videoUrl) async {
+    return await _videoCacheService.isVideoCached(videoUrl);
+  }
+  
+  /// 🔥 ПОЛУЧЕНИЕ КОНТРОЛЛЕРА ВИДЕО (С КЕШЕМ)
+  Future<VideoPlayerController?> getVideoController(String videoUrl) async {
+    try {
+      return await _videoCacheService.getController(videoUrl);
+    } catch (e) {
+      print('❌ [VIDEO] Error getting controller: $e');
+      return null;
+    }
   }
   
   void _cleanVideoCache() {
@@ -421,26 +476,11 @@ class PostController extends GetxController {
   bool isVideoPreloaded(String videoUrl) {
     return _preloadedVideos.contains(videoUrl);
   }
-  
-  void preloadFeedVideos(List<Map<String, dynamic>> posts, {int maxPreload = 5}) {
-    int count = 0;
-    for (var post in posts) {
-      if (count >= maxPreload) break;
-      
-      final mediaType = post['mediaType']?.toString() ?? '';
-      if (mediaType == 'video') {
-        final videoUrl = post['videoUrl']?.toString();
-        if (videoUrl != null && videoUrl.isNotEmpty) {
-          preloadVideo(videoUrl);
-          count++;
-        }
-      }
-    }
-  }
 
   // ============================================================
   // 🔥 _processPost
   // ============================================================
+  
   Future<Map<String, dynamic>?> _processPost(DocumentSnapshot doc, {bool forceRefresh = false}) async {
     try {
       final data = doc.data() as Map<String, dynamic>;
@@ -587,7 +627,9 @@ class PostController extends GetxController {
     return BoxFit.contain;
   }
 
-  // ========== 🔥 ГЛАВНЫЙ МЕТОД ОБНОВЛЕНИЯ ПОСТА ==========
+  // ============================================================
+  // 🔥 ОБНОВЛЕНИЕ ПОСТА В СПИСКАХ
+  // ============================================================
   
   void _updatePostInAllLists(String postId, Map<String, dynamic> updatedPost) {
     final existingPost = posts[postId];
@@ -671,7 +713,10 @@ class PostController extends GetxController {
     searchPosts.refresh();
   }
 
-  // ========== 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ УДАЛЕНИЯ КОЛЛЕКЦИИ ==========
+  // ============================================================
+  // 🔥 УДАЛЕНИЕ КОЛЛЕКЦИИ
+  // ============================================================
+  
   Future<void> _deleteCollection(String collection, String postId) async {
     final snapshot = await _firestore
         .collection(collection)
@@ -685,6 +730,7 @@ class PostController extends GetxController {
   // ============================================================
   // 🔥 УДАЛЕНИЕ ПОСТА
   // ============================================================
+  
   Future<void> deletePost(String postId) async {
     print('🔥 DELETE START: $postId');
     
@@ -748,6 +794,7 @@ class PostController extends GetxController {
   // ============================================================
   // 🔥 addPostsToStorage
   // ============================================================
+  
   void addPostsToStorage(List<Map<String, dynamic>> newPosts, {bool markAsInFeed = false}) {
     for (var post in newPosts) {
       final postId = post['id']?.toString();
@@ -811,6 +858,7 @@ class PostController extends GetxController {
   // ============================================================
   // 🔥 _syncPostToOriginalLists
   // ============================================================
+  
   void _syncPostToOriginalLists(String postId, Map<String, dynamic> postData) {
     final freshPost = posts[postId];
     if (freshPost == null) return;
@@ -877,7 +925,9 @@ class PostController extends GetxController {
     return post;
   }
 
-  // ========== 🏠 ЗАГРУЗКА FEED ==========
+  // ============================================================
+  // 🔥 ЗАГРУЗКА FEED
+  // ============================================================
 
   Future<List<String>> _getFollowingUsers() async {
     final currentUserId = _auth.currentUser?.uid;
@@ -997,6 +1047,7 @@ class PostController extends GetxController {
   // ============================================================
   // 🔥 loadUserPosts
   // ============================================================
+  
   Future<void> loadUserPosts(String userId, {bool refresh = false}) async {
     if (_userRequestActive[userId] == true) return;
     if (!refresh && _hasMoreUserPosts[userId] == false) return;
@@ -1130,7 +1181,9 @@ class PostController extends GetxController {
     }
   }
 
-  // ========== 🔄 ПОДПИСКА НА ОБНОВЛЕНИЯ ==========
+  // ============================================================
+  // 🔄 ПОДПИСКА НА ОБНОВЛЕНИЯ
+  // ============================================================
 
   void _subscribeToPostUpdates(List<String> postIds) {
     for (var postId in postIds) {
@@ -1160,7 +1213,9 @@ class PostController extends GetxController {
         });
   }
 
-  // ========== ❤️ ЛАЙКИ ==========
+  // ============================================================
+  // ❤️ ЛАЙКИ
+  // ============================================================
 
   Future<void> toggleLike(String postId) async {
     final userId = _auth.currentUser?.uid;
@@ -1219,7 +1274,9 @@ class PostController extends GetxController {
     }
   }
 
-  // ========== 💾 СОХРАНЕНИЯ ==========
+  // ============================================================
+  // 💾 СОХРАНЕНИЯ
+  // ============================================================
 
   Future<void> toggleSave(String postId) async {
     final userId = _auth.currentUser?.uid;
@@ -1272,7 +1329,9 @@ class PostController extends GetxController {
     }
   }
 
-  // ========== 💬 КОММЕНТАРИИ ==========
+  // ============================================================
+  // 💬 КОММЕНТАРИИ
+  // ============================================================
 
   void incrementComments(String postId) {
     final currentPost = posts[postId];
@@ -1292,7 +1351,9 @@ class PostController extends GetxController {
     _updatePostInAllLists(postId, updatedPost);
   }
 
-  // ========== ➕ ДОБАВЛЕНИЕ НОВОГО ПОСТА ==========
+  // ============================================================
+  // ➕ ДОБАВЛЕНИЕ НОВОГО ПОСТА
+  // ============================================================
 
   void addNewPost(Map<String, dynamic> postData) {
     final postId = postData['id'] as String;
@@ -1318,7 +1379,9 @@ class PostController extends GetxController {
     }
   }
 
-  // ========== 🔍 ГЕТТЕРЫ ==========
+  // ============================================================
+  // 🔍 ГЕТТЕРЫ
+  // ============================================================
 
   bool isPostLiked(String postId) => likedPosts[postId] ?? false;
   bool isPostSaved(String postId) => savedPosts[postId] ?? false;
@@ -1348,6 +1411,16 @@ class PostController extends GetxController {
     _preloadedImages.clear();
     _imageProviderCache.clear();
     _searchThumbnailCache.clear();
+    
+    // 🔥 ОЧИСТКА ВИДЕО КЕША В ПАМЯТИ
+    _preloadedVideos.clear();
+    _videoCacheTime.clear();
+    for (var controller in _videoControllers.values) {
+      controller.dispose();
+    }
+    _videoControllers.clear();
+    
+    print('🗑️ [CACHE] All caches cleared');
   }
 
   void clearAvatarCache() {
