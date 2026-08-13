@@ -72,6 +72,8 @@ class VideoCacheService {
 
         final controller = VideoPlayerController.file(fileInfo.file);
         await controller.initialize();
+        // 🔥 ВКЛЮЧАЕМ ЗВУК ДЛЯ КЕШИРОВАННОГО ВИДЕО
+        await controller.setVolume(1.0);
         return controller;
       }
     } catch (e) {
@@ -83,6 +85,8 @@ class VideoCacheService {
     // Возвращаем сетевой контроллер. Стриминг идет нативно плеером
     final controller = VideoPlayerController.networkUrl(Uri.parse(url));
     await controller.initialize();
+    // 🔥 ВКЛЮЧАЕМ ЗВУК ДЛЯ СЕТЕВОГО ВИДЕО
+    await controller.setVolume(1.0);
     return controller;
   }
 

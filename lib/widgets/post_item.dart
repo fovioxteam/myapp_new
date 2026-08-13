@@ -149,6 +149,9 @@ class _PostItemState extends State<PostItem>
   
   static final Map<String, Widget> _previewWidgetCache = {};
 
+  // 🔥 СТАТИЧЕСКИЙ КЕШ ДЛЯ ВИДЕО КОНТРОЛЛЕРОВ
+  static final Map<String, VideoPlayerController> _videoControllerCache = {};
+
   // ============================================================
   // 🔥 ФЛАГИ ВИДИМОСТИ ДЛЯ ВИДЕО
   // ============================================================
@@ -246,6 +249,12 @@ class _PostItemState extends State<PostItem>
     } catch (e) {}
     
     _pauseVideoOnLeave();
+    
+    // 🔥 ОЧИЩАЕМ КЕШ ВИДЕО КОНТРОЛЛЕРОВ
+    for (var controller in _videoControllerCache.values) {
+      controller.dispose();
+    }
+    _videoControllerCache.clear();
     
     if (_didCallPostVisible && widget.onPostHidden != null) {
       widget.onPostHidden!.call();
@@ -547,9 +556,14 @@ class _PostItemState extends State<PostItem>
     }
   }
 
+  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД ДЛЯ iOS
   void _toggleTagsForCarouselIndex(int index) {
-    _safeSetState(() {
-      _showTagsForCarouselIndex[index] = !(_showTagsForCarouselIndex[index] ?? false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        final current = _showTagsForCarouselIndex[index] ?? false;
+        _showTagsForCarouselIndex[index] = !current;
+      });
     });
   }
 
@@ -878,7 +892,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 BUILD VIDEO PLAYER CONTENT
+  // 🔥 BUILD VIDEO PLAYER CONTENT - С КЕШЕМ КОНТРОЛЛЕРОВ
   // ============================================================
   Widget _buildVideoPlayerContent() {
     final videoUrl = _getVideoUrl();
@@ -897,6 +911,24 @@ class _PostItemState extends State<PostItem>
           ),
         ),
       );
+    }
+    
+    // 🔥 ПРОВЕРЯЕМ, ЕСТЬ ЛИ КОНТРОЛЛЕР В КЕШЕ
+    if (_videoControllerCache.containsKey(videoUrl)) {
+      final controller = _videoControllerCache[videoUrl];
+      if (controller != null && controller.value.isInitialized) {
+        print('⚡ [VIDEO] Using CACHED controller for: $videoUrl');
+        return VideoPlayerWidget(
+          videoUrl: videoUrl,
+          showControls: true,
+          isVisible: _wasVisible && _isRouteVisible,
+          thumbnailUrl: _getThumbnailUrl(),
+          fit: _getFitModeForIndex(_currentCarouselIndex),
+          existingController: controller,
+        );
+      } else {
+        _videoControllerCache.remove(videoUrl);
+      }
     }
     
     final BoxFit fit = _getFitModeForIndex(_currentCarouselIndex);
@@ -1769,74 +1801,76 @@ class _PostItemState extends State<PostItem>
             ),
             
             // ============================================================
-            // 🔥 БЛОК ТЕГОВ
+            // 🔥 БЛОК ТЕГОВ - С FIX ДЛЯ iOS
             // ============================================================
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 18),
-              GestureDetector(
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  _toggleTagsForCarouselIndex(_currentCarouselIndex);
-                },
-                child: SizedBox(
-                  width: 40,
-                  height: 40,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // 🌟 1. МЯГКИЙ БЕЛЫЙ ВНЕШНИЙ ОРЕОЛ
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 300),
-                        opacity: isTagsVisible ? 0.9 : 0.6,
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(
-                            sigmaX: isTagsVisible ? 14 : 9,
-                            sigmaY: isTagsVisible ? 14 : 9,
+              RepaintBoundary(
+                child: GestureDetector(
+                  onTap: () {
+                    HapticFeedback.mediumImpact();
+                    _toggleTagsForCarouselIndex(_currentCarouselIndex);
+                  },
+                  child: SizedBox(
+                    width: 40,
+                    height: 40,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        // 🌟 МЯГКИЙ БЕЛЫЙ ВНЕШНИЙ ОРЕОЛ
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 300),
+                          opacity: isTagsVisible ? 0.9 : 0.6,
+                          child: ImageFiltered(
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: isTagsVisible ? 14 : 9,
+                              sigmaY: isTagsVisible ? 14 : 9,
+                            ),
+                            child: const Icon(
+                              Icons.auto_awesome,
+                              color: Colors.white,
+                              size: 36,
+                            ),
                           ),
+                        ),
+                        // 🌟 ЯРКИЙ БЕЛЫЙ ЦЕНТРАЛЬНЫЙ ПОДСВЕТ
+                        AnimatedOpacity(
+                          duration: const Duration(milliseconds: 300),
+                          opacity: isTagsVisible ? 1.0 : 0.8,
+                          child: ImageFiltered(
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: isTagsVisible ? 5 : 3,
+                              sigmaY: isTagsVisible ? 5 : 3,
+                            ),
+                            child: const Icon(
+                              Icons.auto_awesome,
+                              color: Colors.white,
+                              size: 34,
+                            ),
+                          ),
+                        ),
+                        // 🌈 ОСНОВНАЯ ИКОНКА
+                        ShaderMask(
+                          shaderCallback: (Rect bounds) {
+                            return const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFFFFFFFF),
+                                Color(0xFFFFFFFF),
+                                Color(0xFFFFFDE7),
+                              ],
+                              stops: [0.0, 0.6, 1.0],
+                            ).createShader(bounds);
+                          },
                           child: const Icon(
                             Icons.auto_awesome,
                             color: Colors.white,
-                            size: 36,
+                            size: 32,
                           ),
                         ),
-                      ),
-                      // 🌟 2. ЯРКИЙ БЕЛЫЙ ЦЕНТРАЛЬНЫЙ ПОДСВЕТ
-                      AnimatedOpacity(
-                        duration: const Duration(milliseconds: 300),
-                        opacity: isTagsVisible ? 1.0 : 0.8,
-                        child: ImageFiltered(
-                          imageFilter: ImageFilter.blur(
-                            sigmaX: isTagsVisible ? 5 : 3,
-                            sigmaY: isTagsVisible ? 5 : 3,
-                          ),
-                          child: const Icon(
-                            Icons.auto_awesome,
-                            color: Colors.white,
-                            size: 34,
-                          ),
-                        ),
-                      ),
-                      // 🌈 3. ОСНОВНАЯ ИКОНКА
-                      ShaderMask(
-                        shaderCallback: (Rect bounds) {
-                          return const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFFFFFFFF),
-                              Color(0xFFFFFFFF),
-                              Color(0xFFFFFDE7),
-                            ],
-                            stops: [0.0, 0.6, 1.0],
-                          ).createShader(bounds);
-                        },
-                        child: const Icon(
-                          Icons.auto_awesome,
-                          color: Colors.white,
-                          size: 32,
-                        ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),

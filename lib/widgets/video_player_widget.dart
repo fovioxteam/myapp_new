@@ -13,6 +13,7 @@ class VideoPlayerWidget extends StatefulWidget {
   final bool isVisible;
   final String? thumbnailUrl;
   final BoxFit fit;
+  final VideoPlayerController? existingController;
 
   const VideoPlayerWidget({
     super.key,
@@ -21,6 +22,7 @@ class VideoPlayerWidget extends StatefulWidget {
     this.isVisible = true,
     this.thumbnailUrl,
     this.fit = BoxFit.cover,
+    this.existingController,
   });
 
   @override
@@ -90,6 +92,25 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   Future<void> _initVideo() async {
     try {
+      // 🔥 ЕСЛИ ПЕРЕДАН ГОТОВЫЙ КОНТРОЛЛЕР - ИСПОЛЬЗУЕМ ЕГО
+      if (widget.existingController != null) {
+        _controller = widget.existingController;
+        _isInitialized = true;
+        _isLoading = false;
+        _showThumbnail = false;
+        
+        if (widget.isVisible && !_isPlaying) {
+          await _controller!.play();
+          _isPlaying = true;
+        }
+        
+        print('⚡ [VIDEO] Using EXISTING controller');
+        if (mounted) {
+          setState(() {});
+        }
+        return;
+      }
+
       print('📹 [VIDEO] Initializing: ${widget.videoUrl}');
 
       _controller = VideoPlayerController.networkUrl(
@@ -107,6 +128,14 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
       if (!mounted) return;
 
+      // 🔥 ПОКАЗЫВАЕМ ТАМБНЕЙЛ ПОКА ВИДЕО НЕ ЗАГРУЗИЛОСЬ
+      if (widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty) {
+        setState(() {
+          _showThumbnail = true;
+          _isLoading = false;
+        });
+      }
+
       if (widget.isVisible) {
         await _controller!.play();
         _isPlaying = true;
@@ -116,9 +145,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         print('⏸️ [VIDEO] Paused');
       }
 
+      // 🔥 ЖДЕМ 100ms ЧТОБЫ ВИДЕО УСПЕЛО ОТРИСОВАТЬСЯ
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      // 🔥 СКРЫВАЕМ ТАМБНЕЙЛ
       setState(() {
         _isInitialized = true;
-        _isLoading = false;
         _showThumbnail = false;
       });
 
@@ -130,6 +162,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         setState(() {
           _isInitialized = false;
           _isLoading = false;
+          _showThumbnail = false;
         });
       }
     }
@@ -158,7 +191,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void dispose() {
     print('🗑️ [VIDEO] Disposing');
-    _controller?.dispose();
+    // 🔥 НЕ УНИЧТОЖАЕМ КОНТРОЛЛЕР, ЕСЛИ ОН ПЕРЕДАН ИЗВНЕ
+    if (widget.existingController == null) {
+      _controller?.dispose();
+    }
     super.dispose();
   }
 
@@ -169,9 +205,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     final isPreloaded =
         Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
 
-    // 🔥 ПРОВЕРЯЕМ, ЕСЛИ ВИДЕО ИНИЦИАЛИЗИРОВАНО
-    final bool hasVideo = _isInitialized && _controller != null;
-
     return GestureDetector(
       onTap: _togglePlayback,
       child: Container(
@@ -180,11 +213,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
-            // ✅ ВИДЕОПЛЕЕР - ЗАНИМАЕТ ВСЕ ДОСТУПНОЕ ПРОСТРАНСТВО
-            if (hasVideo)
+            // ✅ ВИДЕОПЛЕЕР
+            if (_isInitialized && _controller != null)
               Positioned.fill(
                 child: FittedBox(
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.center,
                   child: SizedBox(
                     width: _controller!.value.size.width,
                     height: _controller!.value.size.height,
@@ -193,20 +227,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // ✅ ТАМБНЕЙЛ
+            // ✅ ТАМБНЕЙЛ С ПЛАВНЫМ ИСЧЕЗНОВЕНИЕМ
             if (hasThumbnail && _showThumbnail)
               Positioned.fill(
-                child: CachedNetworkImage(
-                  imageUrl: widget.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: Colors.black),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.black,
-                    child: const Center(
-                      child: Icon(
-                        Icons.broken_image,
-                        color: Colors.grey,
-                        size: 40,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: _showThumbnail ? 1.0 : 0.0,
+                  child: CachedNetworkImage(
+                    imageUrl: widget.thumbnailUrl!,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => Container(color: Colors.black),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.black,
+                      child: const Center(
+                        child: Icon(
+                          Icons.broken_image,
+                          color: Colors.grey,
+                          size: 40,
+                        ),
                       ),
                     ),
                   ),

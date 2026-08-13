@@ -630,8 +630,10 @@ class _SearchScreenState extends State<SearchScreen>
   Widget build(BuildContext context) {
     super.build(context);
     
+    // 🔥 ИСПРАВЛЕНИЕ: resizeToAvoidBottomInset: false - клавиатура не поднимает таббар
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
           Container(
@@ -1004,124 +1006,124 @@ class _SearchScreenState extends State<SearchScreen>
   // 🔥 _buildPostsSearchResults - ВСЕ ПОСТЫ КАК КАРТИНКИ
   // ============================================================
   Widget _buildPostsSearchResults() {
-  if (_posts.isEmpty) {
-    print('🔍 [SEARCH] No posts found, showing empty state');
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.grid_on, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 20),
-          Text(
-            _debouncedSearchQuery.startsWith('#')
-                ? "No posts with #${_debouncedSearchQuery.replaceAll('#', '')}"
-                : "No posts found for '$_debouncedSearchQuery'",
-            style: TextStyle(color: Colors.grey[600], fontSize: 18, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "Try a different search term",
-            style: TextStyle(color: Colors.grey[500], fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: _clearSearch,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+    if (_posts.isEmpty) {
+      print('🔍 [SEARCH] No posts found, showing empty state');
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.grid_on, size: 80, color: Colors.grey[300]),
+            const SizedBox(height: 20),
+            Text(
+              _debouncedSearchQuery.startsWith('#')
+                  ? "No posts with #${_debouncedSearchQuery.replaceAll('#', '')}"
+                  : "No posts found for '$_debouncedSearchQuery'",
+              style: TextStyle(color: Colors.grey[600], fontSize: 18, fontWeight: FontWeight.w500),
             ),
-            child: const Text("Clear Search"),
-          ),
-        ],
-      ),
-    );
-  }
-
-  print('🔍 [SEARCH] Building posts grid with ${_posts.length} posts');
-
-  return GridView.builder(
-    controller: _scrollController,
-    padding: const EdgeInsets.only(
-      left: 1,
-      right: 1,
-      top: 1,
-      bottom: 80,
-    ),
-    physics: const BouncingScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2, // 🔥 2 ПОСТА В РЯД
-      crossAxisSpacing: 1,
-      mainAxisSpacing: 1,
-      childAspectRatio: 0.75,
-    ),
-    itemCount: _posts.length,
-    itemBuilder: (context, index) {
-      final post = _posts[index];
-      final imageUrl = _getThumbnailUrl(post);
-      final postId = post['id']?.toString() ?? '';
-      
-      final isVideo = _isVideoPost(post);
-      final isPhoto = !isVideo;
-
-      return GestureDetector(
-        onTap: () => _openPostDetail(index),
-        child: Container(
-          color: Colors.grey[200],
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (imageUrl.isNotEmpty && imageUrl.startsWith('http'))
-                CachedNetworkImage(
-                  key: ValueKey('search_post_${postId}_$imageUrl'),
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  memCacheWidth: 400,
-                  filterQuality: FilterQuality.high,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  placeholder: (context, url) => Container(color: Colors.grey[300]),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.grey[300],
-                    child: const Center(
-                      child: Icon(Icons.broken_image_outlined, color: Colors.grey),
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  color: Colors.grey[300],
-                  child: const Center(
-                    child: Icon(Icons.image_not_supported_outlined, color: Colors.grey),
-                  ),
-                ),
-
-              if (isPhoto)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: const Icon(
-                    CupertinoIcons.square_fill_on_square_fill,
-                    color: Colors.white,
-                    size: 18,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black45,
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          ),
+            const SizedBox(height: 8),
+            Text(
+              "Try a different search term",
+              style: TextStyle(color: Colors.grey[500], fontSize: 14),
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton(
+              onPressed: _clearSearch,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: const Text("Clear Search"),
+            ),
+          ],
         ),
       );
-    },
-  );
-}
+    }
+
+    print('🔍 [SEARCH] Building posts grid with ${_posts.length} posts');
+
+    return GridView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.only(
+        left: 1,
+        right: 1,
+        top: 1,
+        bottom: 80,
+      ),
+      physics: const BouncingScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 1,
+        mainAxisSpacing: 1,
+        childAspectRatio: 0.75,
+      ),
+      itemCount: _posts.length,
+      itemBuilder: (context, index) {
+        final post = _posts[index];
+        final imageUrl = _getThumbnailUrl(post);
+        final postId = post['id']?.toString() ?? '';
+        
+        final isVideo = _isVideoPost(post);
+        final isPhoto = !isVideo;
+
+        return GestureDetector(
+          onTap: () => _openPostDetail(index),
+          child: Container(
+            color: Colors.grey[200],
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (imageUrl.isNotEmpty && imageUrl.startsWith('http'))
+                  CachedNetworkImage(
+                    key: ValueKey('search_post_${postId}_$imageUrl'),
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    memCacheWidth: 400,
+                    filterQuality: FilterQuality.high,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    placeholder: (context, url) => Container(color: Colors.grey[300]),
+                    errorWidget: (context, url, error) => Container(
+                      color: Colors.grey[300],
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined, color: Colors.grey),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    color: Colors.grey[300],
+                    child: const Center(
+                      child: Icon(Icons.image_not_supported_outlined, color: Colors.grey),
+                    ),
+                  ),
+
+                if (isPhoto)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: const Icon(
+                      CupertinoIcons.square_fill_on_square_fill,
+                      color: Colors.white,
+                      size: 18,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black45,
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildErrorState() {
     return Center(
