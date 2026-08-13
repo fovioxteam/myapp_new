@@ -68,7 +68,7 @@ class _FeedScreenState extends State<FeedScreen>
   
   Timer? _preloadTimer;
   Timer? _analyticsTimer;
-  Timer? _preloadDebounceTimer; // 🔥 ДЛЯ ДЕБАУНСА
+  Timer? _preloadDebounceTimer;
 
   final ScrollController _forYouScrollController = ScrollController();
   final ScrollController _followingScrollController = ScrollController();
@@ -87,6 +87,10 @@ class _FeedScreenState extends State<FeedScreen>
   Timer? _updateDebounceTimer;
   
   Set<String> _currentIds = {};
+
+  // 🔥 ФЛАГИ ДЛЯ ВИДИМОСТИ ВКЛАДОК
+  bool _isForYouVisible = true;
+  bool _isFollowingVisible = false;
 
   bool _listEquals(List<String> a, List<String> b) {
     if (a.length != b.length) return false;
@@ -109,6 +113,18 @@ class _FeedScreenState extends State<FeedScreen>
     StatusBarService().setWhiteStatusBar();
     
     _tabController = TabController(length: 2, vsync: this);
+    
+    // 🔥 СЛУШАЕМ СМЕНУ ВКЛАДКИ
+    _tabController.addListener(() {
+      if (_tabController.indexIsChanging) {
+        final isForYou = _tabController.index == 0;
+        setState(() {
+          _isForYouVisible = isForYou;
+          _isFollowingVisible = !isForYou;
+        });
+        print('🔄 [TAB] Switched to: ${isForYou ? "For You" : "Following"}');
+      }
+    });
     
     _postController.feedPosts.listen((posts) {
       if (!mounted) return;
@@ -160,7 +176,6 @@ class _FeedScreenState extends State<FeedScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 🔥 ПОДПИСЫВАЕМСЯ НА ROUTE OBSERVER
     try {
       MyApp.routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
     } catch (e) {
@@ -170,13 +185,16 @@ class _FeedScreenState extends State<FeedScreen>
 
   @override
   void didPopNext() {
-    // 🔥 ВОЗВРАЩАЕМСЯ НА ЭКРАН - БЕЛЫЕ ИКОНКИ
     StatusBarService().setWhiteStatusBar();
+    // 🔥 ПРИ ВОЗВРАТЕ НА ЭКРАН
+    setState(() {
+      _isForYouVisible = _tabController.index == 0;
+      _isFollowingVisible = _tabController.index == 1;
+    });
   }
 
   @override
   void didPushNext() {
-    // 🔥 УХОДИМ С ЭКРАНА - ЧЕРНЫЕ ИКОНКИ
     StatusBarService().setDarkStatusBar();
   }
 
@@ -185,24 +203,20 @@ class _FeedScreenState extends State<FeedScreen>
     super.didChangeAppLifecycleState(state);
     
     if (state == AppLifecycleState.resumed) {
-      // 🔥 ПРИ ВОЗВРАТЕ В ПРИЛОЖЕНИЕ - БЕЛЫЕ ИКОНКИ
       StatusBarService().setWhiteStatusBar();
     } else if (state == AppLifecycleState.paused) {
-      // 🔥 ПРИ ПАУЗЕ - ЧЕРНЫЕ ИКОНКИ
       StatusBarService().setDarkStatusBar();
     }
   }
 
   @override
   void dispose() {
-    // 🔥 ОТПИСЫВАЕМСЯ ОТ ROUTE OBSERVER
     try {
       MyApp.routeObserver.unsubscribe(this);
     } catch (e) {}
     
     WidgetsBinding.instance.removeObserver(this);
     
-    // 🔥 ВОССТАНАВЛИВАЕМ ЧЕРНЫЕ ИКОНКИ
     StatusBarService().setDarkStatusBar();
     
     _preloadDebounceTimer?.cancel();
@@ -219,7 +233,7 @@ class _FeedScreenState extends State<FeedScreen>
   }
 
   // ============================================================
-  // 🔥 ОПТИМИЗИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ
+  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
   // ============================================================
 
   Future<void> _checkPermissions() async {
@@ -240,7 +254,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ⚡ ОПТИМИЗИРОВАННАЯ ИНИЦИАЛИЗАЦИЯ - ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА
   Future<void> _initializeApp() async {
     if (_isInitialized || !mounted) return;
     _isInitialized = true;
@@ -248,7 +261,6 @@ class _FeedScreenState extends State<FeedScreen>
     setState(() => _isLoading = true);
 
     try {
-      // ⚡ Грузим ПАРАЛЛЕЛЬНО только то, что нужно для быстрого первого экрана
       await Future.wait([
         _postController.loadFeedPosts(refresh: true),
         _loadUserLikes(),
@@ -261,7 +273,6 @@ class _FeedScreenState extends State<FeedScreen>
 
       _preloadFeedVideos();
 
-      // 🚀 Подписки запрашиваем фоново, НЕ блокируя UI
       unawaited(_loadFollowingUsers());
       
     } catch (e) {
@@ -355,10 +366,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА FOLLOWING (ПАРАЛЛЕЛЬНАЯ)
-  // ============================================================
-
   Future<void> _loadFollowingUsers() async {
     final user = _auth.currentUser;
     if (user == null) {
@@ -412,7 +419,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ⚡ ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА ПОСТОВ - ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА
   Future<void> _loadFollowingPosts() async {
     try {
       if (_followingUsers.isEmpty) {
@@ -445,7 +451,6 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded: ${snapshot.docs.length} posts');
       
       if (snapshot.docs.isNotEmpty) {
-        // ⚡ ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА ВСЕХ ДОКУМЕНТОВ
         final processedResults = await Future.wait(
           snapshot.docs.map((doc) => _postController.getProcessedPost(doc)),
         );
@@ -522,7 +527,6 @@ class _FeedScreenState extends State<FeedScreen>
       print('Following posts loaded more: ${snapshot.docs.length}');
       
       if (snapshot.docs.isNotEmpty) {
-        // ⚡ ПАРАЛЛЕЛЬНАЯ ОБРАБОТКА
         final processedResults = await Future.wait(
           snapshot.docs.map((doc) => _postController.getProcessedPost(doc)),
         );
@@ -559,15 +563,10 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ПЛАВНЫЙ onPageChanged С ДЕБАУНСОМ (БЕЗ ФРИЗОВ)
-  // ============================================================
-
   void _handleForYouPageChanged(int page) {
     _currentForYouPage = page;
     _forYouCurrentPage.value = page;
 
-    // ⚡ 1. Дебаунс прелоада и аналитики — не забиваем Main Thread во время свайпа
     _preloadDebounceTimer?.cancel();
     _preloadDebounceTimer = Timer(const Duration(milliseconds: 250), () {
       if (!mounted) return;
@@ -581,7 +580,6 @@ class _FeedScreenState extends State<FeedScreen>
       _preloadNextPosts(page);
     });
 
-    // ⚡ 2. Бесшовная пагинация (триггерится мгновенно)
     final int remainingPosts = _forYouPostIds.length - page;
     if (remainingPosts <= 15 && 
         _postController.hasMoreFeed && 
@@ -703,7 +701,10 @@ class _FeedScreenState extends State<FeedScreen>
   // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПОСТРОЕНИЯ КАРТОЧКИ
   // ============================================================
 
-  Widget _buildPostItem(String postId) {
+  Widget _buildPostItem({
+    required String postId,
+    required bool isVisible,
+  }) {
     final post = _postController.getPostFromStorage(postId);
 
     if (post == null) {
@@ -726,11 +727,12 @@ class _FeedScreenState extends State<FeedScreen>
       savedPosts: _savedPosts,
       onPostVisible: () => _metrics.startWatching(postId),
       onPostHidden: () => _metrics.stopWatching(postId),
+      isVisible: isVisible,
     );
   }
 
   // ============================================================
-  // 🔥 ЧИСТЫЙ _buildForYouContent
+  // 🔥 _buildForYouContent
   // ============================================================
 
   Widget _buildForYouContent() {
@@ -754,13 +756,19 @@ class _FeedScreenState extends State<FeedScreen>
       onPageChanged: _handleForYouPageChanged,
       itemBuilder: (context, index) {
         final postId = _forYouPostIds[index];
-        return _buildPostItem(postId);
+        return RepaintBoundary(
+          key: ValueKey('for_you_$postId'),
+          child: _buildPostItem(
+            postId: postId,
+            isVisible: _isForYouVisible,
+          ),
+        );
       },
     );
   }
 
   // ============================================================
-  // 🔥 _buildFollowingContent (обновлен)
+  // 🔥 _buildFollowingContent
   // ============================================================
 
   Widget _buildFollowingContent() {
@@ -812,7 +820,13 @@ class _FeedScreenState extends State<FeedScreen>
         }
         
         final postId = _followingPostIds[index];
-        return _buildPostItem(postId);
+        return RepaintBoundary(
+          key: ValueKey('following_$postId'),
+          child: _buildPostItem(
+            postId: postId,
+            isVisible: _isFollowingVisible,
+          ),
+        );
       },
     );
   }
@@ -873,12 +887,11 @@ class _FeedScreenState extends State<FeedScreen>
   Widget build(BuildContext context) {
     super.build(context);
     
-    // 🔥 ОБЕРТЫВАЕМ В AnnotatedRegion ДЛЯ ГАРАНТИИ БЕЛЫХ ИКОНОК
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light, // БЕЛЫЕ иконки
-        statusBarBrightness: Brightness.dark, // для iOS
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
         systemNavigationBarColor: Colors.black,
         systemNavigationBarIconBrightness: Brightness.light,
       ),

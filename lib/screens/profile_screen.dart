@@ -1,3 +1,5 @@
+// lib/screens/profile_screen.dart
+
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
@@ -367,7 +369,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       
     } catch (e) {
       print('❌ [ProfileScreen] Error loading saved posts: $e');
-      // 🔥 Устанавливаем флаг, чтобы не пытаться загружать снова
       if (mounted) {
         setState(() {
           _savedPostsLoaded = true;
@@ -435,7 +436,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       
     } catch (e) {
       print('❌ [ProfileScreen] Error loading liked posts: $e');
-      // 🔥 Устанавливаем флаг, чтобы не пытаться загружать снова
       if (mounted) {
         setState(() {
           _likedPostsLoaded = true;
@@ -545,7 +545,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   bool get _isOnline => !_isOffline;
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _initializeData
+  // 🔥 ИСПРАВЛЕННЫЙ _initializeData - С ПРЕДЗАГРУЗКОЙ ВИДЕО
   // ============================================================
   Future<void> _initializeData() async {
     if (_currentUserId.isEmpty) return;
@@ -573,7 +573,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       await _loadUserData(refresh: true);
     }
     
-    // 🔥 ВСЕГДА ЗАГРУЖАЕМ ЛАЙКНУТЫЕ И СОХРАНЕННЫЕ ПРИ СТАРТЕ
+    // 🔥 ЗАГРУЖАЕМ ЛАЙКНУТЫЕ И СОХРАНЕННЫЕ
     try {
       await Future.wait([
         _loadLikedPostsFromFirestore(),
@@ -583,9 +583,18 @@ class _ProfileScreenState extends State<ProfileScreen>
       print('❌ Error loading liked/saved posts: $e');
     }
     
-    // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСКИ
+    // 🔥 ОБНОВЛЯЕМ СПИСКИ
     _refreshLikedPostsFromController();
     _refreshSavedPostsFromController();
+    
+    // ============================================================
+    // 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ПРОФИЛЕ
+    // ============================================================
+    final posts = _postController.userPosts[_currentUserId] ?? [];
+    if (posts.isNotEmpty) {
+      _postController.preloadProfileVideos(posts, maxPreload: 5);
+      print('📥 [ProfileScreen] Preloading videos for ${posts.length} posts');
+    }
     
     print('✅ [ProfileScreen] All data loaded: liked=${_likedPosts.length}, saved=${_savedPosts.length}');
     _isFirstLoad = false;
@@ -616,6 +625,12 @@ class _ProfileScreenState extends State<ProfileScreen>
         await _postController.loadUserPosts(_currentUserId, refresh: refresh);
       } else {
         print('📦 Posts already cached, skipping load');
+      }
+      
+      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ПОСТОВ
+      final posts = _postController.userPosts[_currentUserId] ?? [];
+      if (posts.isNotEmpty) {
+        _postController.preloadProfileVideos(posts, maxPreload: 5);
       }
       
       if (mounted) {
@@ -771,7 +786,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _refreshProfile - ПОЛНОСТЬЮ ОЧИЩАЕТ КЭШ
+  // 🔥 ИСПРАВЛЕННЫЙ _refreshProfile
   // ============================================================
   Future<void> _refreshProfile() async {
     if (!mounted) return;
@@ -810,7 +825,14 @@ class _ProfileScreenState extends State<ProfileScreen>
       _refreshLikedPostsFromController();
       _refreshSavedPostsFromController();
       
-      // 🔥 7. ОБНОВЛЯЕМ UI
+      // 🔥 7. ПРЕДЗАГРУЗКА ВИДЕО
+      final posts = _postController.userPosts[_currentUserId] ?? [];
+      if (posts.isNotEmpty) {
+        _postController.preloadProfileVideos(posts, maxPreload: 5);
+        print('📥 [ProfileScreen] Preloading videos after refresh');
+      }
+      
+      // 🔥 8. ОБНОВЛЯЕМ UI
       if (mounted) {
         setState(() {
           _isFirstLoad = false;
@@ -819,7 +841,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       
       print('✅ [ProfileScreen] Profile refresh completed successfully');
       
-      // 🔥 8. ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ
+      // 🔥 9. ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ
       _showSnackbar('Profile refreshed');
       
     } catch (e) {
@@ -1435,7 +1457,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   Widget build(BuildContext context) {
     super.build(context);
     
-    // 🔥 ПРОВЕРКА ГОСТЯ
     final authService = Get.find<AuthService>();
     if (!authService.isLoggedIn) {
       return const GuestProfileScreen();
