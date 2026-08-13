@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
@@ -14,9 +15,13 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../widgets/post_item.dart';
 import '../services/follow_service.dart';
 import '../services/metrics_service.dart';
+import '../services/status_bar_service.dart';
 import '../controllers/post_controller.dart';
 import 'search_screen.dart';
 import 'upload_screen.dart';
+
+// 🔥 ИМПОРТ ДЛЯ ROUTE OBSERVER
+import '../main.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -26,7 +31,7 @@ class FeedScreen extends StatefulWidget {
 }
 
 class _FeedScreenState extends State<FeedScreen> 
-    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, WidgetsBindingObserver, RouteAware {
   
   @override
   bool get wantKeepAlive => true;
@@ -90,10 +95,17 @@ class _FeedScreenState extends State<FeedScreen>
     return true;
   }
 
+  // ============================================================
+  // 🔥 ЖИЗНЕННЫЙ ЦИКЛ СТАТУС БАРА
+  // ============================================================
+  
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // 🔥 УСТАНАВЛИВАЕМ БЕЛЫЕ ИКОНКИ
+    StatusBarService().setWhiteStatusBar();
     
     _tabController = TabController(length: 2, vsync: this);
     
@@ -144,6 +156,88 @@ class _FeedScreenState extends State<FeedScreen>
     _logScreenView();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 🔥 ПОДПИСЫВАЕМСЯ НА ROUTE OBSERVER
+    try {
+      MyApp.routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+    } catch (e) {
+      print('RouteObserver subscription error: $e');
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // 🔥 ВОЗВРАЩАЕМСЯ НА ЭКРАН - БЕЛЫЕ ИКОНКИ
+    StatusBarService().setWhiteStatusBar();
+  }
+
+  @override
+  void didPushNext() {
+    // 🔥 УХОДИМ С ЭКРАНА - ЧЕРНЫЕ ИКОНКИ
+    StatusBarService().setDarkStatusBar();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    if (state == AppLifecycleState.resumed) {
+      // 🔥 ПРИ ВОЗВРАТЕ В ПРИЛОЖЕНИЕ - БЕЛЫЕ ИКОНКИ
+      StatusBarService().setWhiteStatusBar();
+    } else if (state == AppLifecycleState.paused) {
+      // 🔥 ПРИ ПАУЗЕ - ЧЕРНЫЕ ИКОНКИ
+      StatusBarService().setDarkStatusBar();
+    }
+  }
+
+  @override
+  void dispose() {
+    // 🔥 ОТПИСЫВАЕМСЯ ОТ ROUTE OBSERVER
+    try {
+      MyApp.routeObserver.unsubscribe(this);
+    } catch (e) {}
+    
+    WidgetsBinding.instance.removeObserver(this);
+    
+    // 🔥 ВОССТАНАВЛИВАЕМ ЧЕРНЫЕ ИКОНКИ
+    StatusBarService().setDarkStatusBar();
+    
+    _updateDebounceTimer?.cancel();
+    _forYouPageController.dispose();
+    _followingPageController.dispose();
+    _tabController.dispose();
+    _forYouScrollController.dispose();
+    _followingScrollController.dispose();
+    _preloadTimer?.cancel();
+    _analyticsTimer?.cancel();
+    
+    super.dispose();
+  }
+
+  // ============================================================
+  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
+  // ============================================================
+
+  Future<void> _checkPermissions() async {
+    try {
+      if (Platform.isAndroid) {
+        final storageStatus = await Permission.storage.status;
+        if (!storageStatus.isGranted) {
+          await Permission.storage.request();
+        }
+      } else if (Platform.isIOS) {
+        final photosStatus = await Permission.photosAddOnly.status;
+        if (!photosStatus.isGranted) {
+          await Permission.photosAddOnly.request();
+        }
+      }  
+    } catch (e) {
+      print('Error checking permissions: $e');
+    }
+  }
+
   Future<void> _initializeApp() async {
     if (_isInitialized || !mounted) return;
     
@@ -161,7 +255,6 @@ class _FeedScreenState extends State<FeedScreen>
         _loadUserSaves(),
       ]);
       
-      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ЛЕНТЫ
       _preloadFeedVideos();
       
       if (!mounted) return;
@@ -180,9 +273,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО
-  // ============================================================
   void _preloadFeedVideos() {
     final posts = _postController.feedPosts;
     if (posts.isNotEmpty) {
@@ -207,40 +297,6 @@ class _FeedScreenState extends State<FeedScreen>
         'timestamp': DateTime.now().millisecondsSinceEpoch,
       },
     );
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    super.didChangeAppLifecycleState(state);
-    
-    switch (state) {
-      case AppLifecycleState.resumed:
-        unawaited(_analytics.logEvent(
-          name: 'feed_screen_resumed',
-          parameters: {'timestamp': DateTime.now().millisecondsSinceEpoch},
-        ));
-        break;
-      default:
-        break;
-    }
-  }
-
-  Future<void> _checkPermissions() async {
-    try {
-      if (Platform.isAndroid) {
-        final storageStatus = await Permission.storage.status;
-        if (!storageStatus.isGranted) {
-          await Permission.storage.request();
-        }
-      } else if (Platform.isIOS) {
-        final photosStatus = await Permission.photosAddOnly.status;
-        if (!photosStatus.isGranted) {
-          await Permission.photosAddOnly.request();
-        }
-      }  
-    } catch (e) {
-      print('Error checking permissions: $e');
-    }
   }
 
   Future<void> _loadRealData() async {
@@ -357,9 +413,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _loadFollowingPosts
-  // ============================================================
   Future<void> _loadFollowingPosts() async {
     try {
       if (_followingUsers.isEmpty) {
@@ -410,7 +463,6 @@ class _FeedScreenState extends State<FeedScreen>
           _hasMoreFollowing = snapshot.docs.length == 10;
         });
         
-        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ FOLLOWING
         _postController.preloadFeedVideos(newPosts, maxPreload: 3);
         
         print('Processed ${_followingPostIds.length} following posts');
@@ -433,9 +485,6 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _loadMoreFollowing
-  // ============================================================
   Future<void> _loadMoreFollowing() async { 
     if (!_hasMoreFollowing || _isLoadingMoreFollowing || !mounted) return;
     
@@ -483,7 +532,6 @@ class _FeedScreenState extends State<FeedScreen>
         
         _postController.addPostsToStorage(newPosts);
         
-        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ НОВЫХ ПОСТОВ
         _postController.preloadFeedVideos(newPosts, maxPreload: 3);
         
         final newIds = newPosts.map((p) => p['id'] as String).toList();
@@ -517,7 +565,6 @@ class _FeedScreenState extends State<FeedScreen>
         final post = _postController.getPostFromStorage(nextPostId);
         
         if (post != null) {
-          // Предзагрузка изображений
           final imageUrls = (post['imageUrls'] as List<dynamic>? ?? [post['url']]).cast<String>();
           for (var url in imageUrls.take(1)) {
             if (url.isNotEmpty && !_preloadedUrls.contains(url)) {
@@ -526,7 +573,6 @@ class _FeedScreenState extends State<FeedScreen>
             }
           }
           
-          // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ДЛЯ СЛЕДУЮЩИХ ПОСТОВ
           final mediaType = post['mediaType']?.toString() ?? '';
           if (mediaType == 'video') {
             final videoUrl = post['videoUrl']?.toString();
@@ -627,7 +673,6 @@ class _FeedScreenState extends State<FeedScreen>
           _metrics.startWatching(postId);
         }
         
-        // 🔥 ПРЕДЗАГРУЗКА СЛЕДУЮЩИХ ПОСТОВ ПРИ СКРОЛЛЕ
         _preloadNextPosts(page);
         
         final int remainingPosts = _forYouPostIds.length - page;
@@ -865,88 +910,81 @@ class _FeedScreenState extends State<FeedScreen>
   }
 
   @override
-  void dispose() {
-    _updateDebounceTimer?.cancel();
-    WidgetsBinding.instance.removeObserver(this);
-    
-    _forYouPageController.dispose();
-    _followingPageController.dispose();
-    _tabController.dispose();
-    _forYouScrollController.dispose();
-    _followingScrollController.dispose();
-    
-    _preloadTimer?.cancel();
-    _analyticsTimer?.cancel();
-    
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     super.build(context);
     
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: TabBarView(
-              controller: _tabController,
-              physics: const NeverScrollableScrollPhysics(),
-              children: [
-                _buildForYouContent(),
-                _buildFollowingContent(),
-              ],
+    // 🔥 ОБЕРТЫВАЕМ В AnnotatedRegion ДЛЯ ГАРАНТИИ БЕЛЫХ ИКОНОК
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light, // БЕЛЫЕ иконки
+        statusBarBrightness: Brightness.dark, // для iOS
+        systemNavigationBarColor: Colors.black,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: TabBarView(
+                controller: _tabController,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _buildForYouContent(),
+                  _buildFollowingContent(),
+                ],
+              ),
             ),
-          ),
-          
-          Positioned(
-            top: MediaQuery.of(context).padding.top,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Theme(
-                data: Theme.of(context).copyWith(
-                  splashFactory: NoSplash.splashFactory,
-                  highlightColor: Colors.transparent,
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.center,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-                  labelColor: Colors.white,
-                  unselectedLabelColor: Colors.white.withOpacity(0.7),
-                  indicatorColor: Colors.white,
-                  indicatorWeight: 2.5,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  dividerColor: Colors.transparent,
-                  labelStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
+            
+            Positioned(
+              top: MediaQuery.of(context).padding.top,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: Theme(
+                  data: Theme.of(context).copyWith(
+                    splashFactory: NoSplash.splashFactory,
+                    highlightColor: Colors.transparent,
                   ),
-                  unselectedLabelStyle: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
+                  child: TabBar(
+                    controller: _tabController,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.center,
+                    labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    labelColor: Colors.white,
+                    unselectedLabelColor: Colors.white.withOpacity(0.7),
+                    indicatorColor: Colors.white,
+                    indicatorWeight: 2.5,
+                    indicatorSize: TabBarIndicatorSize.label,
+                    dividerColor: Colors.transparent,
+                    labelStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    unselectedLabelStyle: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    onTap: (index) {
+                      unawaited(_analytics.logEvent(
+                        name: 'feed_tab_switch',
+                        parameters: {
+                          'tab_index': index,
+                          'tab_name': index == 0 ? 'for_you' : 'following',
+                        },
+                      ));
+                    },
+                    tabs: const [
+                      Tab(text: "For You"),
+                      Tab(text: "Following"),
+                    ],
                   ),
-                  onTap: (index) {
-                    unawaited(_analytics.logEvent(
-                      name: 'feed_tab_switch',
-                      parameters: {
-                        'tab_index': index,
-                        'tab_name': index == 0 ? 'for_you' : 'following',
-                      },
-                    ));
-                  },
-                  tabs: const [
-                    Tab(text: "For You"),
-                    Tab(text: "Following"),
-                  ],
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

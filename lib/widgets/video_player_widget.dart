@@ -1,4 +1,5 @@
-import 'dart:ui' as ui;
+// lib/widgets/video_player_widget.dart
+
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -32,9 +33,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   bool _wasVisible = true;
   bool _wasStoppedByScroll = false;
   bool _isPausedByUser = false;
-  
+
   bool _showThumbnail = true;
   double _thumbnailOpacity = 1.0;
+  bool _isLoading = true;
 
   @override
   void initState() {
@@ -46,24 +48,25 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void didUpdateWidget(VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     if (oldWidget.isVisible != widget.isVisible) {
       _handleVisibilityChange(widget.isVisible);
     }
-    
+
     if (oldWidget.videoUrl != widget.videoUrl) {
       _controller?.dispose();
       _controller = null;
       _isInitialized = false;
       _showThumbnail = true;
       _thumbnailOpacity = 1.0;
+      _isLoading = true;
       _initVideo();
     }
   }
 
   void _handleVisibilityChange(bool isVisible) {
     if (_controller == null || !_isInitialized) return;
-    
+
     if (isVisible && !_wasVisible) {
       if (!_isPausedByUser) {
         _controller!.play();
@@ -82,62 +85,58 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         });
       }
     }
-    
+
     _wasVisible = isVisible;
   }
 
   Future<void> _initVideo() async {
     try {
-      print('📹 [VIDEO] Loading: ${widget.videoUrl}');
-      
-      final isPreloaded = Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
-      print('📹 [VIDEO] Is preloaded: $isPreloaded');
-      
       _controller = VideoPlayerController.networkUrl(
         Uri.parse(widget.videoUrl),
         videoPlayerOptions: VideoPlayerOptions(
           mixWithOthers: true,
+          allowBackgroundPlayback: false,
         ),
       );
-      
+
+      // 1. Инициализируем плеер
       await _controller!.initialize();
-      
+      await _controller!.setLooping(true);
+
+      if (!mounted) return;
+
+      // 2. Ставим на автовопроизведение только если экран виден
       if (widget.isVisible) {
         await _controller!.play();
-        setState(() => _isPlaying = true);
+        _isPlaying = true;
+      } else {
+        _isPlaying = false;
       }
-      
-      await _controller!.setLooping(true);
-      
-      if (mounted) {
+
+      // 3. Мгновенно обновляем состояние виджета (видео уже рисует 1-й кадр)
+      setState(() {
+        _isInitialized = true;
+        _isLoading = false;
+      });
+
+      // 4. Мягко убираем тамбнейл без искусственных пауза-задержек
+      if (_showThumbnail) {
         setState(() {
-          _isInitialized = true;
+          _thumbnailOpacity = 0.0;
         });
-        
-        // ✅ ПЛАВНО УБИРАЕМ ТАМБНЕЙЛ ТОЛЬКО ПОСЛЕ ТОГО, КАК ВИДЕО ЗАГРУЗИЛОСЬ
-        if (_showThumbnail) {
-          // Даём видео время на подготовку кадра
-          await Future.delayed(const Duration(milliseconds: 150));
-          if (mounted) {
-            setState(() {
-              _thumbnailOpacity = 0.0;
-            });
-            await Future.delayed(const Duration(milliseconds: 300));
-            if (mounted) {
-              setState(() {
-                _showThumbnail = false;
-              });
-            }
-          }
+        await Future.delayed(const Duration(milliseconds: 200));
+        if (mounted) {
+          setState(() {
+            _showThumbnail = false;
+          });
         }
-        
-        print('✅ [VIDEO] Loaded');
       }
     } catch (e) {
       print('❌ [VIDEO] Error: $e');
       if (mounted) {
         setState(() {
           _isInitialized = false;
+          _isLoading = false;
         });
       }
     }
@@ -145,7 +144,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   void _togglePlayback() {
     if (_controller == null || !_isInitialized) return;
-    
+
     if (_isPlaying) {
       _controller!.pause();
       setState(() {
@@ -165,18 +164,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
 
   @override
   void dispose() {
-    if (_controller != null) {
-      _controller!.pause();
-      _controller!.dispose();
-      _controller = null;
-    }
+    _controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasThumbnail = widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty;
-    final isPreloaded = Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
+    final hasThumbnail =
+        widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty;
+    final isPreloaded =
+        Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
 
     return GestureDetector(
       onTap: _togglePlayback,
@@ -184,106 +181,65 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
         color: Colors.black,
         child: Stack(
           alignment: Alignment.center,
+          fit: StackFit.expand,
           children: [
-            // ✅ ТАМБНЕЙЛ ПОВЕРХ ВСЕГО (пока видео не готово)
+            // ✅ ВИДЕО (Плеер снизу, готов сразу)
+            if (_isInitialized && _controller != null)
+              Center(
+                child: AspectRatio(
+                  aspectRatio: _controller!.value.aspectRatio,
+                  child: VideoPlayer(_controller!),
+                ),
+              ),
+
+            // ✅ ТАМБНЕЙЛ (Поверх видео, плавно исчезает)
             if (hasThumbnail && _showThumbnail)
               AnimatedOpacity(
                 opacity: _thumbnailOpacity,
-                duration: const Duration(milliseconds: 300),
+                duration: const Duration(milliseconds: 200),
                 curve: Curves.easeOut,
-                child: widget.fit == BoxFit.cover
-                    ? SizedBox.expand(
-                        child: CachedNetworkImage(
-                          imageUrl: widget.thumbnailUrl!,
-                          fit: BoxFit.cover,
-                          placeholder: (context, url) => Container(
-                            color: Colors.black,
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            color: Colors.black,
-                            child: const Center(
-                              child: Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                            ),
-                          ),
-                        ),
-                      )
-                    : AspectRatio(
-                        aspectRatio: 9 / 16,
-                        child: CachedNetworkImage(
-                          imageUrl: widget.thumbnailUrl!,
-                          fit: BoxFit.contain,
-                          placeholder: (context, url) => Container(
-                            color: Colors.black,
-                          ),
-                          errorWidget: (context, url, error) => Container(
-                            color: Colors.black,
-                            child: const Center(
-                              child: Icon(Icons.broken_image, color: Colors.grey, size: 40),
-                            ),
-                          ),
-                        ),
-                      ),
-              ),
-            
-            // ✅ ВИДЕО (под тамбнейлом)
-            if (_isInitialized && _controller != null)
-              Center(
-                child: widget.fit == BoxFit.cover
-                    ? SizedBox.expand(
-                        child: FittedBox(
-                          fit: BoxFit.cover,
-                          child: SizedBox(
-                            width: _controller!.value.size.width,
-                            height: _controller!.value.size.height,
-                            child: VideoPlayer(_controller!),
-                          ),
-                        ),
-                      )
-                    : AspectRatio(
-                        aspectRatio: _controller!.value.aspectRatio,
-                        child: VideoPlayer(_controller!),
-                      ),
-              ),
-            
-            // ✅ ЛОАДЕР - только если нет тамбнейла
-            if (!_isInitialized && !hasThumbnail && !isPreloaded)
-              Container(
-                color: Colors.black.withOpacity(0.5),
-                child: const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2.5,
-                        ),
-                      ),
-                      SizedBox(height: 12),
-                      Text(
-                        'Loading...',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                child: CachedNetworkImage(
+                  imageUrl: widget.thumbnailUrl!,
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => Container(color: Colors.black),
+                  errorWidget: (context, url, error) => Container(
+                    color: Colors.black,
+                    child: const Center(
+                      child: Icon(Icons.broken_image,
+                          color: Colors.grey, size: 40),
+                    ),
                   ),
                 ),
               ),
-            
-            // ✅ ИКОНКА PLAY (поверх всего)
-            if (!_isPlaying && widget.showControls && !_wasStoppedByScroll && _isInitialized)
+
+            // ✅ ЛОАДЕР
+            if (_isLoading && !hasThumbnail && !isPreloaded)
+              Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2.5,
+                    ),
+                  ),
+                ),
+              ),
+
+            // ✅ ИКОНКА PLAY
+            if (!_isPlaying &&
+                widget.showControls &&
+                !_wasStoppedByScroll &&
+                _isInitialized)
               AnimatedOpacity(
                 opacity: 0.85,
-                duration: const Duration(milliseconds: 200),
+                duration: const Duration(milliseconds: 150),
                 child: Icon(
                   Icons.play_arrow,
                   color: Colors.grey.shade400.withOpacity(0.85),
                   size: 110,
-                  weight: 900.0,
                 ),
               ),
           ],

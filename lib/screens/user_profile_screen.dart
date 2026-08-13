@@ -1,7 +1,10 @@
-﻿import 'dart:async';
+﻿// lib/screens/user_profile_screen.dart
+
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
@@ -17,9 +20,11 @@ import '../controllers/post_controller.dart';
 import '../services/follow_service.dart';
 import '../services/app_links_service.dart';
 import '../services/block_service.dart';
+import '../services/status_bar_service.dart';
 import 'chat_screen.dart';
 import 'post_detail_screen.dart';
 import '../extensions/safe_extensions.dart';
+import '../main.dart';
 
 class UserProfileScreen extends StatefulWidget {
   final String userId;
@@ -34,7 +39,7 @@ class UserProfileScreen extends StatefulWidget {
 }
 
 class _UserProfileScreenState extends State<UserProfileScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   late TabController _tabController;
   late final OtherProfileController controller;
   late final PostController _postController;
@@ -57,6 +62,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
   void initState() {
     super.initState();
 
+    // 🔥 УСТАНАВЛИВАЕМ ЧЕРНЫЕ ИКОНКИ
+    StatusBarService().setDarkStatusBar();
+
     _tabController = TabController(length: 1, vsync: this);
     _postController = Get.find<PostController>();
 
@@ -76,6 +84,36 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         print('📊 Posts updated from PostController for user: ${widget.userId}');
       }
     });
+
+    // 🔥 ПРИНУДИТЕЛЬНО ЗАГРУЖАЕМ ПОСТЫ В ПРАВИЛЬНОМ ПОРЯДКЕ
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _postController.loadUserPosts(widget.userId, refresh: true);
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    try {
+      MyApp.routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
+    } catch (e) {}
+  }
+
+  @override
+  void didPopNext() {
+    StatusBarService().setDarkStatusBar();
+  }
+
+  @override
+  void dispose() {
+    try {
+      MyApp.routeObserver.unsubscribe(this);
+    } catch (e) {}
+    
+    _tabController.dispose();
+    _followStatusListener?.cancel();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFollowingUsers() async {
@@ -125,14 +163,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     }, onError: (e) {
       print('❌ Error in follow status listener: $e');
     });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    _followStatusListener?.cancel();
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<String> _getOrCreateChatId(String currentUserId, String otherUserId) async {
@@ -397,6 +427,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         backgroundColor: Colors.white,
         elevation: 0,
         scrolledUnderElevation: 0,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.dark,
+          statusBarBrightness: Brightness.light,
+        ),
         title: Obx(() => Text(
           controller.username.value,
           style: const TextStyle(
@@ -531,6 +566,7 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     ));
   }
 
+  // 🔥 СЧЕТЧИКИ - ТОЛЬКО ЖИРНЫЙ ШРИФТ (размер не менялся)
   Widget _buildStatItem(int number, String label, {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
@@ -543,8 +579,8 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               key: ValueKey<int>(number),
               number.toString(),
               style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w400,
+                fontSize: 18, // 🔥 РАЗМЕР ОСТАЛСЯ ПРЕЖНИМ
+                fontWeight: FontWeight.w700, // 🔥 ТОЛЬКО СДЕЛАЛИ ЖИРНЫМ (было w400)
                 color: Colors.black
               ),
             ),

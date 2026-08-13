@@ -1,3 +1,5 @@
+// lib/widgets/post_item.dart
+
 import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -241,9 +243,6 @@ class _PostItemState extends State<PostItem>
   
   String? _getThumbnailUrl() => widget.post['thumbnailUrl']?.toString();
 
-  // ============================================================
-  // 🔥 GET FIT MODE
-  // ============================================================
   BoxFit _getFitModeForIndex(int index) {
     final fitModes = widget.post['fitModes'] as List? ?? [];
     String mode = 'contain';
@@ -261,9 +260,6 @@ class _PostItemState extends State<PostItem>
     return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
   }
 
-  // ============================================================
-  // 🔥 VISIBILITY
-  // ============================================================
   void _onVisibilityChanged(VisibilityInfo info) {
     final visible = info.visibleFraction > 0.5;
     print('🎬 [VIDEO] ========== VISIBILITY CHANGED ==========');
@@ -1111,7 +1107,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 IMAGE BUILDERS
+  // 🔥 IMAGE BUILDERS - БЕЗ РАЗМЫТИЯ
   // ============================================================
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
@@ -1136,7 +1132,9 @@ class _PostItemState extends State<PostItem>
                     fadeInDuration: Duration.zero,
                     fadeOutDuration: Duration.zero,
                     placeholderFadeInDuration: Duration.zero,
-                    placeholder: (context, url) => Container(color: Colors.black),
+                    placeholder: (context, url) => Container(
+                      color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+                    ),
                     errorWidget: (context, url, error) => Container(
                       color: Colors.black,
                       child: const Icon(Icons.broken_image, color: Colors.white),
@@ -1183,7 +1181,9 @@ class _PostItemState extends State<PostItem>
                   fadeInDuration: Duration.zero,
                   fadeOutDuration: Duration.zero,
                   placeholderFadeInDuration: Duration.zero,
-                  placeholder: (context, url) => Container(color: Colors.black),
+                  placeholder: (context, url) => Container(
+                    color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+                  ),
                   errorWidget: (context, url, error) => Container(
                     color: Colors.black,
                     child: const Icon(Icons.broken_image, color: Colors.white),
@@ -1272,7 +1272,9 @@ class _PostItemState extends State<PostItem>
               fadeInDuration: Duration.zero,
               fadeOutDuration: Duration.zero,
               placeholderFadeInDuration: Duration.zero,
-              placeholder: (context, url) => Container(color: Colors.black),
+              placeholder: (context, url) => Container(
+                color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+              ),
               errorWidget: (context, url, error) => Container(
                 color: Colors.black,
                 child: const Icon(Icons.broken_image, color: Colors.white),
@@ -1317,7 +1319,9 @@ class _PostItemState extends State<PostItem>
             fadeInDuration: Duration.zero,
             fadeOutDuration: Duration.zero,
             placeholderFadeInDuration: Duration.zero,
-            placeholder: (context, url) => Container(color: Colors.black),
+            placeholder: (context, url) => Container(
+              color: Colors.black, // 🔥 ПРОСТО ЧЕРНЫЙ ФОН
+            ),
             errorWidget: (context, url, error) => Container(
               color: Colors.black,
               child: const Icon(Icons.broken_image, color: Colors.white),
@@ -1574,22 +1578,22 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS (УВЕЛИЧЕНЫ И С ТАКТИЛЬНОСТЬЮ)
+  // 🔥 ACTION BUTTONS (УВЕЛИЧЕНЫ)
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
     required int count,
     Animation<double>? scaleAnimation,
-    double iconSize = 34,  // 🔥 Было 28, стало 34
+    double iconSize = 34,
   }) {
     Widget button = GestureDetector(
       onTap: () {
-        HapticFeedback.mediumImpact();  // 🔥 Тактильный отклик
+        HapticFeedback.mediumImpact();
         onTap();
       },
       child: SizedBox(
-        width: 40,  // 🔥 Было 32, стало 40
+        width: 40,
         child: Icon(
           icon,
           color: Colors.white,
@@ -1653,7 +1657,7 @@ class _PostItemState extends State<PostItem>
       final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
 
       return SizedBox(
-        width: 56,  // 🔥 Было 50, стало 56
+        width: 56,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1663,14 +1667,14 @@ class _PostItemState extends State<PostItem>
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
               count: likesCount,
               scaleAnimation: _likeIconScale,
-              iconSize: 36,  // 🔥 Было 32, стало 36
+              iconSize: 36,
             ),
-            const SizedBox(height: 18),  // 🔥 Было 16, стало 18
+            const SizedBox(height: 18),
             _buildActionButton(
               onTap: _showCommentsSheet,
               icon: CupertinoIcons.chat_bubble,
               count: commentsCount,
-              iconSize: 32,  // 🔥 Было 28, стало 32
+              iconSize: 32,
             ),
             const SizedBox(height: 18),
             _buildActionButton(
@@ -1692,7 +1696,7 @@ class _PostItemState extends State<PostItem>
                   child: Icon(
                     Icons.auto_awesome,
                     color: Colors.white,
-                    size: 32,  // 🔥 Было 28, стало 32
+                    size: 32,
                   ),
                 ),
               ),
@@ -1777,7 +1781,9 @@ class _PostItemState extends State<PostItem>
                       placeholderFadeInDuration: Duration.zero,
                       memCacheWidth: 300,
                       memCacheHeight: 300,
-                      placeholder: (context, url) => Container(color: Colors.grey[300]),
+                      placeholder: (context, url) => Container(
+                        color: Colors.grey[300], // 🔥 ПРОСТО СЕРЫЙ ФОН
+                      ),
                       errorWidget: (context, url, error) => Container(
                         color: Colors.grey[300],
                         child: const Icon(Icons.broken_image, color: Colors.grey),
@@ -1836,7 +1842,9 @@ class _PostItemState extends State<PostItem>
             fit: BoxFit.cover,
             width: double.infinity,
             height: double.infinity,
-            placeholder: (context, url) => Container(color: Colors.grey[900]),
+            placeholder: (context, url) => Container(
+              color: Colors.grey[900], // 🔥 ПРОСТО ТЕМНЫЙ ФОН
+            ),
             errorWidget: (context, url, error) => Container(
               color: Colors.grey[900],
               child: const Icon(Icons.broken_image, color: Colors.grey),

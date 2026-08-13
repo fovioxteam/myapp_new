@@ -41,7 +41,9 @@ class AppLinksService extends GetxService {
     }
   }
   
-  // ========== 🔥 ИСПРАВЛЕННЫЙ МЕТОД _handleLink ==========
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _handleLink - ПОДДЕРЖИВАЕТ HTTPS И CUSTOM SCHEME
+  // ============================================================
   void _handleLink(Uri uri) {
     print('🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗');
     print('🔗 DEEP LINK RECEIVED!');
@@ -53,50 +55,102 @@ class AppLinksService extends GetxService {
     print('🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗🔗');
     
     try {
-      String type;
+      final authController = Get.find<AuthController>();
+      final deepLinkController = Get.find<DeepLinkController>();
+      
+      String? type;
       String? id;
       
-      // ✅ ИСПРАВЛЕНО: безопасная проверка host
-      if (uri.host.isNotEmpty) {
-        type = uri.host;
+      // ============================================================
+      // 🔥 1. HTTPS ССЫЛКИ (https://foviox.com/post/123)
+      // ============================================================
+      if (uri.scheme == 'https' && uri.host == 'foviox.com') {
+        print('🌐 HTTPS link detected');
         
-        // ✅ ИСПРАВЛЕНО: безопасное получение id из pathSegments
-        if (uri.pathSegments.isNotEmpty) {
-          id = uri.pathSegments.safeFirst;
-        } else if (uri.path.isNotEmpty) {
-          id = uri.path.replaceFirst('/', '');
-        } else {
+        if (uri.path.contains('post')) {
+          type = 'post';
+          id = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : null;
+        } else if (uri.path.contains('user')) {
+          type = 'user';
+          id = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : null;
+        } else if (uri.path.contains('profile')) {
+          type = 'profile';
           id = null;
+        } else {
+          print('❌ Unknown HTTPS path: ${uri.path}');
+          return;
         }
-      } 
-      // ✅ ИСПРАВЛЕНО: безопасная проверка pathSegments
-      else if (uri.pathSegments.isNotEmpty) {
-        // ✅ ИСПРАВЛЕНО: безопасный доступ к элементам
-        type = uri.pathSegments.isNotEmpty ? uri.pathSegments[0] : '';
-        id = uri.pathSegments.length > 1 ? uri.pathSegments[1] : null;
-      } else {
-        print('❌ Could not parse deep link');
+      }
+      
+      // ============================================================
+      // 🔥 2. КАСТОМНЫЕ ССЫЛКИ (myapp://post/123)
+      // ============================================================
+      else if (uri.scheme == 'myapp' || uri.scheme == 'foviox') {
+        print('📱 Custom scheme link detected');
+        
+        if (uri.host == 'post') {
+          type = 'post';
+          id = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+        } else if (uri.host == 'user') {
+          type = 'user';
+          id = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+        } else if (uri.host == 'profile') {
+          type = 'profile';
+          id = null;
+        } else {
+          print('❌ Unknown custom host: ${uri.host}');
+          return;
+        }
+      }
+      
+      // ============================================================
+      // 🔥 3. ОБЫЧНЫЕ ССЫЛКИ ПО ПУТИ (foviox.com/post/123)
+      // ============================================================
+      else if (uri.host.isNotEmpty && uri.pathSegments.isNotEmpty) {
+        print('📄 Path-based link detected');
+        
+        final firstSegment = uri.pathSegments.isNotEmpty ? uri.pathSegments[0] : '';
+        if (firstSegment == 'post') {
+          type = 'post';
+          id = uri.pathSegments.length > 1 ? uri.pathSegments[1] : null;
+        } else if (firstSegment == 'user') {
+          type = 'user';
+          id = uri.pathSegments.length > 1 ? uri.pathSegments[1] : null;
+        } else {
+          print('❌ Unknown path: $firstSegment');
+          return;
+        }
+      }
+      
+      // ============================================================
+      // 🔥 4. ЕСЛИ НИЧЕГО НЕ ПОДОШЛО
+      // ============================================================
+      else {
+        print('❌ Could not parse deep link: $uri');
         return;
       }
       
       print('📦 Parsed: type=$type, id=$id');
       
-      final authController = Get.find<AuthController>();
-      final deepLinkController = Get.find<DeepLinkController>();
-      
+      // ============================================================
+      // 🔥 5. СОХРАНЯЕМ ССЫЛКУ ДЛЯ ПОЗЖЕ (ЕСЛИ НЕ ВОШЛИ)
+      // ============================================================
       final linkData = {
         'type': type,
         'id': id,
       };
       
-      if (authController.isLoggedIn == false) {
+      if (!authController.isLoggedIn) {
         print('📦 User not logged in, saving link for later');
         deepLinkController.pendingLink.value = linkData;
         return;
       }
       
+      // ============================================================
+      // 🔥 6. ПЕРЕХОД ПО ССЫЛКЕ
+      // ============================================================
       Future.delayed(const Duration(milliseconds: 100), () {
-        _navigateToDeepLink(type, id);
+        _navigateToDeepLink(type!, id);
       });
       
     } catch (e) {
@@ -145,6 +199,21 @@ class AppLinksService extends GetxService {
   
   String createPostLink(String postId) {
     return 'myapp://post/$postId';
+  }
+  
+  // ============================================================
+  // 🔥 СОЗДАНИЕ HTTPS ССЫЛОК
+  // ============================================================
+  String createHttpsPostLink(String postId) {
+    return 'https://foviox.com/post/$postId';
+  }
+  
+  String createHttpsUserLink(String userId) {
+    return 'https://foviox.com/user/$userId';
+  }
+  
+  String createHttpsProfileLink() {
+    return 'https://foviox.com/profile';
   }
   
   @override

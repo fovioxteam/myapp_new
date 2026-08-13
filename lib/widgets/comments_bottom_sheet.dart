@@ -604,11 +604,11 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                             color: (_controller.text.trim().isNotEmpty && !_isSending)
                                 ? Colors.black
                                 : Colors.grey[400],
-                            size: 22,
+                            size: 24, // 🔥 УВЕЛИЧЕНО С 22 ДО 24
                           ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          splashRadius: 22,
+                          splashRadius: 24,
                         ),
                       ],
                     ),
@@ -643,17 +643,17 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
     return Column(
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 🔥 УВЕЛИЧЕНО С 8 ДО 12
           child: IntrinsicHeight(
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Аватарка (30x30)
+                // 🔥 АВАТАРКА УВЕЛИЧЕНА (30x30 → 40x40)
                 GestureDetector(
                   onTap: () => _navigateToProfile(comment['userId']),
                   child: Container(
-                    width: 30,
-                    height: 30,
+                    width: 40, // 🔥 БЫЛО 30
+                    height: 40, // 🔥 БЫЛО 30
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color: Colors.grey[200],
@@ -665,18 +665,18 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           : null,
                     ),
                     child: (comment['userAvatar']?.isEmpty ?? true)
-                        ? Icon(Icons.person, color: Colors.grey[400], size: 16)
+                        ? Icon(Icons.person, color: Colors.grey[400], size: 22) // 🔥 УВЕЛИЧЕНО С 16 ДО 22
                         : null,
                   ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12), // 🔥 УВЕЛИЧЕНО С 10 ДО 12
 
                 // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 🔥 НИКНЕЙМ УМЕНЬШЕННОГО РАЗМЕРА
+                      // Никнейм
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -686,51 +686,51 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                               comment['username'] ?? 'User',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w600,
-                                fontSize: 12, // 🔥 УМЕНЬШЕНО С 13 ДО 12
+                                fontSize: 14, // 🔥 УВЕЛИЧЕНО С 12 ДО 14
                                 color: Colors.black,
                               ),
                             ),
                           ),
                           if (timestamp != null) ...[
-                            const SizedBox(width: 4),
+                            const SizedBox(width: 6),
                             Text(
                               _getTimeAgo(timestamp),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
                                 color: Colors.grey[500],
                               ),
                             ),
                           ],
                         ],
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4), // 🔥 УВЕЛИЧЕНО С 3 ДО 4
                       
-                      // Текст комментария
+                      // 🔥 ТЕКСТ КОММЕНТАРИЯ УВЕЛИЧЕН
                       Text(
                         comment['text'] ?? '',
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 16, // 🔥 УВЕЛИЧЕНО С 14 ДО 16
                           color: Colors.grey[900],
                           fontWeight: FontWeight.w400,
-                          height: 1.3,
+                          height: 1.4, // 🔥 УВЕЛИЧЕНО С 1.3 ДО 1.4
                         ),
                       ),
                       
                       // Показываем на кого ответ
                       if (comment['replyToUsername'] != null)
                         Padding(
-                          padding: const EdgeInsets.only(top: 2),
+                          padding: const EdgeInsets.only(top: 3),
                           child: Text(
                             'Replying to @${comment['replyToUsername']}',
                             style: TextStyle(
-                              fontSize: 11,
+                              fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
                               color: Colors.grey[500],
                               fontStyle: FontStyle.italic,
                             ),
                           ),
                         ),
                       
-                      const SizedBox(height: 5),
+                      const SizedBox(height: 6), // 🔥 УВЕЛИЧЕНО С 5 ДО 6
 
                       // Кнопка Reply
                       GestureDetector(
@@ -742,7 +742,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                         child: Text(
                           'Reply',
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
                             color: Colors.grey[600],
                             fontWeight: FontWeight.w500,
                           ),
@@ -752,9 +752,9 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   ),
                 ),
 
-                // Кнопка лайка (увеличенная)
+                // 🔥 КНОПКА ЛАЙКА УВЕЛИЧЕНА
                 Container(
-                  margin: const EdgeInsets.only(left: 6),
+                  margin: const EdgeInsets.only(left: 8),
                   child: GestureDetector(
                     onTap: () => _toggleLike(
                       commentId,
@@ -762,22 +762,22 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                       comment['likes'] ?? 0,
                     ),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4), // 🔥 УВЕЛИЧЕНО
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             isLiked ? Icons.favorite : Icons.favorite_border,
                             color: isLiked ? Colors.black : Colors.grey[400],
-                            size: 18,
+                            size: 22, // 🔥 УВЕЛИЧЕНО С 18 ДО 22
                           ),
                           if ((comment['likes'] ?? 0) > 0)
                             Padding(
-                              padding: const EdgeInsets.only(top: 2),
+                              padding: const EdgeInsets.only(top: 3), // 🔥 УВЕЛИЧЕНО С 2 ДО 3
                               child: Text(
                                 '${comment['likes']}',
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: 13, // 🔥 УВЕЛИЧЕНО С 11 ДО 13
                                   fontWeight: FontWeight.w600,
                                   color: isLiked ? Colors.black : Colors.grey[600],
                                 ),
@@ -799,21 +799,21 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
             children: [
               // Кнопка показа/скрытия ответов
               Padding(
-                padding: const EdgeInsets.only(left: 46, right: 16, bottom: 4),
+                padding: const EdgeInsets.only(left: 52, right: 16, bottom: 4), // 🔥 УВЕЛИЧЕНО С 46 ДО 52
                 child: GestureDetector(
                   onTap: () => _toggleReplies(commentId),
                   child: Row(
                     children: [
                       Container(
-                        width: 20,
-                        height: 1,
+                        width: 24, // 🔥 УВЕЛИЧЕНО С 20 ДО 24
+                        height: 2, // 🔥 УВЕЛИЧЕНО С 1 ДО 2
                         color: Colors.grey[300],
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12), // 🔥 УВЕЛИЧЕНО С 10 ДО 12
                       Text(
                         isExpanded ? 'Hide replies' : 'View ${replies.length} repl${replies.length == 1 ? 'y' : 'ies'}',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13, // 🔥 УВЕЛИЧЕНО С 12 ДО 13
                           fontWeight: FontWeight.w500,
                           color: Colors.grey[600],
                         ),

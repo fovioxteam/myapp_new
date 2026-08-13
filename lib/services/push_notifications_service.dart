@@ -1,28 +1,26 @@
-// lib/services/push_notifications_service.dart
-
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:get/get.dart';
+import 'dart:convert';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'dart:convert';
+import 'package:get/get.dart';
 
 class PushNotificationsService {
-  static final PushNotificationsService _instance = PushNotificationsService._internal();
+  static final PushNotificationsService _instance =
+      PushNotificationsService._internal();
   factory PushNotificationsService() => _instance;
   PushNotificationsService._internal();
 
   late FlutterLocalNotificationsPlugin _localNotifications;
-  
+
   Future<void> init() async {
     print("🔵 [PNS] init() called");
     if (GetPlatform.isAndroid || GetPlatform.isIOS) {
       await _setup();
     }
   }
-  
-  // 🔥 ДОБАВЛЕН ПАРАМЕТР chatId
+
   Future<bool> sendPushNotification({
     required String userId,
     required String title,
@@ -32,12 +30,12 @@ class PushNotificationsService {
     String? senderName,
     String? postId,
     String? commentId,
-    String? chatId,  // 🔥 ДОБАВЛЕНО
+    String? chatId,
   }) async {
     try {
       final functions = FirebaseFunctions.instance;
       final callable = functions.httpsCallable('sendPushNotification');
-      
+
       final result = await callable.call({
         'userId': userId,
         'title': title,
@@ -47,9 +45,9 @@ class PushNotificationsService {
         'senderName': senderName ?? '',
         'postId': postId ?? '',
         'commentId': commentId ?? '',
-        'chatId': chatId ?? '',  // 🔥 ДОБАВЛЕНО
+        'chatId': chatId ?? '',
       });
-      
+
       print('✅ Push notification sent: ${result.data}');
       return true;
     } catch (e) {
@@ -62,46 +60,48 @@ class PushNotificationsService {
     print("🔵 [PNS] _setup() started");
     try {
       await _initLocalNotifications();
-      
+
       final messaging = FirebaseMessaging.instance;
-      
+
       await messaging.requestPermission(
         alert: true,
         badge: true,
         sound: true,
       );
-      
+
       String? token = await messaging.getToken();
       print('📱 FCM Token: $token');
-      
+
       if (token != null) {
         await _saveTokenToFirestore(token);
-        
+
         FirebaseAuth.instance.authStateChanges().listen((User? user) async {
           if (user != null) {
             await _saveTokenToFirestore(token);
           }
         });
-        
+
         messaging.onTokenRefresh.listen((newToken) {
           print('📱 FCM Token refreshed: $newToken');
           _saveTokenToFirestore(newToken);
         });
       }
-      
+
+      // Обработка уведомлений во foreground (когда приложение открыто)
       FirebaseMessaging.onMessage.listen((RemoteMessage message) {
         print("🟢 [PNS] onMessage received");
         print("📱 Message data: ${message.data}");
         _showLocalNotification(message);
       });
-      
+
+      // Обработка клика по уведомлению (когда приложение в фоновом режиме)
       FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
         print("=========================================");
         print("🔴🔴🔴 [PNS] onMessageOpenedApp CALLED 🔴🔴🔴");
         print("📱 Message data: ${message.data}");
         print("📱 Current route: ${Get.currentRoute}");
         print("=========================================");
-        
+
         try {
           print("🔵 Attempting to navigate to /");
           Get.offAllNamed('/');
@@ -110,8 +110,10 @@ class PushNotificationsService {
           print("❌ Navigation error: $e");
         }
       });
-      
-      final RemoteMessage? initialMessage = await messaging.getInitialMessage();
+
+      // Обработка клика по уведомлению (когда приложение было полностью закрыто)
+      final RemoteMessage? initialMessage =
+          await messaging.getInitialMessage();
       if (initialMessage != null) {
         print("=========================================");
         print("🔴🔴🔴 [PNS] getInitialMessage CALLED 🔴🔴🔴");
@@ -129,21 +131,29 @@ class PushNotificationsService {
       } else {
         print("🔵 [PNS] No initial message");
       }
-      
+
       print("🔵 [PNS] _setup() completed");
-      
     } catch (e) {
       print('❌ Error setting up push notifications: $e');
     }
   }
-  
+
   Future<void> _initLocalNotifications() async {
     print("🔵 [PNS] _initLocalNotifications() started");
     _localNotifications = FlutterLocalNotificationsPlugin();
-    
+
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const settings = InitializationSettings(android: android);
-    
+    const darwin = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+    );
+
+    const settings = InitializationSettings(
+      android: android,
+      iOS: darwin,
+    );
+
     await _localNotifications.initialize(
       settings,
       onDidReceiveNotificationResponse: (response) {
@@ -161,31 +171,37 @@ class PushNotificationsService {
         }
       },
     );
-    
+
     const channel = AndroidNotificationChannel(
       'high_importance',
-      'High Importance',
+      'High Importance Notifications',
       importance: Importance.max,
     );
-    
+
     await _localNotifications
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
-    
+
     print("🔵 [PNS] _initLocalNotifications() completed");
   }
-  
+
   Future<void> _showLocalNotification(RemoteMessage message) async {
     print("🔵 [PNS] _showLocalNotification() called");
     const details = NotificationDetails(
       android: AndroidNotificationDetails(
         'high_importance',
-        'High Importance',
+        'High Importance Notifications',
         importance: Importance.max,
+        priority: Priority.high,
+      ),
+      iOS: DarwinNotificationDetails(
+        presentAlert: true,
+        presentBadge: true,
+        presentSound: true,
       ),
     );
-    
+
     await _localNotifications.show(
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
       message.notification?.title ?? 'Новое уведомление',
@@ -195,11 +211,11 @@ class PushNotificationsService {
     );
     print("🔵 Local notification shown");
   }
-  
+
   Future<void> _saveTokenToFirestore(String token) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
-    
+
     try {
       final functions = FirebaseFunctions.instance;
       final callable = functions.httpsCallable('updateFCMToken');

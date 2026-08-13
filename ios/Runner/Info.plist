@@ -1,114 +1,127 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
-	<dict>
-		<key>CADisableMinimumFrameDurationOnPhone</key>
-		<true/>
-		<key>CFBundleDevelopmentRegion</key>
-		<string>$(DEVELOPMENT_LANGUAGE)</string>
-		<key>CFBundleDisplayName</key>
-		<string>Foviox</string>
-		<key>CFBundleExecutable</key>
-		<string>$(EXECUTABLE_NAME)</string>
-		<key>CFBundleIdentifier</key>
-		<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
-		<key>CFBundleInfoDictionaryVersion</key>
-		<string>6.0</string>
-		<key>CFBundleName</key>
-		<string>foviox</string>
-		<key>CFBundlePackageType</key>
-		<string>APPL</string>
-		<key>CFBundleShortVersionString</key>
-		<string>$(FLUTTER_BUILD_NAME)</string>
-		<key>CFBundleSignature</key>
-		<string>????</string>
-		<key>CFBundleVersion</key>
-		<string>$(FLUTTER_BUILD_NUMBER)</string>
-		<key>LSRequiresIPhoneOS</key>
-		<true/>
+    <dict>
+        <key>CADisableMinimumFrameDurationOnPhone</key>
+        <true/>
+        <key>CFBundleDevelopmentRegion</key>
+        <string>$(DEVELOPMENT_LANGUAGE)</string>
+        <key>CFBundleDisplayName</key>
+        <string>Foviox</string>
+        <key>CFBundleExecutable</key>
+        <string>$(EXECUTABLE_NAME)</string>
+        <key>CFBundleIdentifier</key>
+        <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+        <key>CFBundleInfoDictionaryVersion</key>
+        <string>6.0</string>
+        <key>CFBundleName</key>
+        <string>foviox</string>
+        <key>CFBundlePackageType</key>
+        <string>APPL</string>
+        <key>CFBundleShortVersionString</key>
+        <string>$(FLUTTER_BUILD_NAME)</string>
+        <key>CFBundleSignature</key>
+        <string>????</string>
+        <key>CFBundleVersion</key>
+        <string>$(FLUTTER_BUILD_NUMBER)</string>
+        <key>LSRequiresIPhoneOS</key>
+        <true/>
 
-		<!-- ✅ URL SCHEMES (ИСПРАВЛЕНО ДЛЯ GOOGLE SIGN-IN И DEEP LINKS) -->
-		<key>CFBundleURLTypes</key>
-		<array>
-			<!-- Схема для Google Auth (REVERSED_CLIENT_ID из GoogleService-Info.plist) -->
-			<dict>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>CFBundleURLSchemes</key>
-				<array>
-					<string>com.googleusercontent.apps.370877420307-7sbprm77lg96b4svsmr792k5a3pqhrs4</string>
-				</array>
-			</dict>
-			<!-- Кастомная схема для Deep Links приложения -->
-			<dict>
-				<key>CFBundleTypeRole</key>
-				<string>Editor</string>
-				<key>CFBundleURLName</key>
-				<string>com.foviox.app</string>
-				<key>CFBundleURLSchemes</key>
-				<array>
-					<string>foviox</string>
-				</array>
-			</dict>
-		</array>
+        <!-- URL SCHEMES (GOOGLE SIGN-IN И DEEP LINKS) -->
+        <key>CFBundleURLTypes</key>
+        <array>
+            <!-- Google Auth -->
+            <dict>
+                <key>CFBundleTypeRole</key>
+                <string>Editor</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>com.googleusercontent.apps.370877420307-7sbprm77lg96b4svsmr792k5a3pqhrs4</string>
+                </array>
+            </dict>
+            <!-- Deep Links -->
+            <dict>
+                <key>CFBundleTypeRole</key>
+                <string>Editor</string>
+                <key>CFBundleURLName</key>
+                <string>com.foviox.app</string>
+                <key>CFBundleURLSchemes</key>
+                <array>
+                    <string>foviox</string>
+                </array>
+            </dict>
+        </array>
 
-		<!-- ✅ РАЗРЕШЕНИЯ -->
-		<key>NSPhotoLibraryUsageDescription</key>
-		<string>Для загрузки и публикации фото и видео</string>
-		<key>NSCameraUsageDescription</key>
-		<string>Для съемки фото и видео в приложении</string>
-		<key>NSMicrophoneUsageDescription</key>
-		<string>Для записи звука при создании видео</string>
-		<key>NSPhotoLibraryAddUsageDescription</key>
-		<string>Для сохранения фото и видео в галерею</string>
+        <!-- РАЗРЕШЕННЫЕ ВНЕШНИЕ СХЕМЫ -->
+        <key>LSApplicationQueriesSchemes</key>
+        <array>
+            <string>https</string>
+            <string>http</string>
+        </array>
 
-		<!-- ✅ ФОНОВЫЕ РЕЖИМЫ (УБРАН ДУБЛИКАТ) -->
-		<key>UIBackgroundModes</key>
-		<array>
-			<string>remote-notification</string>
-			<string>audio</string>
-		</array>
+        <!-- РАЗРЕШЕНИЯ ПОЛЬЗОВАТЕЛЯ -->
+        <key>NSPhotoLibraryUsageDescription</key>
+        <string>Для загрузки и публикации фото и видео</string>
+        <key>NSCameraUsageDescription</key>
+        <string>Для съемки фото и видео в приложении</string>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Для записи звука при создании видео</string>
+        <key>NSPhotoLibraryAddUsageDescription</key>
+        <string>Для сохранения фото и видео в галерею</string>
 
-		<!-- ✅ APP TRANSPORT SECURITY -->
-		<key>NSAppTransportSecurity</key>
-		<dict>
-			<key>NSAllowsArbitraryLoads</key>
-			<true/>
-		</dict>
+        <!-- ФОНОВЫЕ РЕЖИМЫ (PUSH, FETCH И АУДИО) -->
+        <key>UIBackgroundModes</key>
+        <array>
+            <string>remote-notification</string>
+            <string>fetch</string>
+            <string>audio</string>
+        </array>
 
-		<!-- ✅ DEEP LINKING (УБРАН ДУБЛИКАТ) -->
-		<key>FlutterDeepLinkingEnabled</key>
-		<true/>
+        <!-- APP TRANSPORT SECURITY -->
+        <key>NSAppTransportSecurity</key>
+        <dict>
+            <key>NSAllowsArbitraryLoads</key>
+            <true/>
+        </dict>
 
-		<!-- ✅ ОФОРМЛЕНИЕ И СТАТУС-БАР -->
-		<key>UIViewControllerBasedStatusBarAppearance</key>
-		<false/>
-		<key>UIStatusBarHidden</key>
-		<false/>
-		<key>UIStatusBarStyle</key>
-		<string>UIStatusBarStyleLightContent</string>
-		<key>UIViewEdgeAntialiasing</key>
-		<true/>
-		<key>UILaunchStoryboardName</key>
-		<string>LaunchScreen</string>
-		<key>UIMainStoryboardFile</key>
-		<string>Main</string>
+        <!-- DEEP LINKING -->
+        <key>FlutterDeepLinkingEnabled</key>
+        <true/>
 
-		<!-- ✅ ОРИЕНТАЦИЯ ЭКРАНА -->
-		<key>UISupportedInterfaceOrientations</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-		</array>
-		<key>UISupportedInterfaceOrientations~ipad</key>
-		<array>
-			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationPortraitUpsideDown</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
-		</array>
+        <!-- ОФОРМЛЕНИЕ И СТАТУС-БАР -->
+        <key>UIViewControllerBasedStatusBarAppearance</key>
+        <false/>
+        <key>UIStatusBarHidden</key>
+        <false/>
+        <!-- 🔥 БЕЛЫЕ ИКОНКИ ДЛЯ ТЕМНОГО ФОНА -->
+        <key>UIStatusBarStyle</key>
+        <string>UIStatusBarStyleLightContent</string>
+        <key>UIViewEdgeAntialiasing</key>
+        <true/>
+        <key>UILaunchStoryboardName</key>
+        <string>LaunchScreen</string>
+        <key>UIMainStoryboardFile</key>
+        <string>Main</string>
 
-		<!-- ✅ FIREBASE -->
-		<key>FirebaseScreenReportingEnabled</key>
-		<true/>
-	</dict>
+        <!-- ОРИЕНТАЦИЯ ЭКРАНА -->
+        <key>UISupportedInterfaceOrientations</key>
+        <array>
+            <string>UIInterfaceOrientationPortrait</string>
+        </array>
+        <key>UISupportedInterfaceOrientations~ipad</key>
+        <array>
+            <string>UIInterfaceOrientationPortrait</string>
+            <string>UIInterfaceOrientationPortraitUpsideDown</string>
+            <string>UIInterfaceOrientationLandscapeLeft</string>
+            <string>UIInterfaceOrientationLandscapeRight</string>
+        </array>
+
+        <!-- FIREBASE -->
+        <key>FirebaseScreenReportingEnabled</key>
+        <true/>
+
+        <!-- ПОДДЕРЖКА МНОГООКОННОСТИ И БЭДЖЕЙ -->
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <false/>
+    </dict>
 </plist>

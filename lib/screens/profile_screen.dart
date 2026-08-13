@@ -367,6 +367,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       
     } catch (e) {
       print('❌ [ProfileScreen] Error loading saved posts: $e');
+      // 🔥 Устанавливаем флаг, чтобы не пытаться загружать снова
+      if (mounted) {
+        setState(() {
+          _savedPostsLoaded = true;
+        });
+      }
     }
   }
 
@@ -429,6 +435,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       
     } catch (e) {
       print('❌ [ProfileScreen] Error loading liked posts: $e');
+      // 🔥 Устанавливаем флаг, чтобы не пытаться загружать снова
+      if (mounted) {
+        setState(() {
+          _likedPostsLoaded = true;
+        });
+      }
     }
   }
 
@@ -532,6 +544,9 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   bool get _isOnline => !_isOffline;
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _initializeData
+  // ============================================================
   Future<void> _initializeData() async {
     if (_currentUserId.isEmpty) return;
     
@@ -558,12 +573,22 @@ class _ProfileScreenState extends State<ProfileScreen>
       await _loadUserData(refresh: true);
     }
     
-    if (!_likedPostsLoaded) {
-      await _loadLikedPostsFromFirestore();
+    // 🔥 ВСЕГДА ЗАГРУЖАЕМ ЛАЙКНУТЫЕ И СОХРАНЕННЫЕ ПРИ СТАРТЕ
+    try {
+      await Future.wait([
+        _loadLikedPostsFromFirestore(),
+        _loadSavedPostsFromFirestore(),
+      ]);
+    } catch (e) {
+      print('❌ Error loading liked/saved posts: $e');
     }
-    if (!_savedPostsLoaded) {
-      await _loadSavedPostsFromFirestore();
-    }
+    
+    // 🔥 ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСКИ
+    _refreshLikedPostsFromController();
+    _refreshSavedPostsFromController();
+    
+    print('✅ [ProfileScreen] All data loaded: liked=${_likedPosts.length}, saved=${_savedPosts.length}');
+    _isFirstLoad = false;
   }
 
   void _applyCachedData(Map<String, dynamic> cachedData) {

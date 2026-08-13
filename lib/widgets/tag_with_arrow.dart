@@ -17,15 +17,21 @@ class TagWithArrow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 🔥 Чуть-чуть увеличиваем итоговые габариты всего тега
+    final double adjustedWidth = width + 12;
+    final double adjustedHeight = height + 4;
+    const double arrowSize = 12.0; // Слегка увеличенная стрелочка
+
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: CustomPaint(
-        size: Size(width + 16, height + 1),
+        size: Size(adjustedWidth, adjustedHeight + arrowSize),
         painter: _TagPainter(
           displayName: tag.displayName.isNotEmpty ? tag.displayName : 'Link',
-          width: width + 16,
-          height: height + 1,
+          rectWidth: adjustedWidth,
+          rectHeight: adjustedHeight,
+          arrowSize: arrowSize,
         ),
       ),
     );
@@ -34,72 +40,77 @@ class TagWithArrow extends StatelessWidget {
 
 class _TagPainter extends CustomPainter {
   final String displayName;
-  final double width;
-  final double height;
+  final double rectWidth;
+  final double rectHeight;
+  final double arrowSize;
 
   _TagPainter({
     required this.displayName,
-    required this.width,
-    required this.height,
+    required this.rectWidth,
+    required this.rectHeight,
+    required this.arrowSize,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.grey[800]!
-      ..style = PaintingStyle.fill;
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
 
-    final double arrowSize = 11;
-    // 👇 УВЕЛИЧИЛ СКРУГЛЕНИЕ (было 10, стало 15)
-    final double radius = 15;
+    // Радиус скругления соразмерно увеличен
+    const double radius = 16;
+
+    // 1. Рисуем идеальный прямоугольник
+    final RRect tagRect = RRect.fromLTRBR(
+      0, 0, rectWidth, rectHeight,
+      const Radius.circular(radius),
+    );
 
     final path = Path();
+    path.addRRect(tagRect);
 
-    // ---- 1. НАЧИНАЕМ С ЛЕВОГО ВЕРХНЕГО УГЛА ----
-    path.moveTo(0, radius);
-    path.quadraticBezierTo(0, 0, radius, 0);
-    path.lineTo(width - radius, 0);
-    path.quadraticBezierTo(width, 0, width, radius);
-    path.lineTo(width, height - radius);
-    path.quadraticBezierTo(width, height, width - radius, height);
+    // 2. Добавляем аккуратную стрелочку
+    final double centerX = rectWidth / 2;
 
-    // ---- 2. СТРЕЛКА ВНИЗ ----
-    final double centerX = width / 2;
-    path.lineTo(centerX + arrowSize / 2, height);
+    path.moveTo(centerX + arrowSize / 2, rectHeight);
     path.quadraticBezierTo(
       centerX,
-      height + arrowSize,
+      rectHeight + arrowSize,
       centerX - arrowSize / 2,
-      height,
+      rectHeight,
     );
-    path.lineTo(radius, height);
 
-    // ---- 3. ЗАКРЫВАЕМ ФИГУРУ СЛЕВА ----
-    path.quadraticBezierTo(0, height, 0, height - radius);
-    path.lineTo(0, radius);
     path.close();
 
+    // 3. Отрисовываем единую фигуру без стыков и пикселей
     canvas.drawPath(path, paint);
 
-    // ---- 4. ТЕКСТ ----
+    // 4. Текст чуть крупнее для баланса
     final textPainter = TextPainter(
       text: TextSpan(
         text: displayName,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 13,
+          fontSize: 14.0, // 🔥 Увеличен с 13 до 14
           fontWeight: FontWeight.w600,
         ),
       ),
       textDirection: TextDirection.ltr,
     );
-    textPainter.layout(maxWidth: width - 20);
+    
+    textPainter.layout(maxWidth: rectWidth - 20);
 
-    final textX = (width - textPainter.width) / 2;
-    final textY = (height - textPainter.height) / 2;
+    final textX = (rectWidth - textPainter.width) / 2;
+    final textY = (rectHeight - textPainter.height) / 2;
+    
     textPainter.paint(canvas, Offset(textX, textY));
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _TagPainter oldDelegate) {
+    return oldDelegate.displayName != displayName ||
+        oldDelegate.rectWidth != rectWidth ||
+        oldDelegate.rectHeight != rectHeight;
+  }
 }

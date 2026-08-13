@@ -3,6 +3,7 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -56,6 +57,7 @@ import 'services/media_service.dart';
 import 'services/algolia_service.dart';
 import 'services/push_notifications_service.dart';
 import 'services/auth_service.dart';
+import 'services/status_bar_service.dart';
 
 // Bindings
 import 'bindings/chat_binding.dart';
@@ -67,6 +69,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 🔥 ГЛОБАЛЬНО - ЧЕРНЫЕ ИКОНКИ (для всех экранов)
+  StatusBarService().setDarkStatusBar();
   
   await GoogleFonts.pendingFonts([GoogleFonts.pacifico()]);
   
@@ -168,6 +173,9 @@ Future<void> _initializeServices() async {
 
 class MyApp extends StatelessWidget {
   MyApp({super.key});
+  
+  // 🔥 ГЛОБАЛЬНЫЙ ОБСЕРВЕР ДЛЯ ОТСЛЕЖИВАНИЯ МАРШРУТОВ
+  static final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
   @override
   Widget build(BuildContext context) {
@@ -184,6 +192,7 @@ class MyApp extends StatelessWidget {
         name: '/not-found',
         page: () => const Scaffold(body: Center(child: Text('404'))),
       ),
+      navigatorObservers: [routeObserver], // 🔥 ДОБАВЛЯЕМ ОБСЕРВЕР
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
@@ -360,6 +369,12 @@ class MyApp extends StatelessWidget {
       splashFactory: NoSplash.splashFactory,
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+          TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+        },
+      ),
       textSelectionTheme: const TextSelectionThemeData(
         cursorColor: Colors.white,
         selectionColor: Color(0x33FFFFFF),
@@ -391,6 +406,40 @@ class MyApp extends StatelessWidget {
       cardColor: Colors.grey.shade900,
       dividerColor: Colors.grey.shade800,
       hintColor: Colors.grey.shade400,
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 0,
+          textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          foregroundColor: Colors.white,
+          textStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: Colors.grey.shade800,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade700),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade700),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.white),
+        ),
+        labelStyle: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500),
+        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
     );
   }
   
@@ -446,106 +495,8 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
-// ========== КАСТОМНАЯ ИКОНКА ДОМА ==========
-
-class HomeIcon extends StatelessWidget {
-  final bool isActive;
-  final Color color;
-  final double size;
-
-  const HomeIcon({
-    super.key,
-    required this.isActive,
-    required this.color,
-    this.size = 26,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: Size(size, size),
-      painter: _HomePainter(isActive: isActive, color: color),
-    );
-  }
-}
-
-class _HomePainter extends CustomPainter {
-  final bool isActive;
-  final Color color;
-
-  _HomePainter({required this.isActive, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 2.2
-      ..style = isActive ? PaintingStyle.fill : PaintingStyle.stroke
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-
-    final path = Path();
-    final w = size.width;
-    final h = size.height;
-    
-    path.moveTo(w * 0.1, h * 0.4);
-    path.quadraticBezierTo(w * 0.1, h * 0.35, w * 0.15, h * 0.35);
-    path.lineTo(w * 0.4, h * 0.12);
-    path.quadraticBezierTo(w * 0.5, h * 0.04, w * 0.6, h * 0.12);
-    path.lineTo(w * 0.85, h * 0.35);
-    path.quadraticBezierTo(w * 0.9, h * 0.35, w * 0.9, h * 0.4);
-    path.lineTo(w * 0.85, h * 0.4);
-    path.lineTo(w * 0.85, h * 0.8);
-    path.quadraticBezierTo(w * 0.85, h * 0.88, w * 0.78, h * 0.88);
-    path.lineTo(w * 0.22, h * 0.88);
-    path.quadraticBezierTo(w * 0.15, h * 0.88, w * 0.15, h * 0.8);
-    path.lineTo(w * 0.15, h * 0.4);
-    path.lineTo(w * 0.1, h * 0.4);
-    path.close();
-
-    if (isActive) {
-      final doorPath = Path();
-      doorPath.moveTo(w * 0.38, h * 0.88);
-      doorPath.lineTo(w * 0.38, h * 0.7);
-      doorPath.lineTo(w * 0.62, h * 0.7);
-      doorPath.lineTo(w * 0.62, h * 0.88);
-      doorPath.close();
-      
-      final combinedPath = Path.combine(
-        PathOperation.difference,
-        path,
-        doorPath,
-      );
-      
-      canvas.drawPath(combinedPath, paint);
-    } else {
-      canvas.drawPath(path, paint);
-      
-      final doorPaint = Paint()
-        ..color = color
-        ..strokeWidth = 2.2
-        ..style = PaintingStyle.stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round;
-
-      final doorPath = Path();
-      doorPath.moveTo(w * 0.38, h * 0.7);
-      doorPath.lineTo(w * 0.38, h * 0.88);
-      doorPath.moveTo(w * 0.62, h * 0.7);
-      doorPath.lineTo(w * 0.62, h * 0.88);
-      doorPath.moveTo(w * 0.38, h * 0.7);
-      doorPath.lineTo(w * 0.62, h * 0.7);
-      
-      canvas.drawPath(doorPath, doorPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
-}
-
 // ============================================================
-// 🔥 MAINAPP - БЕЗ АНИМАЦИИ НАВИГАЦИИ
+// 🔥 MAINAPP
 // ============================================================
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
@@ -564,7 +515,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
   bool _isRefreshingFeed = false;
   bool _isRefreshingProfile = false;
   
-  // Контроллер для анимации масштаба
   late AnimationController _scaleController;
   late Animation<double> _scaleAnimation;
 
@@ -584,7 +534,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     }
     
     _screens = [
-      FeedScreen(key: const ValueKey('feed_screen')),
+      const FeedScreen(),
       const SearchScreen(),
       const SizedBox.shrink(),
       MessagesScreen(currentUserId: _authController.firebaseUser.value?.uid ?? ''),
@@ -601,7 +551,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       }
     });
     
-    // Инициализация анимации масштаба
     _scaleController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
@@ -753,7 +702,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            // ФОН ТАББАРА
             ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -787,7 +735,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               ),
             ),
             
-            // Анимированный кружок
             AnimatedPositioned(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
@@ -820,7 +767,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               ),
             ),
             
-            // Иконки
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -979,4 +925,102 @@ class _CenterButton extends StatelessWidget {
       ),
     );
   }
+}
+
+// ========== КАСТОМНАЯ ИКОНКА ДОМА ==========
+
+class HomeIcon extends StatelessWidget {
+  final bool isActive;
+  final Color color;
+  final double size;
+
+  const HomeIcon({
+    super.key,
+    required this.isActive,
+    required this.color,
+    this.size = 26,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _HomePainter(isActive: isActive, color: color),
+    );
+  }
+}
+
+class _HomePainter extends CustomPainter {
+  final bool isActive;
+  final Color color;
+
+  _HomePainter({required this.isActive, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2.2
+      ..style = isActive ? PaintingStyle.fill : PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+    final w = size.width;
+    final h = size.height;
+    
+    path.moveTo(w * 0.1, h * 0.4);
+    path.quadraticBezierTo(w * 0.1, h * 0.35, w * 0.15, h * 0.35);
+    path.lineTo(w * 0.4, h * 0.12);
+    path.quadraticBezierTo(w * 0.5, h * 0.04, w * 0.6, h * 0.12);
+    path.lineTo(w * 0.85, h * 0.35);
+    path.quadraticBezierTo(w * 0.9, h * 0.35, w * 0.9, h * 0.4);
+    path.lineTo(w * 0.85, h * 0.4);
+    path.lineTo(w * 0.85, h * 0.8);
+    path.quadraticBezierTo(w * 0.85, h * 0.88, w * 0.78, h * 0.88);
+    path.lineTo(w * 0.22, h * 0.88);
+    path.quadraticBezierTo(w * 0.15, h * 0.88, w * 0.15, h * 0.8);
+    path.lineTo(w * 0.15, h * 0.4);
+    path.lineTo(w * 0.1, h * 0.4);
+    path.close();
+
+    if (isActive) {
+      final doorPath = Path();
+      doorPath.moveTo(w * 0.38, h * 0.88);
+      doorPath.lineTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.88);
+      doorPath.close();
+      
+      final combinedPath = Path.combine(
+        PathOperation.difference,
+        path,
+        doorPath,
+      );
+      
+      canvas.drawPath(combinedPath, paint);
+    } else {
+      canvas.drawPath(path, paint);
+      
+      final doorPaint = Paint()
+        ..color = color
+        ..strokeWidth = 2.2
+        ..style = PaintingStyle.stroke
+        ..strokeCap = StrokeCap.round
+        ..strokeJoin = StrokeJoin.round;
+
+      final doorPath = Path();
+      doorPath.moveTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.38, h * 0.88);
+      doorPath.moveTo(w * 0.62, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.88);
+      doorPath.moveTo(w * 0.38, h * 0.7);
+      doorPath.lineTo(w * 0.62, h * 0.7);
+      
+      canvas.drawPath(doorPath, doorPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
