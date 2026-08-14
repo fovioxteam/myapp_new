@@ -1,3 +1,5 @@
+// lib/screens/upload_screen.dart
+
 import 'dart:io';
 import 'dart:async';
 import 'dart:typed_data';
@@ -10,7 +12,6 @@ import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:video_compress/video_compress.dart';
 
 import 'post_preview_screen.dart';
 import '../models/media_types.dart';
@@ -349,6 +350,9 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
+  // ============================================================
+  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО ЧЕРЕЗ VideoCompressor
+  // ============================================================
   Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
     if (asset.type != AssetType.video) return null;
     
@@ -362,9 +366,11 @@ class _UploadScreenState extends State<UploadScreen> {
       final file = await asset.file;
       if (file != null) {
         print('🎬 [DURATION] Getting duration for: ${file.path}');
-        final info = await VideoCompress.getMediaInfo(file.path);
-        if (info != null && info.duration != null && info.duration! > 0) {
-          final duration = Duration(milliseconds: info.duration!.toInt());
+        
+        // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
+        final durationMs = await VideoCompressor.getVideoDurationMs(file.path);
+        if (durationMs > 0) {
+          final duration = Duration(milliseconds: durationMs);
           _durationCache[assetId] = duration;
           print('🎬 [DURATION] Duration: ${duration.inSeconds} sec');
           return duration;
@@ -431,31 +437,56 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
         );
         
-        final compressedFile = await VideoCompressor.compressVideo(file);
+        // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor.compressVideo
+        final compressedFile = await VideoCompressor.compressVideo(file.path);
         
         if (mounted) Navigator.pop(context);
         
-        final compressedSize = await compressedFile.length();
-        print('🎬 [UPLOAD] Compressed file size: ${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB');
-        
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PostPreviewScreen(
-                selectedFiles: [compressedFile],
-                selectedAssets: [],
-                mediaType: MediaUploadType.video,
+        if (compressedFile != null) {
+          final compressedSize = await compressedFile.length();
+          print('🎬 [UPLOAD] Compressed file size: ${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB');
+          
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PostPreviewScreen(
+                  selectedFiles: [compressedFile],
+                  selectedAssets: [],
+                  mediaType: MediaUploadType.video,
+                ),
               ),
-            ),
-          ).then((_) {
-            if (mounted) {
-              setState(() {
-                _selectedAssets.clear();
-                _selectedAssetsOrder.clear();
-              });
-            }
-          });
+            ).then((_) {
+              if (mounted) {
+                setState(() {
+                  _selectedAssets.clear();
+                  _selectedAssetsOrder.clear();
+                });
+              }
+            });
+          }
+        } else {
+          // Если сжатие не удалось — используем оригинал
+          print('⚠️ [UPLOAD] Compression failed, using original');
+          if (mounted) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PostPreviewScreen(
+                  selectedFiles: [file],
+                  selectedAssets: [],
+                  mediaType: MediaUploadType.video,
+                ),
+              ),
+            ).then((_) {
+              if (mounted) {
+                setState(() {
+                  _selectedAssets.clear();
+                  _selectedAssetsOrder.clear();
+                });
+              }
+            });
+          }
         }
       }
       return;
@@ -597,16 +628,27 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           );
           
-          final compressedFile = await VideoCompressor.compressVideo(file);
+          // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
+          final compressedFile = await VideoCompressor.compressVideo(file.path);
           if (mounted) Navigator.pop(context);
           
-          setState(() {
-            _selectedFiles = [compressedFile];
-            _detectedMediaType = MediaUploadType.video;
-            _selectedAssets.clear();
-            _selectedAssetsOrder.clear();
-          });
-          _navigateToPreview();
+          if (compressedFile != null) {
+            setState(() {
+              _selectedFiles = [compressedFile];
+              _detectedMediaType = MediaUploadType.video;
+              _selectedAssets.clear();
+              _selectedAssetsOrder.clear();
+            });
+            _navigateToPreview();
+          } else {
+            setState(() {
+              _selectedFiles = [file];
+              _detectedMediaType = MediaUploadType.video;
+              _selectedAssets.clear();
+              _selectedAssetsOrder.clear();
+            });
+            _navigateToPreview();
+          }
         }
       } else {
         final file = await picker.pickImage(
@@ -748,19 +790,33 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           );
           
-          final compressedFile = await VideoCompressor.compressVideo(file);
+          // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
+          final compressedFile = await VideoCompressor.compressVideo(file.path);
           if (mounted) Navigator.pop(context);
           
-          setState(() {
-            _selectedFiles = [compressedFile];
-            _detectedMediaType = MediaUploadType.video;
-            _isFilePickerMode = true;
-            _isCameraMode = false;
-            _cameraImage = null;
-            _selectedAssets.clear();
-            _selectedAssetsOrder.clear();
-          });
-          _navigateToPreview();
+          if (compressedFile != null) {
+            setState(() {
+              _selectedFiles = [compressedFile];
+              _detectedMediaType = MediaUploadType.video;
+              _isFilePickerMode = true;
+              _isCameraMode = false;
+              _cameraImage = null;
+              _selectedAssets.clear();
+              _selectedAssetsOrder.clear();
+            });
+            _navigateToPreview();
+          } else {
+            setState(() {
+              _selectedFiles = [file];
+              _detectedMediaType = MediaUploadType.video;
+              _isFilePickerMode = true;
+              _isCameraMode = false;
+              _cameraImage = null;
+              _selectedAssets.clear();
+              _selectedAssetsOrder.clear();
+            });
+            _navigateToPreview();
+          }
         }
       } else {
         result = await FilePicker.platform.pickFiles(

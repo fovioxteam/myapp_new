@@ -78,12 +78,11 @@ dependencies:
   # App icon generator
   flutter_launcher_icons: ^0.14.4
   
-  # Apple Sign In
+  # Video & Audio
   crypto: ^3.0.7
   preload_page_view: ^0.2.0
   webview_flutter: ^4.14.0
   flutter_custom_tabs: ^2.5.0
-  video_compress: ^3.1.4
   video_player: ^2.11.1
   visibility_detector: ^0.4.0+2
   video_thumbnail: ^0.5.6
@@ -91,8 +90,9 @@ dependencies:
   media_kit: ^1.2.6
   media_kit_video: ^2.0.1
   media_kit_native_event_loop: ^1.0.9
-  ffmpeg_kit_flutter_new_min: ^3.6.2
   flutter_cache_manager: ^3.3.1
+  ffmpeg_kit_flutter_new: ^4.6.2
+  flutter_spinkit: ^5.2.2
 
 dependency_overrides:
   http: ^1.0.0
@@ -119,25 +119,22 @@ flutter_launcher_icons:
   android: true
   ios: true
   image_path: "assets/logo/app_icon.png"
-  remove_alpha_ios: true   # ← ДОБАВЛЕНО! УБИРАЕТ ПРОЗРАЧНОСТЬ ДЛЯ iOS
+  remove_alpha_ios: true
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/logo/app_icon.png"
   min_sdk_android: 21
   
-  # Веб иконки
   web:
     generate: true
     image_path: "assets/logo/app_icon_512.png"
     background_color: "#FFFFFF"
     theme_color: "#000000"
   
-  # Windows иконки
   windows:
     generate: true
     image_path: "assets/logo/app_icon.png"
     icon_size: 48
   
-  # macOS иконки
   macos:
     generate: true
     image_path: "assets/logo/app_icon.png"

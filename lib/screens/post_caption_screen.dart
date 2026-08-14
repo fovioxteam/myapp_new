@@ -1,3 +1,5 @@
+// lib/screens/post_caption_screen.dart
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -167,7 +169,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     try {
       print('🎬 [UPLOAD] Generating thumbnail...');
       
-      final thumbnail = await VideoCompressor.getFileThumbnail(videoFile.path);
+      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
       
       if (thumbnail == null) {
         print('⚠️ [UPLOAD] Failed to generate thumbnail');
@@ -194,7 +196,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   Future<File?> _getVideoThumbnailFile() async {
     try {
       final videoFile = widget.selectedFiles.first;
-      final thumbnail = await VideoCompressor.getFileThumbnail(videoFile.path);
+      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
       return thumbnail;
     } catch (e) {
       print('❌ [THUMBNAIL] Error: $e');
@@ -330,7 +332,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'videoUrl': videoUrl,
           'thumbnailUrl': thumbnailUrl ?? '',
           'imageUrls': [thumbnailUrl ?? ''],
-          'fitModes': fitModesToSave, // 🔥 ЭТО ВАЖНО!
+          'fitModes': fitModesToSave,
           'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
           'caption': fullCaption,
           'hashtags': _selectedHashtags,

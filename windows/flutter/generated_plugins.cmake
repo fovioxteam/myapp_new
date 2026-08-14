@@ -6,7 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   cloud_firestore
   connectivity_plus
-  ffmpeg_kit_flutter_new_min
+  ffmpeg_kit_flutter_new
   file_selector_windows
   firebase_auth
   firebase_core

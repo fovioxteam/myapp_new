@@ -2,10 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:get/get.dart';
-import '../controllers/post_controller.dart';
-import '../services/video_cache_service.dart';
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
@@ -35,7 +32,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   bool _wasStoppedByScroll = false;
   bool _isPausedByUser = false;
 
-  bool _showThumbnail = true;
+  bool _isVideoFrameReady = false;
   bool _isLoading = true;
 
   @override
@@ -54,13 +51,18 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     }
 
     if (oldWidget.videoUrl != widget.videoUrl) {
-      _controller?.dispose();
-      _controller = null;
+      _disposeController();
       _isInitialized = false;
-      _showThumbnail = true;
+      _isVideoFrameReady = false;
       _isLoading = true;
       _initVideo();
     }
+  }
+
+  void _disposeController() {
+    _controller?.removeListener(_videoListener);
+    _controller?.dispose();
+    _controller = null;
   }
 
   void _handleVisibilityChange(bool isVisible) {
@@ -105,6 +107,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       await _controller!.setVolume(1.0);
       await _controller!.setLooping(true);
 
+      _controller!.addListener(_videoListener);
+
       if (!mounted) return;
 
       if (widget.isVisible) {
@@ -119,10 +123,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       setState(() {
         _isInitialized = true;
         _isLoading = false;
-        _showThumbnail = false;
+        // 💡 Если контроллер уже инициализирован и проигрывается, 
+        // сразу взводим флаг готовности, чтобы не ждать срабатывания listener при холодном старте
+        if (_controller!.value.isPlaying || _controller!.value.position > Duration.zero) {
+          _isVideoFrameReady = true;
+        }
       });
-
-      print('✅ [VIDEO] Ready');
 
     } catch (e) {
       print('❌ [VIDEO] Error initializing controller: $e');
@@ -131,6 +137,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           _isInitialized = false;
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  void _videoListener() {
+    if (_controller != null &&
+        _controller!.value.isInitialized &&
+        !_isVideoFrameReady) {
+      // Расширенная проверка: готово ли видео к отображению
+      if (_controller!.value.position > Duration.zero || 
+          _controller!.value.isPlaying || 
+          !_controller!.value.isBuffering) {
+        if (mounted) {
+          print('🎬 [VIDEO] First frame ready via listener');
+          setState(() {
+            _isVideoFrameReady = true;
+          });
+        }
       }
     }
   }
@@ -158,18 +182,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void dispose() {
     print('🗑️ [VIDEO] Disposing');
-    _controller?.dispose();
+    _disposeController();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasThumbnail =
-        widget.thumbnailUrl != null && widget.thumbnailUrl!.isNotEmpty;
-    final isPreloaded =
-        Get.find<PostController>().isVideoPreloaded(widget.videoUrl);
-
-    final bool hasVideo = _isInitialized && _controller != null;
+    final bool showVideoNow = _isInitialized && _controller != null && _isVideoFrameReady;
 
     return GestureDetector(
       onTap: _togglePlayback,
@@ -179,8 +198,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
-            // ✅ ВИДЕОПЛЕЕР - ЗАНИМАЕТ ВСЕ ДОСТУПНОЕ ПРОСТРАНСТВО
-            if (hasVideo)
+            // 1. ВИДЕОПЛЕЕР
+            if (showVideoNow)
               Positioned.fill(
                 child: FittedBox(
                   fit: widget.fit,
@@ -192,50 +211,24 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // ✅ ТАМБНЕЙЛ
-            if (hasThumbnail && _showThumbnail)
-              Positioned.fill(
-                child: CachedNetworkImage(
-                  imageUrl: widget.thumbnailUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) => Container(color: Colors.black),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.black,
-                    child: const Center(
-                      child: Icon(
-                        Icons.broken_image,
-                        color: Colors.grey,
-                        size: 40,
-                      ),
-                    ),
-                  ),
+            // 2. ЛОАДЕР
+            if (_isLoading || !_isVideoFrameReady)
+              const Center(
+                child: SpinKitThreeBounce(
+                  color: Colors.white70,
+                  size: 26.0,
                 ),
               ),
 
-            // ✅ ЛОАДЕР
-            if (_isLoading && !hasThumbnail && !isPreloaded)
-              Container(
-                color: Colors.black54,
-                child: const Center(
-                  child: SizedBox(
-                    width: 30,
-                    height: 30,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  ),
-                ),
-              ),
-
-            // ✅ ИКОНКА PLAY
+            // 3. ИКОНКА PLAY
             if (!_isPlaying &&
                 widget.showControls &&
                 !_wasStoppedByScroll &&
-                _isInitialized)
+                _isInitialized &&
+                _isVideoFrameReady)
               Icon(
                 Icons.play_arrow,
-                color: Colors.grey.shade400.withOpacity(0.85),
+                color: Colors.white.withAlpha(216),
                 size: 110,
               ),
           ],
