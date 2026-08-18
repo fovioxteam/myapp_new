@@ -11,7 +11,7 @@ import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart'; // 🔥 ДОБАВЛЯЕМ
+import 'package:flutter_spinkit/flutter_spinkit.dart';
 
 import '../widgets/post_item.dart';
 import '../services/follow_service.dart';
@@ -738,7 +738,6 @@ class _FeedScreenState extends State<FeedScreen>
 
   Widget _buildForYouContent() {
     if (_forYouPostIds.isEmpty) {
-      // 🔥 ТАКОЙ ЖЕ ЛОАДЕР КАК В VIDEO_PLAYER_WIDGET
       return const Center(
         child: SpinKitThreeBounce(
           color: Colors.white70,
@@ -771,7 +770,6 @@ class _FeedScreenState extends State<FeedScreen>
 
   Widget _buildFollowingContent() {
     if (_loadingFollowing) {
-      // 🔥 ТАКОЙ ЖЕ ЛОАДЕР КАК В VIDEO_PLAYER_WIDGET
       return const Center(
         child: SpinKitThreeBounce(
           color: Colors.white70,
@@ -932,7 +930,6 @@ class _FeedScreenState extends State<FeedScreen>
                     labelPadding: const EdgeInsets.symmetric(horizontal: 16),
                     labelColor: Colors.white,
                     unselectedLabelColor: Colors.white.withOpacity(0.7),
-                    // 🔥 КАСТОМНЫЙ ТОНКИЙ ИНДИКАТОР
                     indicator: UnderlineTabIndicator(
                       borderSide: const BorderSide(
                         color: Colors.white,

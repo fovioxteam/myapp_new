@@ -1664,14 +1664,14 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS
+  // 🔥 ACTION BUTTONS - УМЕНЬШЕННЫЕ РАЗМЕРЫ, ОТСТУП 0
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
     required int count,
     Animation<double>? scaleAnimation,
-    double iconSize = 34,
+    double iconSize = 28,
   }) {
     Widget button = GestureDetector(
       onTap: () {
@@ -1679,7 +1679,7 @@ class _PostItemState extends State<PostItem>
         onTap();
       },
       child: SizedBox(
-        width: 40,
+        width: 36,
         child: Icon(
           icon,
           color: Colors.white,
@@ -1705,12 +1705,12 @@ class _PostItemState extends State<PostItem>
       mainAxisSize: MainAxisSize.min,
       children: [
         button,
-        const SizedBox(height: 4),
+        const SizedBox(height: 0), // 🔥 ОТСТУП 0 (было 3-4)
         Text(
           _formatNumber(count),
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 13,
+            fontSize: 11,
             fontWeight: FontWeight.w700,
             shadows: [
               Shadow(
@@ -1744,7 +1744,7 @@ class _PostItemState extends State<PostItem>
       final isTagsVisible = _showTagsForCarouselIndex[_currentCarouselIndex] ?? false;
 
       return SizedBox(
-        width: 56,
+        width: 48,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1754,29 +1754,29 @@ class _PostItemState extends State<PostItem>
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
               count: likesCount,
               scaleAnimation: _likeIconScale,
-              iconSize: 36,
+              iconSize: 30,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             _buildActionButton(
               onTap: _showCommentsSheet,
               icon: CupertinoIcons.chat_bubble,
               count: commentsCount,
-              iconSize: 32,
+              iconSize: 26,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 16),
             _buildActionButton(
               onTap: _toggleSave,
               icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
               count: savesCount,
               scaleAnimation: _saveIconScale,
-              iconSize: 32,
+              iconSize: 26,
             ),
             
             // ============================================================
             // 🔥 БЛОК ТЕГОВ - ПОЛНОСТЬЮ БЕЛАЯ ИКОНКА
             // ============================================================
             if (hasTagsForThisImage) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               RepaintBoundary(
                 child: GestureDetector(
                   onTap: () {
@@ -1784,11 +1784,11 @@ class _PostItemState extends State<PostItem>
                     _toggleTagsForCarouselIndex(_currentCarouselIndex);
                   },
                   child: const SizedBox(
-                    width: 40,
+                    width: 36,
                     child: Icon(
                       Icons.auto_awesome,
-                      color: Colors.white,
-                      size: 32,
+                      color: Colors.white, // 🔥 ВСЕГДА БЕЛАЯ
+                      size: 26,
                     ),
                   ),
                 ),
