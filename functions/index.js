@@ -1233,7 +1233,7 @@ exports.testDelete = functions
   });
 
 // ============================================
-// 🔥 ALGOLIA TRIGGERS - ИСПРАВЛЕННЫЕ
+// 🔥 ALGOLIA TRIGGERS - С ТЕГАМИ
 // ============================================
 
 exports.onPostCreatedForAlgolia = functions
@@ -1248,7 +1248,7 @@ exports.onPostCreatedForAlgolia = functions
     const { postsIndex } = initAlgolia(algoliaKey);
     if (!postsIndex) return;
 
-    // ✅ ИСПРАВЛЕННЫЙ ОБЪЕКТ - ДОБАВЛЕНЫ mediaType, videoUrl, fitModes
+    // ✅ ДОБАВЛЕНЫ ТЕГИ
     const record = {
       objectID: postId,
       caption: data.caption || "",
@@ -1261,17 +1261,18 @@ exports.onPostCreatedForAlgolia = functions
       userId: data.userId,
       userName: data.userName,
       userAvatar: data.userAvatar || "",
-      
-      // 🔥🔥🔥 ДОБАВЛЯЕМ ЭТИ ПОЛЯ 🔥🔥🔥
       mediaType: data.mediaType || 'photo',
       videoUrl: data.videoUrl || '',
       fitModes: data.fitModes || [],
       imageUrls: data.imageUrls || [],
+      // 🔥🔥🔥 ТЕГИ 🔥🔥🔥
+      tags: data.tags || [],
+      linkTags: data.tags || [],
     };
 
     try {
       await postsIndex.saveObject(record);
-      console.log(`✅ [Algolia] Indexed post: ${postId}, mediaType: ${record.mediaType}, videoUrl: ${record.videoUrl}`);
+      console.log(`✅ [Algolia] Indexed post: ${postId}, mediaType: ${record.mediaType}, tags: ${record.tags.length}`);
     } catch (e) {
       console.error(`❌ [Algolia] Error indexing post: ${e}`);
     }
@@ -1290,7 +1291,6 @@ exports.onPostUpdatedForAlgolia = functions
     const { postsIndex } = initAlgolia(algoliaKey);
     if (!postsIndex) return;
 
-    // ✅ ИСПРАВЛЕННОЕ ОБНОВЛЕНИЕ - ДОБАВЛЕНЫ МЕДИА-ПОЛЯ
     const updates = { objectID: postId };
     let hasUpdates = false;
 
@@ -1311,8 +1311,6 @@ exports.onPostUpdatedForAlgolia = functions
       updates.imageUrl = newData.imageUrls?.[0] || "";
       hasUpdates = true;
     }
-    
-    // 🔥 МЕДИА-ПОЛЯ
     if (newData.mediaType !== oldData.mediaType) {
       updates.mediaType = newData.mediaType || 'photo';
       hasUpdates = true;
@@ -1327,6 +1325,12 @@ exports.onPostUpdatedForAlgolia = functions
     }
     if (JSON.stringify(newData.imageUrls) !== JSON.stringify(oldData.imageUrls)) {
       updates.imageUrls = newData.imageUrls || [];
+      hasUpdates = true;
+    }
+    // 🔥 ОБНОВЛЯЕМ ТЕГИ
+    if (JSON.stringify(newData.tags) !== JSON.stringify(oldData.tags)) {
+      updates.tags = newData.tags || [];
+      updates.linkTags = newData.tags || [];
       hasUpdates = true;
     }
 
@@ -1415,7 +1419,71 @@ exports.onUserUpdatedForAlgolia = functions
   });
 
 // ============================================
-// 🔥 НОВАЯ ФУНКЦИЯ: ОБНОВЛЕНИЕ ПОСТОВ ПРИ СМЕНЕ ИМЕНИ ПОЛЬЗОВАТЕЛЯ
+// 🔥 МАССОВОЕ ОБНОВЛЕНИЕ ТЕГОВ
+// ============================================
+exports.updateAllPostsTagsInAlgolia = functions
+  .runWith({ 
+    enforceAppCheck: false, 
+    secrets: [ALGOLIA_ADMIN_KEY_SECRET],
+    timeoutSeconds: 540,
+    memory: '1GB'
+  })
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Not authenticated');
+    }
+    
+    console.log('🔄 [CF] Mass updating posts with tags in Algolia...');
+    
+    const algoliaKey = ALGOLIA_ADMIN_KEY_SECRET.value();
+    const { postsIndex } = initAlgolia(algoliaKey);
+    if (!postsIndex) {
+      throw new functions.https.HttpsError('failed-precondition', 'Algolia not initialized');
+    }
+    
+    try {
+      const postsSnapshot = await db.collection('posts').get();
+      console.log(`📊 [CF] Found ${postsSnapshot.docs.length} posts in Firestore`);
+      
+      let updated = 0;
+      let batch = [];
+      
+      for (const doc of postsSnapshot.docs) {
+        const post = doc.data();
+        const postId = doc.id;
+        
+        if (post.tags && post.tags.length > 0) {
+          batch.push({
+            objectID: postId,
+            tags: post.tags,
+            linkTags: post.tags,
+          });
+          
+          if (batch.length >= 100) {
+            await postsIndex.partialUpdateObjects(batch);
+            updated += batch.length;
+            console.log(`✅ [CF] Updated ${updated}/${postsSnapshot.docs.length} posts`);
+            batch = [];
+          }
+        }
+      }
+      
+      if (batch.length > 0) {
+        await postsIndex.partialUpdateObjects(batch);
+        updated += batch.length;
+      }
+      
+      console.log(`✅ [CF] Successfully updated ${updated} posts with tags`);
+      return { success: true, updated: updated, total: postsSnapshot.docs.length };
+      
+    } catch (error) {
+      console.error(`❌ [CF] Error:`, error);
+      throw new functions.https.HttpsError('internal', error.message);
+    }
+  });
+
+// ============================================
+// 🔥 ОБНОВЛЕНИЕ ПОСТОВ ПРИ СМЕНЕ ИМЕНИ
 // ============================================
 exports.onUserUpdateUpdatePosts = functions
   .region('europe-west1')
@@ -1429,7 +1497,6 @@ exports.onUserUpdateUpdatePosts = functions
     const oldUsername = beforeData.username;
     const newUsername = afterData.username;
     
-    // Проверяем, изменилось ли имя
     if (oldUsername === newUsername) {
       console.log(`⏭️ [Algolia] Username not changed for user ${userId}`);
       return null;
@@ -1446,7 +1513,6 @@ exports.onUserUpdateUpdatePosts = functions
     }
     
     try {
-      // Находим все посты пользователя в Algolia
       const searchResult = await postsIndex.search('', {
         filters: `userId:"${userId}"`,
         hitsPerPage: 1000,
@@ -1460,7 +1526,6 @@ exports.onUserUpdateUpdatePosts = functions
         return null;
       }
       
-      // Обновляем каждый пост
       for (const hit of hits) {
         await postsIndex.partialUpdateObject({
           objectID: hit.objectID,
@@ -1478,7 +1543,7 @@ exports.onUserUpdateUpdatePosts = functions
   });
 
 // ============================================
-// 🔥 НОВАЯ ФУНКЦИЯ: ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ВСЕХ ПОСТОВ ПОЛЬЗОВАТЕЛЯ (CALLABLE)
+// 🔥 ПРИНУДИТЕЛЬНОЕ ОБНОВЛЕНИЕ ВСЕХ ПОСТОВ
 // ============================================
 exports.updateAllUserPostsInAlgolia = functions
   .runWith({ enforceAppCheck: false, secrets: [ALGOLIA_ADMIN_KEY_SECRET] })
@@ -1503,14 +1568,12 @@ exports.updateAllUserPostsInAlgolia = functions
     }
     
     try {
-      // 1. Обновляем пользователя
       await usersIndex.partialUpdateObject({
         objectID: userId,
         username: username || '',
         avatarUrl: avatarUrl || '',
       });
       
-      // 2. Обновляем все посты
       const searchResult = await postsIndex.search('', {
         filters: `userId:"${userId}"`,
         hitsPerPage: 1000,

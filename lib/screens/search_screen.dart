@@ -16,6 +16,8 @@ import '../services/follow_service.dart';
 import '../controllers/post_controller.dart';
 import '../services/algolia_service.dart';
 import '../extensions/safe_extensions.dart';
+import '../models/post_tag.dart';
+import '../widgets/post_tags_overlay.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -141,6 +143,44 @@ class _SearchScreenState extends State<SearchScreen>
     }
     
     return false;
+  }
+
+  // 🔥 ПОЛУЧАЕМ ТЕГИ ИЗ ПОСТА
+  List<PostTag> _getTagsFromPost(Map<String, dynamic> post) {
+    final List<PostTag> tags = [];
+    final tagsData = post['tags'] as List? ?? [];
+    for (var tagData in tagsData) {
+      if (tagData is Map<String, dynamic>) {
+        try {
+          tags.add(PostTag.fromJson(tagData));
+        } catch (e) {
+          print('Error parsing tag: $e');
+        }
+      }
+    }
+    return tags;
+  }
+
+  // 🔥 ОБРАБОТКА НАЖАТИЯ НА ТЕГ
+  void _handleTagTap(PostTag tag) {
+    if (!mounted) return;
+    // Проверяем что это не ссылка на Storage
+    if (tag.url.contains('firebasestorage.googleapis.com') || 
+        tag.url.contains('storage.googleapis.com')) {
+      print('⚠️ Skipping storage URL');
+      return;
+    }
+    print('🔗 [SEARCH] Opening tag link: ${tag.url}');
+    // Используем LinkLauncher если есть, или просто открываем
+    try {
+      // Если есть LinkLauncher
+      // LinkLauncher.openUrl(context, tag.url);
+      // Или используем url_launcher напрямую
+      // launchUrl(Uri.parse(tag.url));
+      print('🔗 Opening: ${tag.url}');
+    } catch (e) {
+      print('❌ Error opening link: $e');
+    }
   }
 
   void _cleanupUserSubscriptions() {
@@ -377,6 +417,8 @@ class _SearchScreenState extends State<SearchScreen>
         print('   - videoUrl: ${posts.first['videoUrl']}');
         print('   - userName: ${posts.first['userName']}');
         print('   - userId: ${posts.first['userId']}');
+        print('   - tags: ${posts.first['tags']}');
+        print('   - hashtags: ${posts.first['hashtags']}');
       }
       
       final currentUserId = _auth.currentUser?.uid;
@@ -388,9 +430,24 @@ class _SearchScreenState extends State<SearchScreen>
       print('   👤 Users: ${filteredUsers.length}');
       print('   📷 Posts: ${filteredPosts.length}');
       
+      // 🔥 СОХРАНЯЕМ ТЕГИ ИЗ ALGOLIA
+      final processedPosts = filteredPosts.map((post) {
+        final postMap = Map<String, dynamic>.from(post);
+        
+        // Если есть теги в Algolia
+        if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
+          postMap['tags'] = List.from(post['tags']);
+          print('📦 [SEARCH] Post ${post['id']} has ${(post['tags'] as List).length} tags from Algolia');
+        } else {
+          postMap['tags'] = [];
+        }
+        
+        return postMap;
+      }).toList();
+      
       setState(() {
         _users = List<Map<String, dynamic>>.from(filteredUsers);
-        _posts = List<Map<String, dynamic>>.from(filteredPosts);
+        _posts = processedPosts;
         _isSearching = false;
       });
       
@@ -400,7 +457,18 @@ class _SearchScreenState extends State<SearchScreen>
       print('   👤 Users in state: ${_users.length}');
       print('   📷 Posts in state: ${_posts.length}');
       
-      _postController.addPostsToStorage(List<Map<String, dynamic>>.from(filteredPosts));
+      // 🔥 СОХРАНЯЕМ В STORAGE С ТЕГАМИ
+      final postsWithTags = _posts.map((post) {
+        final postCopy = Map<String, dynamic>.from(post);
+        if (post['tags'] != null && post['tags'] is List) {
+          postCopy['tags'] = List.from(post['tags']);
+        } else {
+          postCopy['tags'] = [];
+        }
+        return postCopy;
+      }).toList();
+      
+      _postController.addPostsToStorage(postsWithTags);
       _setupRealTimeListenersForUsers();
       
       print('🔍 [SEARCH] ========== SEARCH COMPLETED ==========\n');
@@ -587,19 +655,51 @@ class _SearchScreenState extends State<SearchScreen>
     }
   }
 
+  // ============================================================
+  // 🔥 ИСПРАВЛЕННЫЙ _openPostDetail - СОХРАНЯЕТ ТЕГИ
+  // ============================================================
   Future<void> _openPostDetail(int index) async {
     print('🔍 [SEARCH] Opening post detail at index: $index');
     final scrollPosition = _scrollController.position.pixels;
     
+    // 🔥 БЕРЕМ ПОСТЫ НАПРЯМУЮ ИЗ _posts (с тегами)
     final updatedPosts = _posts.map((post) {
       final postId = post['id']?.toString() ?? '';
+      
+      // Пытаемся получить из кэша
       final cached = _postController.getPostFromStorage(postId);
+      
       if (cached != null) {
-        print('📱 [SEARCH] Using cached post $postId: mediaType=${cached['mediaType']}, videoUrl=${cached['videoUrl']}');
-        return cached;
+        // 🔥 ОБЪЕДИНЯЕМ ДАННЫЕ: КЭШ + ПОИСК (ТЕГИ ИЗ ПОИСКА ПРИОРИТЕТНЕЕ)
+        final merged = Map<String, dynamic>.from(cached);
+        
+        // Сохраняем все поля из поиска
+        merged.addAll(post);
+        
+        // 🔥 ВАЖНО: СОХРАНЯЕМ ТЕГИ ИЗ ПОИСКА
+        if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
+          merged['tags'] = List.from(post['tags']);
+          print('✅ [SEARCH] Using tags from search: ${(post['tags'] as List).length} tags');
+        } else if (cached['tags'] != null && cached['tags'] is List && (cached['tags'] as List).isNotEmpty) {
+          merged['tags'] = List.from(cached['tags']);
+          print('✅ [SEARCH] Using cached tags: ${(cached['tags'] as List).length} tags');
+        } else {
+          merged['tags'] = [];
+          print('⚠️ [SEARCH] No tags found');
+        }
+        
+        print('📱 [SEARCH] Merged post $postId: tags=${(merged['tags'] as List).length} tags');
+        return merged;
       }
+      
+      // Если нет в кэше, используем данные из поиска
+      print('📱 [SEARCH] Using search post $postId (no cache)');
       return post;
     }).toList();
+    
+    // 🔥 ПРОВЕРЯЕМ ЧТО ТЕГИ НЕ ПОТЕРЯЛИСЬ
+    final testPost = updatedPosts[index];
+    print('🔍 [SEARCH] Final post ${testPost['id']} has ${(testPost['tags'] as List?)?.length ?? 0} tags');
     
     await Navigator.push(
       context,
@@ -630,7 +730,6 @@ class _SearchScreenState extends State<SearchScreen>
   Widget build(BuildContext context) {
     super.build(context);
     
-    // 🔥 ИСПРАВЛЕНИЕ: resizeToAvoidBottomInset: false - клавиатура не поднимает таббар
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false,
@@ -1003,7 +1102,7 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   // ============================================================
-  // 🔥 _buildPostsSearchResults - ВСЕ ПОСТЫ КАК КАРТИНКИ
+  // 🔥 _buildPostsSearchResults
   // ============================================================
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
@@ -1063,6 +1162,7 @@ class _SearchScreenState extends State<SearchScreen>
         final post = _posts[index];
         final imageUrl = _getThumbnailUrl(post);
         final postId = post['id']?.toString() ?? '';
+        final tags = _getTagsFromPost(post);
         
         final isVideo = _isVideoPost(post);
         final isPhoto = !isVideo;
@@ -1101,10 +1201,46 @@ class _SearchScreenState extends State<SearchScreen>
                     ),
                   ),
 
+                // 🔥 ИНДИКАТОР ТЕГОВ
+                if (tags.isNotEmpty)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.link,
+                            color: Colors.white,
+                            size: 12,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '${tags.length}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
                 if (isPhoto)
                   Positioned(
                     top: 8,
-                    right: 8,
+                    left: 8,
                     child: const Icon(
                       CupertinoIcons.square_fill_on_square_fill,
                       color: Colors.white,
