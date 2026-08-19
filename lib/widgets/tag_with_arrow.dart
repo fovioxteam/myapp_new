@@ -20,7 +20,7 @@ class TagWithArrow extends StatelessWidget {
     // 🔥 Чуть-чуть увеличиваем итоговые габариты всего тега
     final double adjustedWidth = width + 12;
     final double adjustedHeight = height + 4;
-    const double arrowSize = 12.0; // Слегка увеличенная стрелочка
+    const double arrowSize = 10.0; // Стрелка чуть меньше для остроты
 
     return GestureDetector(
       onTap: onTap,
@@ -53,15 +53,16 @@ class _TagPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // 🔥 ЦВЕТ КАК В INSTAGRAM — ТЕМНО-СИНЕ-СЕРЫЙ
     final paint = Paint()
-      ..color = Colors.grey[800]!
+      ..color = const Color.fromARGB(255, 23, 28, 46) // 🔥 Instagram dark gray/blue
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 
-    // Радиус скругления соразмерно увеличен
-    const double radius = 16;
+    // 🔥 МЕНЬШЕ СКРУГЛЕНИЕ (Instagram использует ~8-10px)
+    const double radius = 8.0;
 
-    // 1. Рисуем идеальный прямоугольник
+    // 1. Рисуем прямоугольник с маленьким скруглением
     final RRect tagRect = RRect.fromLTRBR(
       0, 0, rectWidth, rectHeight,
       const Radius.circular(radius),
@@ -70,30 +71,26 @@ class _TagPainter extends CustomPainter {
     final path = Path();
     path.addRRect(tagRect);
 
-    // 2. Добавляем аккуратную стрелочку
+    // 2. 🔥 ОСТРАЯ СТРЕЛКА (равнобедренный треугольник без скруглений)
     final double centerX = rectWidth / 2;
+    final double arrowHalf = arrowSize / 2;
 
-    path.moveTo(centerX + arrowSize / 2, rectHeight);
-    path.quadraticBezierTo(
-      centerX,
-      rectHeight + arrowSize,
-      centerX - arrowSize / 2,
-      rectHeight,
-    );
-
+    path.moveTo(centerX - arrowHalf, rectHeight);
+    path.lineTo(centerX, rectHeight + arrowSize);
+    path.lineTo(centerX + arrowHalf, rectHeight);
     path.close();
 
-    // 3. Отрисовываем единую фигуру без стыков и пикселей
+    // 3. Отрисовываем единую фигуру
     canvas.drawPath(path, paint);
 
-    // 4. Текст чуть крупнее для баланса
+    // 4. Текст
     final textPainter = TextPainter(
       text: TextSpan(
         text: displayName,
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 14.0, // 🔥 Увеличен с 13 до 14
-          fontWeight: FontWeight.w600,
+          fontSize: 13.0,
+          fontWeight: FontWeight.w500,
         ),
       ),
       textDirection: TextDirection.ltr,
