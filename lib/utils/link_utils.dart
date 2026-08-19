@@ -16,6 +16,16 @@ class LinkUtils {
     'tidal.com',
     'deezer.com',
     'bandcamp.com',
+    'distrokid.com',
+    'tunecore.com',
+    'cdbaby.com',
+    'amuse.io',
+    'recordunion.com',
+    'bandlab.com',
+    'soundtrap.com',
+    'landr.com',
+    'mastering.com',
+    'vocalremover.org',
 
     // ===== ВИДЕО =====
     'youtube.com',
@@ -27,6 +37,17 @@ class LinkUtils {
     'likee.com',
     'kwai.com',
     'mojo.com',
+    'kick.com',
+    'rumble.com',
+    'odysee.com',
+    'facebookgaming.com',
+    'clapper.tv',
+    'triller.com',
+    'firework.com',
+    'clipchamp.com',
+    'zoom.tv',
+    'vigo-video.com',
+    'snackvideo.com',
 
     // ===== СОЦСЕТИ =====
     'instagram.com',
@@ -61,6 +82,38 @@ class LinkUtils {
     'vc.ru',
     'habr.com',
     'pikabu.ru',
+    'be.real',
+    'irrelevant.com',
+    'distro.media',
+    'weverse.io',
+    'vspc.com',
+    'foto.com',
+    'cyberpin.com',
+    'spoutible.com',
+    'verification.io',
+    'gab.com',
+    'meetme.com',
+    'ask.fm',
+    'spring.me',
+    'curiouscat.me',
+    'tellonym.me',
+    'sarafan.ru',
+    'livejournal.com',
+
+    // ===== ПЛАТФОРМЫ ДЛЯ ТВОРЦОВ =====
+    'patreon.com',
+    'boosty.to',
+    'donationalerts.com',
+    'donatello.com',
+    'buymeacoffee.com',
+    'ko-fi.com',
+    'tipjar.com',
+    'gumroad.com',
+    'sellfy.com',
+    'payhip.com',
+    'podia.com',
+    'stan.store',
+    'whop.com',
 
     // ===== МАГАЗИНЫ (ГЛОБАЛЬНЫЕ) =====
     'amazon.com',
@@ -133,6 +186,8 @@ class LinkUtils {
     'coupang.com',
     'flipkart.com',
     'rakuten.co.jp',
+    'blibli.com',
+    'bukalapak.com',
 
     // ===== МАГАЗИНЫ (ЕВРОПА) =====
     'zalando.com',
@@ -142,7 +197,18 @@ class LinkUtils {
     'zalando.es',
     'zalando.nl',
     'asos.com',
-    'shein.com',
+
+    // ===== ПЛАТФОРМЫ ДЛЯ МЕРЧА =====
+    'redbubble.com',
+    'society6.com',
+    'teepublic.com',
+    'zazzle.com',
+    'printful.com',
+    'printify.com',
+    'merch.amazon.com',
+    'gooten.com',
+    'podrocks.com',
+    'spreadshirt.com',
 
     // ===== БРЕНДЫ (ОДЕЖДА) =====
     // Спортивные
@@ -384,6 +450,9 @@ class LinkUtils {
     'kinopoisk.ru',
     'ivi.ru',
     'okko.tv',
+    'start.ru',
+    'more.tv',
+    'amediateka.ru',
 
     // ===== IT / ДИЗАЙН =====
     'github.com',
@@ -394,6 +463,11 @@ class LinkUtils {
     'gitlab.com',
     'codepen.io',
     'stackoverflow.com',
+    'sketch.com',
+    'adobe.com',
+    'adobe.io',
+    'creativecloud.adobe.com',
+    'spline.design',
 
     // ===== ИГРЫ =====
     'steampowered.com',
@@ -422,6 +496,9 @@ class LinkUtils {
     'faceit.com',
     'gosugamers.com',
     'cybersport.ru',
+    'ggscore.com',
+    'scoreboard.com',
+    'esea.net',
 
     // ===== КНИГИ / ОБРАЗОВАНИЕ =====
     'books.google.com',
@@ -452,6 +529,17 @@ class LinkUtils {
     'abcmouse.com',
     'starfall.com',
     'pbskids.org',
+    'getcourse.ru',
+    'teachable.com',
+    'thinkific.com',
+    'foxford.ru',
+    'lecta.ru',
+    'uchi.ru',
+    'reshaem.ru',
+    'nsportal.ru',
+    'solverschool.ru',
+    'math-solution.ru',
+    'edumentor.ru',
 
     // ===== ФОТО =====
     'unsplash.com',
@@ -472,6 +560,18 @@ class LinkUtils {
     'canva.com',
     'medium.com',
     'substack.com',
+
+    // ===== ССЫЛКИ ДЛЯ ТВОРЦОВ =====
+    'linktr.ee',
+    'beacons.ai',
+    'milkshake.app',
+    'carrd.co',
+    'bio.link',
+    'linkin.bio',
+    'snipfeed.co',
+    'lumen5.com',
+    'headliner.app',
+    'repurpos.io',
 
     // ===== ПОИСКОВИКИ И КАРТЫ =====
     'yandex.com',
@@ -511,6 +611,22 @@ class LinkUtils {
     'promsvyazbank.ru',
     'absolutbank.ru',
     'uniastrum.ru',
+    'binance.com',
+    'bybit.com',
+    'okx.com',
+    'coinmarketcap.com',
+    'coingecko.com',
+    'dexscreener.com',
+    'bitcoin.com',
+    'ethereum.org',
+    'solana.com',
+
+    // ===== КРИПТО И WEB3 =====
+    'opensea.io',
+    'rarible.com',
+    'foundation.app',
+    'superrare.co',
+    'zora.co',
 
     // ===== БРОНИРОВАНИЕ И ПУТЕШЕСТВИЯ =====
     'booking.com',
@@ -534,6 +650,9 @@ class LinkUtils {
     'flixbus.com',
     'omio.com',
     'rome2rio.com',
+    'timepad.ru',
+    'leader-id.ru',
+    'eventbrite.com',
 
     // ===== ЗДОРОВЬЕ И АПТЕКИ =====
     'webmd.com',
@@ -591,6 +710,7 @@ class LinkUtils {
     'pregnancy.com',
     'whattoexpect.com',
     'parents.com',
+    'mishka-online.ru',
 
     // ===== ЗООТОВАРЫ =====
     'zoomagazin.ru',
@@ -669,6 +789,20 @@ class LinkUtils {
     'theknot.com',
     'brides.com',
     'weddingwire.com',
+    'lavanda.media',
+    'psychologies.ru',
+    'urokiburuma.ru',
+    'puzzle-english.com',
+    'mel.fm',
+    'ledy.mail.ru',
+    'woman.ru',
+    'mamlife.ru',
+    '7ya.ru',
+    'u-mama.ru',
+    'babyblog.ru',
+    'koshechka.ru',
+    'livemaster.ru',
+    'yarmarka-masterov.ru',
 
     // ===== НОВОСТИ =====
     'weather.com',
@@ -852,11 +986,6 @@ class LinkUtils {
     'museum.ru',
     'kino-teatr.ru',
 
-    // ===== СПОРТ И ФИТНЕС =====
-    'fitnessfirst.ru',
-    'worldclass.ru',
-    'xfit.ru',
-
     // ===== ПОЧТА =====
     'gmail.com',
     'mail.ru',
@@ -867,6 +996,11 @@ class LinkUtils {
     'zoom.us',
     'webex.com',
     'teams.microsoft.com',
+    'skype.com',
+    'slack.com',
+    'mattermost.com',
+    'google.classroom',
+    'microsoft.teams',
 
     // ===== ФАЙЛООБМЕННИКИ =====
     'mediafire.com',
@@ -883,11 +1017,21 @@ class LinkUtils {
     'wordpress.com',
     'blogger.com',
     'tumblr.com',
-    'livejournal.com',
 
     // ===== ЗНАКОМСТВА =====
     'tinder.com',
     'bumble.com',
+    'happn.com',
+    'hinge.co',
+    'pof.com',
+    'okcupid.com',
+    'feeld.co',
+    'her.com',
+    'taimi.com',
+    'mamba.ru',
+    'teamo.ru',
+    'loveplanet.ru',
+    'dating.ru',
 
     // ===== БРЕНДЫ ТЕХНИКИ =====
     'samsung.com',
@@ -911,6 +1055,45 @@ class LinkUtils {
     'appadvice.com',
     'sensortower.com',
     'appannie.com',
+
+    // ===== НЕЙРОСЕТИ И AI =====
+    'openai.com',
+    'chat.openai.com',
+    'midjourney.com',
+    'stability.ai',
+    'runwayml.com',
+    'pika.art',
+    'leonardo.ai',
+    'clipdrop.co',
+    'remover.app',
+    'photoroom.com',
+    'remove.bg',
+    'cleanup.pictures',
+    'perplexity.ai',
+    'claude.ai',
+    'gemini.google.com',
+    'mistral.ai',
+    'deepseek.com',
+    'qwen.ai',
+    'grok.x.com',
+    'you.com',
+    'phind.com',
+    'poe.com',
+    'character.ai',
+    'replika.com',
+    'pi.ai',
+
+    // ===== ПОДКАСТЫ =====
+    'podcast.ru',
+    'glow.fm',
+    'transistor.fm',
+    'fable.co',
+    'podster.fm',
+    'podfm.ru',
+    'yandex.music/podcast',
+    'apple.com/podcast',
+    'podcasts.google.com',
+    'spotify.com/podcast',
   ];
 
   // ========== ДИНАМИЧЕСКАЯ ПРОВЕРКА ==========
@@ -1237,6 +1420,61 @@ class LinkUtils {
         'brilliant.',
         'alrosa.',
         'korloff.',
+        'openai.',
+        'midjourney.',
+        'stability.ai',
+        'runwayml.',
+        'pika.art',
+        'leonardo.ai',
+        'perplexity.ai',
+        'claude.ai',
+        'deepseek.',
+        'character.ai',
+        'replika.',
+        'podcast.',
+        'glow.fm',
+        'transistor.fm',
+        'fable.co',
+        'podster.',
+        'patreon.',
+        'boosty.to',
+        'donationalerts.',
+        'buymeacoffee.',
+        'ko-fi.com',
+        'gumroad.',
+        'stan.store',
+        'whop.com',
+        'redbubble.',
+        'society6.',
+        'teepublic.',
+        'printful.',
+        'printify.',
+        'beacons.ai',
+        'carrd.co',
+        'linktr.ee',
+        'milkshake.app',
+        'snipfeed.co',
+        'kick.com',
+        'rumble.com',
+        'odysee.com',
+        'clapper.tv',
+        'triller.com',
+        'opensea.io',
+        'rarible.com',
+        'foundation.app',
+        'superrare.co',
+        'binance.com',
+        'bybit.com',
+        'okx.com',
+        'coinmarketcap.com',
+        'coingecko.com',
+        'foxford.ru',
+        'uchi.ru',
+        'mel.fm',
+        'woman.ru',
+        '7ya.ru',
+        'babyblog.ru',
+        'livemaster.ru',
       ];
 
       for (final pattern in patterns) {
@@ -1249,7 +1487,7 @@ class LinkUtils {
     }
   }
 
-  // ========== ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ =====Қ=========
+  // ========== ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ ==========
   static String detectPlatform(String url) {
     final lower = url.toLowerCase();
 
@@ -1260,6 +1498,14 @@ class LinkUtils {
     if (lower.contains('tidal.com')) return 'tidal';
     if (lower.contains('deezer.com')) return 'deezer';
     if (lower.contains('bandcamp.com')) return 'bandcamp';
+    if (lower.contains('distrokid.com')) return 'distrokid';
+    if (lower.contains('tunecore.com')) return 'tunecore';
+    if (lower.contains('cdbaby.com')) return 'cdbaby';
+    if (lower.contains('amuse.io')) return 'amuse';
+    if (lower.contains('bandlab.com')) return 'bandlab';
+    if (lower.contains('soundtrap.com')) return 'soundtrap';
+    if (lower.contains('landr.com')) return 'landr';
+    if (lower.contains('mastering.com')) return 'mastering';
 
     // ---- ВИДЕО ----
     if (lower.contains('youtube.com') || lower.contains('youtu.be')) return 'youtube';
@@ -1270,6 +1516,13 @@ class LinkUtils {
     if (lower.contains('likee.com')) return 'likee';
     if (lower.contains('kwai.com')) return 'kwai';
     if (lower.contains('mojo.com')) return 'mojo';
+    if (lower.contains('kick.com')) return 'kick';
+    if (lower.contains('rumble.com')) return 'rumble';
+    if (lower.contains('odysee.com')) return 'odysee';
+    if (lower.contains('clapper.tv')) return 'clapper';
+    if (lower.contains('triller.com')) return 'triller';
+    if (lower.contains('firework.com')) return 'firework';
+    if (lower.contains('clipchamp.com')) return 'clipchamp';
 
     // ---- СОЦСЕТИ ----
     if (lower.contains('instagram.com')) return 'instagram';
@@ -1294,6 +1547,22 @@ class LinkUtils {
     if (lower.contains('ok.ru')) return 'ok';
     if (lower.contains('dzen.ru')) return 'dzen';
     if (lower.contains('habr.com')) return 'habr';
+    if (lower.contains('vc.ru')) return 'vc';
+    if (lower.contains('pikabu.ru')) return 'pikabu';
+    if (lower.contains('be.real')) return 'bereal';
+    if (lower.contains('weverse.io')) return 'weverse';
+    if (lower.contains('sarafan.ru')) return 'sarafan';
+    if (lower.contains('livejournal.com')) return 'livejournal';
+
+    // ---- ПЛАТФОРМЫ ДЛЯ ТВОРЦОВ ----
+    if (lower.contains('patreon.com')) return 'patreon';
+    if (lower.contains('boosty.to')) return 'boosty';
+    if (lower.contains('donationalerts.com')) return 'donationalerts';
+    if (lower.contains('buymeacoffee.com')) return 'buymeacoffee';
+    if (lower.contains('ko-fi.com')) return 'kofi';
+    if (lower.contains('gumroad.com')) return 'gumroad';
+    if (lower.contains('stan.store')) return 'stan';
+    if (lower.contains('whop.com')) return 'whop';
 
     // ---- МАГАЗИНЫ ----
     if (lower.contains('amazon.com') || lower.contains('amazon.')) return 'amazon';
@@ -1328,6 +1597,15 @@ class LinkUtils {
     if (lower.contains('megamarket.ru')) return 'megamarket';
     if (lower.contains('market.yandex.ru')) return 'yandex_market';
     if (lower.contains('goods.ru')) return 'goods';
+    if (lower.contains('sbermarket.ru')) return 'sbermarket';
+
+    // ---- ПЛАТФОРМЫ ДЛЯ МЕРЧА ----
+    if (lower.contains('redbubble.com')) return 'redbubble';
+    if (lower.contains('society6.com')) return 'society6';
+    if (lower.contains('teepublic.com')) return 'teepublic';
+    if (lower.contains('printful.com')) return 'printful';
+    if (lower.contains('printify.com')) return 'printify';
+    if (lower.contains('merch.amazon.com')) return 'amazon_merch';
 
     // ---- БРЕНДЫ (ОДЕЖДА) ----
     if (lower.contains('nike.com')) return 'nike';
@@ -1375,14 +1653,8 @@ class LinkUtils {
     if (lower.contains('crocs.com')) return 'crocs';
     if (lower.contains('massimodutti.com')) return 'massimodutti';
     if (lower.contains('oysho.com')) return 'oysho';
-    if (lower.contains('reiss.com')) return 'reiss';
-    if (lower.contains('tedbaker.com')) return 'tedbaker';
-    if (lower.contains('sandro-paris.com')) return 'sandro';
-    if (lower.contains('maje.com')) return 'maje';
     if (lower.contains('moncler.com')) return 'moncler';
     if (lower.contains('victoriassecret.com')) return 'victoriassecret';
-    if (lower.contains('agentprovocateur.com')) return 'agentprovocateur';
-    if (lower.contains('laperla.com')) return 'laperla';
 
     // ---- ПРЕМИУМ БРЕНДЫ ----
     if (lower.contains('chanel.com')) return 'chanel';
@@ -1420,7 +1692,6 @@ class LinkUtils {
     if (lower.contains('polene-paris.com')) return 'polene';
     if (lower.contains('mansurgavriel.com')) return 'mansurgavriel';
     if (lower.contains('demellier.com')) return 'demellier';
-    if (lower.contains('staud.co')) return 'staud';
     if (lower.contains('cuyana.com')) return 'cuyana';
     if (lower.contains('everlane.com')) return 'everlane';
 
@@ -1484,6 +1755,13 @@ class LinkUtils {
     if (lower.contains('adamas.ru')) return 'adamas';
     if (lower.contains('sokolov.ru')) return 'sokolov';
 
+    // ---- ССЫЛКИ ДЛЯ ТВОРЦОВ ----
+    if (lower.contains('linktr.ee')) return 'linktree';
+    if (lower.contains('beacons.ai')) return 'beacons';
+    if (lower.contains('carrd.co')) return 'carrd';
+    if (lower.contains('milkshake.app')) return 'milkshake';
+    if (lower.contains('snipfeed.co')) return 'snipfeed';
+
     // ---- ЕДА ----
     if (lower.contains('lavka.yandex.ru')) return 'yandex_lavka';
     if (lower.contains('sbermarket.ru')) return 'sbermarket';
@@ -1494,10 +1772,6 @@ class LinkUtils {
     if (lower.contains('tanuki.ru')) return 'tanuki';
     if (lower.contains('yakitoriya.ru')) return 'yakitoriya';
     if (lower.contains('eda.ru')) return 'eda';
-    if (lower.contains('delish.com')) return 'delish';
-    if (lower.contains('bonappetit.com')) return 'bonappetit';
-    if (lower.contains('epicurious.com')) return 'epicurious';
-    if (lower.contains('seriouseats.com')) return 'seriouseats';
 
     // ---- ФИТНЕС ----
     if (lower.contains('fitstars.ru')) return 'fitstars';
@@ -1523,6 +1797,7 @@ class LinkUtils {
     if (lower.contains('mamaclub.ru')) return 'mamaclub';
     if (lower.contains('whattoexpect.com')) return 'whattoexpect';
     if (lower.contains('parents.com')) return 'parents';
+    if (lower.contains('mishka-online.ru')) return 'mishka';
 
     // ---- ЗООТОВАРЫ ----
     if (lower.contains('zoomagazin.ru')) return 'zoomagazin';
@@ -1552,6 +1827,35 @@ class LinkUtils {
     if (lower.contains('wedding.ru')) return 'weddingru';
     if (lower.contains('theknot.com')) return 'theknot';
     if (lower.contains('brides.com')) return 'brides';
+    if (lower.contains('lavanda.media')) return 'lavanda';
+    if (lower.contains('psychologies.ru')) return 'psychologies';
+    if (lower.contains('mel.fm')) return 'mel';
+    if (lower.contains('woman.ru')) return 'woman';
+    if (lower.contains('mamlife.ru')) return 'mamlife';
+    if (lower.contains('7ya.ru')) return '7ya';
+    if (lower.contains('u-mama.ru')) return 'umama';
+    if (lower.contains('babyblog.ru')) return 'babyblog';
+    if (lower.contains('livemaster.ru')) return 'livemaster';
+
+    // ---- ОБРАЗОВАНИЕ ----
+    if (lower.contains('foxford.ru')) return 'foxford';
+    if (lower.contains('uchi.ru')) return 'uchi';
+    if (lower.contains('getcourse.ru')) return 'getcourse';
+    if (lower.contains('teachable.com')) return 'teachable';
+    if (lower.contains('thinkific.com')) return 'thinkific';
+
+    // ---- НЕЙРОСЕТИ ----
+    if (lower.contains('openai.com') || lower.contains('chat.openai.com')) return 'openai';
+    if (lower.contains('midjourney.com')) return 'midjourney';
+    if (lower.contains('stability.ai')) return 'stability';
+    if (lower.contains('runwayml.com')) return 'runway';
+    if (lower.contains('pika.art')) return 'pika';
+    if (lower.contains('leonardo.ai')) return 'leonardo_ai';
+    if (lower.contains('perplexity.ai')) return 'perplexity';
+    if (lower.contains('claude.ai')) return 'claude';
+    if (lower.contains('deepseek.com')) return 'deepseek';
+    if (lower.contains('character.ai')) return 'character';
+    if (lower.contains('replika.com')) return 'replika';
 
     // ---- СТРИМИНГ ----
     if (lower.contains('netflix.com')) return 'netflix';
@@ -1573,6 +1877,8 @@ class LinkUtils {
     if (lower.contains('gitlab.com')) return 'gitlab';
     if (lower.contains('codepen.io')) return 'codepen';
     if (lower.contains('stackoverflow.com')) return 'stackoverflow';
+    if (lower.contains('adobe.com')) return 'adobe';
+    if (lower.contains('creativecloud.adobe.com')) return 'adobe_cc';
 
     // ---- ИГРЫ ----
     if (lower.contains('steampowered.com') || lower.contains('store.steampowered.com')) return 'steam';
@@ -1588,8 +1894,21 @@ class LinkUtils {
     if (lower.contains('rockstargames.com')) return 'rockstar';
     if (lower.contains('riotgames.com')) return 'riot';
     if (lower.contains('cybersport.ru')) return 'cybersport';
+    if (lower.contains('faceit.com')) return 'faceit';
+    if (lower.contains('ggscore.com')) return 'ggscore';
 
-    // ---- КНИГИ / ОБРАЗОВАНИЕ ----
+    // ---- КРИПТО ----
+    if (lower.contains('opensea.io')) return 'opensea';
+    if (lower.contains('rarible.com')) return 'rarible';
+    if (lower.contains('foundation.app')) return 'foundation';
+    if (lower.contains('superrare.co')) return 'superrare';
+    if (lower.contains('binance.com')) return 'binance';
+    if (lower.contains('bybit.com')) return 'bybit';
+    if (lower.contains('okx.com')) return 'okx';
+    if (lower.contains('coinmarketcap.com')) return 'coinmarketcap';
+    if (lower.contains('coingecko.com')) return 'coingecko';
+
+    // ---- КНИГИ ----
     if (lower.contains('books.google.com') || lower.contains('play.google.com')) return 'google_books';
     if (lower.contains('litres.ru')) return 'litres';
     if (lower.contains('audible.com')) return 'audible';
@@ -1599,15 +1918,6 @@ class LinkUtils {
     if (lower.contains('skillshare.com')) return 'skillshare';
     if (lower.contains('khanacademy.org')) return 'khanacademy';
     if (lower.contains('wikipedia.org')) return 'wikipedia';
-    if (lower.contains('sciencedirect.com')) return 'sciencedirect';
-    if (lower.contains('jstor.org')) return 'jstor';
-    if (lower.contains('academia.edu')) return 'academia';
-    if (lower.contains('researchgate.net')) return 'researchgate';
-    if (lower.contains('domashka.ru')) return 'domashka';
-    if (lower.contains('znanija.com')) return 'znanija';
-    if (lower.contains('logiclike.com')) return 'logiclike';
-    if (lower.contains('brainpop.com')) return 'brainpop';
-    if (lower.contains('abcmouse.com')) return 'abcmouse';
 
     // ---- ФОТО ----
     if (lower.contains('unsplash.com')) return 'unsplash';
@@ -1658,7 +1968,7 @@ class LinkUtils {
     if (lower.contains('open.ru')) return 'open';
     if (lower.contains('tochka.com')) return 'tochka';
 
-    // ---- БРОНИРОВАНИЕ И ПУТЕШЕСТВИЯ ----
+    // ---- БРОНИРОВАНИЕ ----
     if (lower.contains('booking.com')) return 'booking';
     if (lower.contains('agoda.com')) return 'agoda';
     if (lower.contains('airbnb.com')) return 'airbnb';
@@ -1673,9 +1983,8 @@ class LinkUtils {
     if (lower.contains('blablacar.ru')) return 'blablacar';
     if (lower.contains('trivago.com')) return 'trivago';
     if (lower.contains('one-two-trip.ru')) return 'onetwotrip';
-    if (lower.contains('poezd.ru')) return 'poezd';
-    if (lower.contains('flixbus.com')) return 'flixbus';
-    if (lower.contains('omio.com')) return 'omio';
+    if (lower.contains('timepad.ru')) return 'timepad';
+    if (lower.contains('eventbrite.com')) return 'eventbrite';
 
     // ---- ЗДОРОВЬЕ ----
     if (lower.contains('webmd.com')) return 'webmd';
@@ -1722,7 +2031,7 @@ class LinkUtils {
     if (lower.contains('zomato.com')) return 'zomato';
     if (lower.contains('swiggy.com')) return 'swiggy';
 
-    // ---- ТАКСИ И КАРШЕРИНГ ----
+    // ---- ТАКСИ ----
     if (lower.contains('uber.com')) return 'uber';
     if (lower.contains('lyft.com')) return 'lyft';
     if (lower.contains('gett.com')) return 'gett';
@@ -1730,7 +2039,7 @@ class LinkUtils {
     if (lower.contains('sharenow.com')) return 'sharenow';
     if (lower.contains('citymobil.ru')) return 'citymobil';
 
-    // ---- РАБОТА И УСЛУГИ ----
+    // ---- РАБОТА ----
     if (lower.contains('hh.ru')) return 'hh';
     if (lower.contains('avito.ru')) return 'avito';
     if (lower.contains('cian.ru')) return 'cian';
@@ -1776,26 +2085,19 @@ class LinkUtils {
     if (lower.contains('taxi.yandex.ru')) return 'yandex_taxi';
     if (lower.contains('drive.yandex.ru')) return 'yandex_drive';
 
-    // ---- ФОТОГРАФИЯ ----
-    if (lower.contains('500px.com')) return '500px';
-    if (lower.contains('flickr.com')) return 'flickr';
-    if (lower.contains('vsco.co')) return 'vsco';
-    if (lower.contains('smugmug.com')) return 'smugmug';
-    if (lower.contains('photobucket.com')) return 'photobucket';
-
-    // ---- ФАЙЛООБМЕННИКИ ----
-    if (lower.contains('mediafire.com')) return 'mediafire';
-    if (lower.contains('4shared.com')) return '4shared';
-    if (lower.contains('depositfiles.com')) return 'depositfiles';
-    if (lower.contains('turbobit.net')) return 'turbobit';
-
     // ---- ЗНАКОМСТВА ----
     if (lower.contains('tinder.com')) return 'tinder';
     if (lower.contains('bumble.com')) return 'bumble';
+    if (lower.contains('mamba.ru')) return 'mamba';
+    if (lower.contains('teamo.ru')) return 'teamo';
+    if (lower.contains('dating.ru')) return 'dating';
 
-    // ---- ВИДЕОКОНФЕРЕНЦИИ ----
-    if (lower.contains('zoom.us')) return 'zoom';
-    if (lower.contains('webex.com')) return 'webex';
+    // ---- ПОДКАСТЫ ----
+    if (lower.contains('podcast.ru')) return 'podcastru';
+    if (lower.contains('podster.fm')) return 'podster';
+    if (lower.contains('podfm.ru')) return 'podfm';
+    if (lower.contains('glow.fm')) return 'glow';
+    if (lower.contains('transistor.fm')) return 'transistor';
 
     // ---- НОВОСТИ ----
     if (lower.contains('bbc.com') || lower.contains('bbc.co.uk')) return 'bbc';
@@ -1840,7 +2142,6 @@ class LinkUtils {
     if (lower.contains('gazeta.ru')) return 'gazeta';
     if (lower.contains('kommersant.ru')) return 'kommersant';
     if (lower.contains('vedomosti.ru')) return 'vedomosti';
-    if (lower.contains('womansworld.com')) return 'womansworld';
 
     // ---- ЧАСЫ ----
     if (lower.contains('danielwellington.com')) return 'danielwellington';
@@ -1871,6 +2172,14 @@ class LinkUtils {
       case 'tidal': return 'Tidal';
       case 'deezer': return 'Deezer';
       case 'bandcamp': return 'Bandcamp';
+      case 'distrokid': return 'DistroKid';
+      case 'tunecore': return 'TuneCore';
+      case 'cdbaby': return 'CD Baby';
+      case 'amuse': return 'Amuse';
+      case 'bandlab': return 'BandLab';
+      case 'soundtrap': return 'Soundtrap';
+      case 'landr': return 'LANDR';
+      case 'mastering': return 'Mastering';
 
       // ---- ВИДЕО ----
       case 'youtube': return 'YouTube';
@@ -1881,6 +2190,13 @@ class LinkUtils {
       case 'likee': return 'Likee';
       case 'kwai': return 'Kwai';
       case 'mojo': return 'Mojo';
+      case 'kick': return 'Kick';
+      case 'rumble': return 'Rumble';
+      case 'odysee': return 'Odysee';
+      case 'clapper': return 'Clapper';
+      case 'triller': return 'Triller';
+      case 'firework': return 'Firework';
+      case 'clipchamp': return 'Clipchamp';
 
       // ---- СОЦСЕТИ ----
       case 'instagram': return 'Instagram';
@@ -1905,6 +2221,22 @@ class LinkUtils {
       case 'ok': return 'Одноклассники';
       case 'dzen': return 'Яндекс Дзен';
       case 'habr': return 'Habr';
+      case 'vc': return 'VC.ru';
+      case 'pikabu': return 'Pikabu';
+      case 'bereal': return 'BeReal';
+      case 'weverse': return 'Weverse';
+      case 'sarafan': return 'Сарафан';
+      case 'livejournal': return 'LiveJournal';
+
+      // ---- ПЛАТФОРМЫ ДЛЯ ТВОРЦОВ ----
+      case 'patreon': return 'Patreon';
+      case 'boosty': return 'Boosty';
+      case 'donationalerts': return 'DonationAlerts';
+      case 'buymeacoffee': return 'Buy Me a Coffee';
+      case 'kofi': return 'Ko-fi';
+      case 'gumroad': return 'Gumroad';
+      case 'stan': return 'Stan Store';
+      case 'whop': return 'Whop';
 
       // ---- МАГАЗИНЫ ----
       case 'amazon': return 'Amazon';
@@ -1939,6 +2271,15 @@ class LinkUtils {
       case 'megamarket': return 'Мегамаркет';
       case 'yandex_market': return 'Яндекс Маркет';
       case 'goods': return 'Goods';
+      case 'sbermarket': return 'СберМаркет';
+
+      // ---- ПЛАТФОРМЫ ДЛЯ МЕРЧА ----
+      case 'redbubble': return 'Redbubble';
+      case 'society6': return 'Society6';
+      case 'teepublic': return 'TeePublic';
+      case 'printful': return 'Printful';
+      case 'printify': return 'Printify';
+      case 'amazon_merch': return 'Amazon Merch';
 
       // ---- БРЕНДЫ (ОДЕЖДА) ----
       case 'nike': return 'Nike';
@@ -1986,14 +2327,8 @@ class LinkUtils {
       case 'crocs': return 'Crocs';
       case 'massimodutti': return 'Massimo Dutti';
       case 'oysho': return 'Oysho';
-      case 'reiss': return 'Reiss';
-      case 'tedbaker': return 'Ted Baker';
-      case 'sandro': return 'Sandro';
-      case 'maje': return 'Maje';
       case 'moncler': return 'Moncler';
       case 'victoriassecret': return 'Victoria\'s Secret';
-      case 'agentprovocateur': return 'Agent Provocateur';
-      case 'laperla': return 'La Perla';
 
       // ---- ПРЕМИУМ БРЕНДЫ ----
       case 'chanel': return 'Chanel';
@@ -2031,7 +2366,6 @@ class LinkUtils {
       case 'polene': return 'Polène Paris';
       case 'mansurgavriel': return 'Mansur Gavriel';
       case 'demellier': return 'DeMellier';
-      case 'staud': return 'Staud';
       case 'cuyana': return 'Cuyana';
       case 'everlane': return 'Everlane';
 
@@ -2095,6 +2429,13 @@ class LinkUtils {
       case 'adamas': return 'Адамас';
       case 'sokolov': return 'Соколов';
 
+      // ---- ССЫЛКИ ДЛЯ ТВОРЦОВ ----
+      case 'linktree': return 'Linktree';
+      case 'beacons': return 'Beacons';
+      case 'carrd': return 'Carrd';
+      case 'milkshake': return 'Milkshake';
+      case 'snipfeed': return 'Snipfeed';
+
       // ---- ЕДА ----
       case 'yandex_lavka': return 'Яндекс Лавка';
       case 'sbermarket': return 'СберМаркет';
@@ -2105,10 +2446,6 @@ class LinkUtils {
       case 'tanuki': return 'Тануки';
       case 'yakitoriya': return 'Якитория';
       case 'eda': return 'Eda.ru';
-      case 'delish': return 'Delish';
-      case 'bonappetit': return 'Bon Appétit';
-      case 'epicurious': return 'Epicurious';
-      case 'seriouseats': return 'Serious Eats';
 
       // ---- ФИТНЕС ----
       case 'fitstars': return 'FitStars';
@@ -2134,6 +2471,7 @@ class LinkUtils {
       case 'mamaclub': return 'Mama Club';
       case 'whattoexpect': return 'What to Expect';
       case 'parents': return 'Parents';
+      case 'mishka': return 'Мишка Онлайн';
 
       // ---- ЗООТОВАРЫ ----
       case 'zoomagazin': return 'Зоомагазин';
@@ -2163,6 +2501,35 @@ class LinkUtils {
       case 'weddingru': return 'Wedding.ru';
       case 'theknot': return 'The Knot';
       case 'brides': return 'Brides';
+      case 'lavanda': return 'Lavanda Media';
+      case 'psychologies': return 'Psychologies';
+      case 'mel': return 'Mel.fm';
+      case 'woman': return 'Woman.ru';
+      case 'mamlife': return 'Mamlife';
+      case '7ya': return '7ya.ru';
+      case 'umama': return 'U-Mama';
+      case 'babyblog': return 'BabyBlog';
+      case 'livemaster': return 'Livemaster';
+
+      // ---- ОБРАЗОВАНИЕ ----
+      case 'foxford': return 'Фоксфорд';
+      case 'uchi': return 'Учи.ру';
+      case 'getcourse': return 'GetCourse';
+      case 'teachable': return 'Teachable';
+      case 'thinkific': return 'Thinkific';
+
+      // ---- НЕЙРОСЕТИ ----
+      case 'openai': return 'OpenAI';
+      case 'midjourney': return 'Midjourney';
+      case 'stability': return 'Stability AI';
+      case 'runway': return 'Runway';
+      case 'pika': return 'Pika';
+      case 'leonardo_ai': return 'Leonardo.ai';
+      case 'perplexity': return 'Perplexity';
+      case 'claude': return 'Claude';
+      case 'deepseek': return 'DeepSeek';
+      case 'character': return 'Character.ai';
+      case 'replika': return 'Replika';
 
       // ---- СТРИМИНГ ----
       case 'netflix': return 'Netflix';
@@ -2184,6 +2551,8 @@ class LinkUtils {
       case 'gitlab': return 'GitLab';
       case 'codepen': return 'CodePen';
       case 'stackoverflow': return 'Stack Overflow';
+      case 'adobe': return 'Adobe';
+      case 'adobe_cc': return 'Adobe Creative Cloud';
 
       // ---- ИГРЫ ----
       case 'steam': return 'Steam';
@@ -2199,8 +2568,21 @@ class LinkUtils {
       case 'rockstar': return 'Rockstar';
       case 'riot': return 'Riot Games';
       case 'cybersport': return 'Киберспорт.ру';
+      case 'faceit': return 'FACEIT';
+      case 'ggscore': return 'GGScore';
 
-      // ---- КНИГИ / ОБРАЗОВАНИЕ ----
+      // ---- КРИПТО ----
+      case 'opensea': return 'OpenSea';
+      case 'rarible': return 'Rarible';
+      case 'foundation': return 'Foundation';
+      case 'superrare': return 'SuperRare';
+      case 'binance': return 'Binance';
+      case 'bybit': return 'Bybit';
+      case 'okx': return 'OKX';
+      case 'coinmarketcap': return 'CoinMarketCap';
+      case 'coingecko': return 'CoinGecko';
+
+      // ---- КНИГИ ----
       case 'google_books': return 'Google Books';
       case 'litres': return 'Литрес';
       case 'audible': return 'Audible';
@@ -2210,15 +2592,6 @@ class LinkUtils {
       case 'skillshare': return 'Skillshare';
       case 'khanacademy': return 'Khan Academy';
       case 'wikipedia': return 'Wikipedia';
-      case 'sciencedirect': return 'ScienceDirect';
-      case 'jstor': return 'JSTOR';
-      case 'academia': return 'Academia';
-      case 'researchgate': return 'ResearchGate';
-      case 'domashka': return 'Домашка';
-      case 'znanija': return 'Знания';
-      case 'logiclike': return 'LogicLike';
-      case 'brainpop': return 'BrainPOP';
-      case 'abcmouse': return 'ABCmouse';
 
       // ---- ФОТО ----
       case 'unsplash': return 'Unsplash';
@@ -2269,7 +2642,7 @@ class LinkUtils {
       case 'open': return 'Открытие';
       case 'tochka': return 'Точка';
 
-      // ---- БРОНИРОВАНИЕ И ПУТЕШЕСТВИЯ ----
+      // ---- БРОНИРОВАНИЕ ----
       case 'booking': return 'Booking.com';
       case 'agoda': return 'Agoda';
       case 'airbnb': return 'Airbnb';
@@ -2284,9 +2657,8 @@ class LinkUtils {
       case 'blablacar': return 'BlaBlaCar';
       case 'trivago': return 'Trivago';
       case 'onetwotrip': return 'OneTwoTrip';
-      case 'poezd': return 'Поезд.ру';
-      case 'flixbus': return 'FlixBus';
-      case 'omio': return 'Omio';
+      case 'timepad': return 'Timepad';
+      case 'eventbrite': return 'Eventbrite';
 
       // ---- ЗДОРОВЬЕ ----
       case 'webmd': return 'WebMD';
@@ -2333,7 +2705,7 @@ class LinkUtils {
       case 'zomato': return 'Zomato';
       case 'swiggy': return 'Swiggy';
 
-      // ---- ТАКСИ И КАРШЕРИНГ ----
+      // ---- ТАКСИ ----
       case 'uber': return 'Uber';
       case 'lyft': return 'Lyft';
       case 'gett': return 'Gett';
@@ -2341,7 +2713,7 @@ class LinkUtils {
       case 'sharenow': return 'Share Now';
       case 'citymobil': return 'Ситимобил';
 
-      // ---- РАБОТА И УСЛУГИ ----
+      // ---- РАБОТА ----
       case 'hh': return 'HeadHunter';
       case 'avito': return 'Avito';
       case 'cian': return 'Циан';
@@ -2387,23 +2759,19 @@ class LinkUtils {
       case 'yandex_taxi': return 'Яндекс Такси';
       case 'yandex_drive': return 'Яндекс Драйв';
 
-      // ---- ФОТОГРАФИЯ ----
-      case 'smugmug': return 'SmugMug';
-      case 'photobucket': return 'Photobucket';
-
-      // ---- ФАЙЛООБМЕННИКИ ----
-      case 'mediafire': return 'MediaFire';
-      case '4shared': return '4shared';
-      case 'depositfiles': return 'DepositFiles';
-      case 'turbobit': return 'Turbobit';
-
       // ---- ЗНАКОМСТВА ----
       case 'tinder': return 'Tinder';
       case 'bumble': return 'Bumble';
+      case 'mamba': return 'Mamba';
+      case 'teamo': return 'Teamo';
+      case 'dating': return 'Dating.ru';
 
-      // ---- ВИДЕОКОНФЕРЕНЦИИ ----
-      case 'zoom': return 'Zoom';
-      case 'webex': return 'Webex';
+      // ---- ПОДКАСТЫ ----
+      case 'podcastru': return 'Podcast.ru';
+      case 'podster': return 'Podster.fm';
+      case 'podfm': return 'Podfm';
+      case 'glow': return 'Glow';
+      case 'transistor': return 'Transistor';
 
       // ---- НОВОСТИ ----
       case 'bbc': return 'BBC';
@@ -2448,7 +2816,6 @@ class LinkUtils {
       case 'gazeta': return 'Газета.ру';
       case 'kommersant': return 'Коммерсантъ';
       case 'vedomosti': return 'Ведомости';
-      case 'womansworld': return 'Woman\'s World';
 
       // ---- ЧАСЫ ----
       case 'danielwellington': return 'Daniel Wellington';

@@ -281,7 +281,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
       final tagsJson = widget.tags.map((e) => e.toJson()).toList();
 
-      // 🔥 ОБЩИЙ fitModes ДЛЯ ВСЕХ ТИПОВ
       final fitModesToSave = widget.fitModes ?? 
           List.filled(widget.selectedFiles.length, 'contain');
 
@@ -322,7 +321,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
         
-        // 🔥 ДОБАВЛЯЕМ fitModes В POSTDATA
         final Map<String, dynamic> postData = {
           'id': docId,
           'userId': user.uid,
@@ -394,19 +392,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         for (int i = 0; i < widget.selectedFiles.length; i++) {
           if (!mounted) return;
           
-          final originalFile = widget.selectedFiles[i];
-          final beforeSize = await ImageCompressor.getFileSizeString(originalFile);
-          print('📸 [UPLOAD] Image $i: Before compression = $beforeSize');
-          
-          final file = await ImageCompressor.compressImage(
-            originalFile,
-            maxWidth: 900,
-            maxHeight: 1600,
-            quality: 75,
-          );
-          
-          final afterSize = await ImageCompressor.getFileSizeString(file);
-          print('📸 [UPLOAD] Image $i: After compression = $afterSize');
+          // 🔥 ФАЙЛ УЖЕ СЖАТ В UPLOAD_SCREEN
+          final file = widget.selectedFiles[i];
+          final size = await file.length();
+          print('📸 [UPLOAD] Image $i: size = ${(size / 1024 / 1024).toStringAsFixed(2)} MB');
           
           setState(() {
             _uploadStatus = 'Uploading image ${i + 1}/${widget.selectedFiles.length}...';
@@ -526,24 +515,27 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       if (!mounted) return;
       
       try {
-        if (mounted && context.mounted) {
-          Navigator.popUntil(context, (route) {
-            return route.settings.name == '/feed' || route.isFirst;
-          });
-          
-          if (mounted) {
-            Get.find<ProfileController>().update();
-          }
-          
-          if (mounted) {
-            _showSnackBar(
-              _isVideo ? 'Video shared successfully!' : 'Post shared successfully!',
-              Colors.green,
-            );
-          }
+        // 🔥 ПРОСТО ЗАКРЫВАЕМ ВСЕ ЭКРАНЫ ДО MAINAPP
+        // Никакого обновления ленты, никаких пересозданий
+        // Никакого ProfileController.update()
+        Navigator.popUntil(context, (route) => route.isFirst);
+        
+        // 🔥 НЕ ОБНОВЛЯЕМ ПРОФИЛЬ ПРИНУДИТЕЛЬНО
+        // Пост уже добавлен в общий кеш и ленту через addPostsToStorage
+        // Появится при следующем обновлении ленты (pull-to-refresh)
+        
+        if (mounted) {
+          _showSnackBar(
+            _isVideo ? 'Video shared successfully!' : 'Post shared successfully!',
+            Colors.green,
+          );
         }
       } catch (e) {
-        print('⚠️ [CAPTION] Navigation error (ignored): $e');
+        print('⚠️ [CAPTION] Navigation error: $e');
+        // Фолбек - просто закрываем текущий экран
+        if (mounted && context.mounted) {
+          Navigator.pop(context);
+        }
       }
 
     } catch (e) {

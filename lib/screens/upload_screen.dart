@@ -18,6 +18,7 @@ import '../models/media_types.dart';
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
 import '../utils/video_compressor.dart';
+import '../utils/image_compressor.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -351,7 +352,7 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   // ============================================================
-  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО ЧЕРЕЗ VideoCompressor
+  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО
   // ============================================================
   Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
     if (asset.type != AssetType.video) return null;
@@ -367,7 +368,6 @@ class _UploadScreenState extends State<UploadScreen> {
       if (file != null) {
         print('🎬 [DURATION] Getting duration for: ${file.path}');
         
-        // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
         final durationMs = await VideoCompressor.getVideoDurationMs(file.path);
         if (durationMs > 0) {
           final duration = Duration(milliseconds: durationMs);
@@ -392,15 +392,16 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   Future<File?> _getFileForAsset(AssetEntity asset) async {
-    if (asset.type == AssetType.video) {
-      return await asset.file;
-    }
     return await asset.file;
   }
 
+  // ============================================================
+  // 🔥 ВЫБОР ФАЙЛА (БЕЗ СЖАТИЯ)
+  // ============================================================
   void _toggleSelection(AssetEntity asset) async {
     _selectionTimer?.cancel();
     
+    // 🔥 ВИДЕО - СЖАТИЕ ПРИ ВЫБОРЕ (КАК БЫЛО)
     if (asset.type == AssetType.video) {
       print('🎬 [UPLOAD] ========== VIDEO SELECTED ==========');
       print('🎬 [UPLOAD] Asset ID: ${asset.id}');
@@ -437,7 +438,6 @@ class _UploadScreenState extends State<UploadScreen> {
           ),
         );
         
-        // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor.compressVideo
         final compressedFile = await VideoCompressor.compressVideo(file.path);
         
         if (mounted) Navigator.pop(context);
@@ -466,7 +466,6 @@ class _UploadScreenState extends State<UploadScreen> {
             });
           }
         } else {
-          // Если сжатие не удалось — используем оригинал
           print('⚠️ [UPLOAD] Compression failed, using original');
           if (mounted) {
             Navigator.push(
@@ -492,27 +491,27 @@ class _UploadScreenState extends State<UploadScreen> {
       return;
     }
     
-    _selectionTimer = Timer(const Duration(milliseconds: 50), () {
-      if (!mounted) return;
-      
-      setState(() {
-        if (_selectedAssets.containsKey(asset.id)) {
-          _selectedAssets.remove(asset.id);
-          _selectedAssetsOrder.remove(asset.id);
-          
-          final updatedMap = <String, int>{};
-          var index = 1;
-          for (var id in _selectedAssetsOrder) {
-            updatedMap[id] = index++;
-          }
-          _selectedAssets.clear();
-          _selectedAssets.addAll(updatedMap);
-        } else {
-          final newNumber = _selectedAssets.length + 1;
-          _selectedAssets[asset.id] = newNumber;
-          _selectedAssetsOrder.add(asset.id);
+    // 🔥 ФОТО - ПРОСТО ВЫБОР (БЕЗ СЖАТИЯ)
+    print('📸 [UPLOAD] ========== PHOTO SELECTED ==========');
+    print('📸 [UPLOAD] Asset ID: ${asset.id}');
+    
+    setState(() {
+      if (_selectedAssets.containsKey(asset.id)) {
+        _selectedAssets.remove(asset.id);
+        _selectedAssetsOrder.remove(asset.id);
+        
+        final updatedMap = <String, int>{};
+        var index = 1;
+        for (var id in _selectedAssetsOrder) {
+          updatedMap[id] = index++;
         }
-      });
+        _selectedAssets.clear();
+        _selectedAssets.addAll(updatedMap);
+      } else {
+        final newNumber = _selectedAssets.length + 1;
+        _selectedAssets[asset.id] = newNumber;
+        _selectedAssetsOrder.add(asset.id);
+      }
     });
   }
 
@@ -628,7 +627,6 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           );
           
-          // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
           final compressedFile = await VideoCompressor.compressVideo(file.path);
           if (mounted) Navigator.pop(context);
           
@@ -790,7 +788,6 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
           );
           
-          // 🔥 ИСПОЛЬЗУЕМ НОВЫЙ VideoCompressor
           final compressedFile = await VideoCompressor.compressVideo(file.path);
           if (mounted) Navigator.pop(context);
           
@@ -826,6 +823,8 @@ class _UploadScreenState extends State<UploadScreen> {
         
         if (result != null && result.files.isNotEmpty && mounted) {
           final paths = result.paths.where((p) => p != null).cast<String>().toList();
+          
+          // 🔥 СОХРАНЯЕМ ОРИГИНАЛЫ (БЕЗ СЖАТИЯ)
           setState(() {
             _selectedFiles = paths.map((path) => File(path)).toList();
             _isFilePickerMode = true;
@@ -891,7 +890,38 @@ class _UploadScreenState extends State<UploadScreen> {
     });
   }
 
+  // ============================================================
+  // 🔥 ПЕРЕХОД НА ПРЕВЬЮ - С СЖАТИЕМ ФОТО
+  // ============================================================
   void _navigateToPreviewFromGallery() async {
+    if (_selectedAssetsOrder.isEmpty) return;
+    
+    // 🔥 ПОКАЗЫВАЕМ ЛОАДЕР
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.black,
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: Colors.white),
+            const SizedBox(height: 16),
+            Text(
+              'Processing ${_selectedAssetsOrder.length} photos...',
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Optimizing for upload',
+              style: TextStyle(color: Colors.grey[400], fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    );
+    
     List<File> selectedFiles = [];
     
     for (var assetId in _selectedAssetsOrder) {
@@ -901,16 +931,25 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       final file = await _getFileForAsset(asset);
       if (file != null) {
-        selectedFiles.add(file);
+        // 🔥 СЖИМАЕМ ФОТО ПРЯМО ЗДЕСЬ
+        final compressed = await ImageCompressor.compressImage(
+          file,
+          maxWidth: 900,
+          maxHeight: 1600,
+          quality: 75,
+        );
+        selectedFiles.add(compressed ?? file);
       }
     }
+    
+    if (mounted) Navigator.pop(context); // Закрываем лоадер
     
     if (selectedFiles.isNotEmpty && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => PostPreviewScreen(
-            selectedFiles: selectedFiles,
+            selectedFiles: selectedFiles, // 🔥 УЖЕ СЖАТЫЕ
             selectedAssets: [],
             mediaType: MediaUploadType.image,
           ),
@@ -949,22 +988,67 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  void _navigateToPreviewFromFiles() {
-    if (_selectedFiles.isNotEmpty && mounted) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PostPreviewScreen(
-            selectedFiles: _selectedFiles,
-            selectedAssets: [],
-            mediaType: _detectedMediaType,
+// ============================================================
+// 🔥 ПЕРЕХОД НА ПРЕВЬЮ ИЗ ФАЙЛОВ - С СЖАТИЕМ
+// ============================================================
+void _navigateToPreviewFromFiles() async { // ✅ ДОБАВЛЯЕМ async
+  if (_selectedFiles.isEmpty) return;
+  
+  // 🔥 ПОКАЗЫВАЕМ ЛОАДЕР
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      backgroundColor: Colors.black,
+      contentPadding: const EdgeInsets.all(24),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(color: Colors.white),
+          const SizedBox(height: 16),
+          Text(
+            'Processing ${_selectedFiles.length} photos...',
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
           ),
-        ),
-      ).then((_) {
-        _resetFiles();
-      });
-    }
+          const SizedBox(height: 8),
+          Text(
+            'Optimizing for upload',
+            style: TextStyle(color: Colors.grey[400], fontSize: 12),
+          ),
+        ],
+      ),
+    ),
+  );
+  
+  // 🔥 СЖИМАЕМ ВСЕ ФОТО
+  List<File> compressedFiles = [];
+  for (var file in _selectedFiles) {
+    final compressed = await ImageCompressor.compressImage(
+      file,
+      maxWidth: 900,
+      maxHeight: 1600,
+      quality: 75,
+    );
+    compressedFiles.add(compressed ?? file);
   }
+  
+  if (mounted) Navigator.pop(context); // Закрываем лоадер
+  
+  if (mounted) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostPreviewScreen(
+          selectedFiles: compressedFiles,
+          selectedAssets: [],
+          mediaType: _detectedMediaType,
+        ),
+      ),
+    ).then((_) {
+      _resetFiles();
+    });
+  }
+}
 
   Widget _buildGalleryMode() {
     return Scaffold(
@@ -1120,7 +1204,7 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
 
             // ============================================================
-            // 🔥 ГРИД - ОРИГИНАЛЬНЫЙ ДИЗАЙН ВЫБОРА
+            // 🔥 ГРИД - ВЫБОР ФОТО
             // ============================================================
             Expanded(
               child: Container(
@@ -1213,7 +1297,7 @@ class _UploadScreenState extends State<UploadScreen> {
                                           if (selectedNumber != null)
                                             Container(color: Colors.black.withOpacity(0.4)),
                                           
-                                          // ВРЕМЯ ДЛЯ ВИДЕО (БЕЗ ФОНА)
+                                          // ВРЕМЯ ДЛЯ ВИДЕО
                                           if (isVideo && duration != null)
                                             Positioned(
                                               bottom: 4,
@@ -1235,7 +1319,7 @@ class _UploadScreenState extends State<UploadScreen> {
                                               ),
                                             ),
                                           
-                                          // 🔥 НОМЕР ВЫБРАННОГО (ОРИГИНАЛ - ЧЕРНЫЙ КРУГ С БЕЛОЙ ЦИФРОЙ)
+                                          // НОМЕР ВЫБРАННОГО
                                           if (selectedNumber != null)
                                             Positioned(
                                               top: 4,
