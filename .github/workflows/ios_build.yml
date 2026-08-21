@@ -1,0 +1,30 @@
+name: Build iOS
+
+on:
+  push:
+    branches: [ main, master ] # запустится при пуше в main или master
+  workflow_dispatch: # позволяет запускать сборку вручную из интерфейса GitHub
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build iOS No-Codesign
+        run: flutter build ios --release --no-codesign
