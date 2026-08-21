@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -14,7 +15,6 @@ class AuthController extends GetxController {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // ✅ Инициализируем GoogleSignIn с явным clientId для iOS (предотвращает нативный краш)
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     clientId: (!kIsWeb && Platform.isIOS)
         ? '370877420307-7sbprm77lg96b4svsmr792k5a3pqhrs4.apps.googleusercontent.com'
@@ -54,6 +54,59 @@ class AuthController extends GetxController {
   }
 
   // ============================================================
+  // EMAIL / PASSWORD SIGN IN
+  // ============================================================
+
+  Future<void> loginWithEmail(String email, String password) async {
+    try {
+      isLoading.value = true;
+
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = userCredential.user;
+      if (user == null) throw Exception('User authentication failed.');
+
+      await _handleUser(user);
+    } on FirebaseAuthException catch (e) {
+      print('🔥 Email login error code: ${e.code}');
+      
+      String message = 'Sign in failed. Please try again.';
+      
+      switch (e.code) {
+        case 'user-not-found':
+          message = 'No account found with this email.';
+          break;
+        case 'wrong-password':
+        case 'invalid-credential':
+          message = 'Incorrect email or password.';
+          break;
+        case 'invalid-email':
+          message = 'Please enter a valid email address.';
+          break;
+        case 'user-disabled':
+          message = 'This user account has been disabled.';
+          break;
+        case 'too-many-requests':
+          message = 'Too many failed attempts. Please try again later.';
+          break;
+        case 'network-request-failed':
+          message = 'Network error. Please check your internet connection.';
+          break;
+      }
+
+      _showErrorSnackBar('Sign In Failed', message);
+    } catch (e) {
+      print('🔥 Email login error: $e');
+      _showErrorSnackBar('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // ============================================================
   // GOOGLE SIGN IN
   // ============================================================
 
@@ -66,13 +119,14 @@ class AuthController extends GetxController {
         final userCredential =
             await FirebaseAuth.instance.signInWithPopup(googleProvider);
         final user = userCredential.user;
-        if (user == null) throw Exception('User is null');
+        if (user == null) return;
         await _handleUser(user);
       } else {
-        // ✅ Сбрасываем старую/зависшую сессию Google перед входом (предотвращает зависание и краш на iOS)
         await _googleSignIn.signOut();
 
         final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+        
+        // 🛑 Пользователь просто закрыл окно / отменил вход
         if (googleUser == null) {
           isLoading.value = false;
           return;
@@ -86,19 +140,24 @@ class AuthController extends GetxController {
 
         final userCredential = await _auth.signInWithCredential(credential);
         final user = userCredential.user;
-        if (user == null) throw Exception('User is null');
+        if (user == null) return;
 
         await _handleUser(user, googleUser: googleUser);
       }
+    } on PlatformException catch (e) {
+      // 🛑 Отмена на уровне ОС (например, синяя кнопка Cancel)
+      if (e.code == 'sign_in_canceled' || e.code == 'canceled') {
+        print('ℹ️ Google sign in canceled by user');
+        return;
+      }
+      print('🔥 Google PlatformException: ${e.code} - ${e.message}');
+      _showErrorSnackBar('Google Sign-In', 'Google authentication failed. Please try again.');
+    } on FirebaseAuthException catch (e) {
+      print('🔥 Google FirebaseAuthException: ${e.code}');
+      _showErrorSnackBar('Authentication Error', 'Failed to authenticate with Google.');
     } catch (e) {
       print('🔥 Google login error: $e');
-      Get.snackbar(
-        'Error',
-        'Google login failed: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.shade50,
-        colorText: Colors.red.shade900,
-      );
+      _showErrorSnackBar('Error', 'Could not complete Google sign in.');
     } finally {
       isLoading.value = false;
     }
@@ -112,20 +171,14 @@ class AuthController extends GetxController {
     try {
       isLoading.value = true;
 
-      // Apple Sign In доступен только на iOS
       if (!kIsWeb && !Platform.isIOS) {
-        Get.snackbar(
-          'Not Available',
-          'Apple Sign In is only available on iOS devices',
-          snackPosition: SnackPosition.BOTTOM,
-          backgroundColor: Colors.orange.shade50,
-          colorText: Colors.orange.shade900,
+        _showErrorSnackBar(
+          'Not Supported',
+          'Apple Sign In is only available on iOS devices.',
         );
         isLoading.value = false;
         return;
       }
-
-      print('🍎 [APPLE] Starting Apple Sign In...');
 
       final appleCredential = await SignInWithApple.getAppleIDCredential(
         scopes: [
@@ -143,7 +196,7 @@ class AuthController extends GetxController {
       final userCredential = await _auth.signInWithCredential(credential);
       final user = userCredential.user;
 
-      if (user == null) throw Exception('User is null');
+      if (user == null) return;
 
       await _handleUser(
         user,
@@ -151,22 +204,24 @@ class AuthController extends GetxController {
         appleDisplayName: user.displayName,
         appleEmail: user.email,
       );
+    } on SignInWithAppleAuthorizationException catch (e) {
+      // 🛑 Пользователь свайпнул вниз или нажал "Cancel" в Apple ID диалоге
+      if (e.code == AuthorizationErrorCode.canceled) {
+        print('ℹ️ Apple sign in canceled by user');
+        return;
+      }
+      print('❌ Apple auth error: ${e.code} - ${e.message}');
+      _showErrorSnackBar('Apple Sign-In', 'Apple sign in failed. Please try again.');
     } catch (e) {
-      print('❌ [APPLE] Error: $e');
-      Get.snackbar(
-        'Error',
-        'Apple login failed: ${e.toString()}',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red.shade50,
-        colorText: Colors.red.shade900,
-      );
+      print('❌ Apple login error: $e');
+      _showErrorSnackBar('Error', 'Could not complete Apple sign in.');
     } finally {
       isLoading.value = false;
     }
   }
 
   // ============================================================
-  // HANDLE USER
+  // HANDLE USER & CREATION
   // ============================================================
 
   Future<void> _handleUser(
@@ -192,10 +247,6 @@ class AuthController extends GetxController {
     }
   }
 
-  // ============================================================
-  // CREATE NEW USER
-  // ============================================================
-
   Future<void> _createNewUser(
     User user, {
     GoogleSignInAccount? googleUser,
@@ -212,10 +263,13 @@ class AuthController extends GetxController {
         displayName = appleDisplayName ?? user.displayName ?? '';
         photoUrl = user.photoURL ?? '';
         email = appleEmail ?? user.email ?? '';
+      } else if (googleUser != null) {
+        displayName = googleUser.displayName ?? user.displayName ?? '';
+        photoUrl = googleUser.photoUrl ?? user.photoURL ?? '';
+        email = googleUser.email ?? user.email ?? '';
       } else {
-        displayName = googleUser?.displayName ?? user.displayName ?? '';
-        photoUrl = googleUser?.photoUrl ?? user.photoURL ?? '';
-        email = googleUser?.email ?? user.email ?? '';
+        displayName = user.displayName ?? '';
+        photoUrl = user.photoURL ?? '';
       }
 
       String generatedUsername;
@@ -231,6 +285,8 @@ class AuthController extends GetxController {
           final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
           generatedUsername = '${generatedUsername}_$randomNum';
         }
+      } else if (email.isNotEmpty && email.contains('@')) {
+        generatedUsername = email.split('@').first.replaceAll('.', '').toLowerCase();
       } else {
         final randomNum = DateTime.now().millisecondsSinceEpoch % 1000000;
         generatedUsername = 'user$randomNum';
@@ -259,13 +315,28 @@ class AuthController extends GetxController {
       avatarUrl.value = photoUrl;
 
       await AuthService.instance.onUserLoggedIn();
-
-      print('✅ New user created (${isApple ? "Apple" : "Google"})');
       _goToApp();
     } catch (e) {
       print('❌ Create user error: $e');
-      Get.snackbar('Error', 'Failed to create user profile: $e');
+      _showErrorSnackBar('Profile Error', 'Failed to initialize user profile.');
     }
+  }
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+
+  void _showErrorSnackBar(String title, String message) {
+    Get.snackbar(
+      title,
+      message,
+      snackPosition: SnackPosition.BOTTOM,
+      backgroundColor: Colors.red.shade50,
+      colorText: Colors.red.shade900,
+      margin: const EdgeInsets.all(16),
+      borderRadius: 12,
+      duration: const Duration(seconds: 4),
+    );
   }
 
   void _goToApp() {
@@ -283,13 +354,12 @@ class AuthController extends GetxController {
       avatarUrl.value = '';
 
       await AuthService.instance.logout();
-
       Get.offAllNamed('/welcome');
     } catch (e) {
       print('❌ Logout error: $e');
     }
   }
 
-  bool get isLoggedIn => _auth.currentUser != null;
-  String? get currentUserId => _auth.currentUser?.uid;
+  bool get isLoggedIn => _auth.currentUser != null || firebaseUser.value != null;
+  String? get currentUserId => _auth.currentUser?.uid ?? firebaseUser.value?.uid;
 }

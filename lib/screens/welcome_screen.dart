@@ -63,12 +63,103 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.dispose();
   }
 
+  void _showEmailSignInModal(BuildContext context, AuthController authController, bool isDark) {
+    final emailController = TextEditingController(text: 'demoreview@foviox.com');
+    final passwordController = TextEditingController(text: 'Foviox2026!');
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? Colors.grey.shade900 : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 24,
+          right: 24,
+          top: 24,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Sign In with Email',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: isDark ? Colors.white : Colors.black,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextField(
+              controller: emailController,
+              style: TextStyle(color: isDark ? Colors.white : Colors.black),
+              decoration: InputDecoration(
+                hintText: 'Email',
+                prefixIcon: const Icon(Icons.email_outlined),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: passwordController,
+              obscureText: true,
+              style: TextStyle(color: isDark ? Colors.white : Colors.black),
+              decoration: InputDecoration(
+                hintText: 'Password',
+                prefixIcon: const Icon(Icons.lock_outline),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(30),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final email = emailController.text.trim();
+                  final password = passwordController.text;
+
+                  if (email.isEmpty || password.isEmpty) return;
+
+                  Navigator.pop(ctx); // Закрываем BottomSheet
+
+                  await authController.loginWithEmail(email, password);
+                  if (authController.isLoggedIn &&
+                      context.mounted &&
+                      Navigator.canPop(context)) {
+                    Navigator.pop(context, true);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isDark ? Colors.white : Colors.black,
+                  foregroundColor: isDark ? Colors.black : Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                ),
+                child: const Text(
+                  'Sign In',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authController = Get.find<AuthController>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Проверяем, можем ли вернуться назад (если это модальное окно)
     final bool isModal = Navigator.canPop(context);
 
     return Scaffold(
@@ -76,7 +167,6 @@ class _WelcomeScreenState extends State<WelcomeScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            // 🔥 СТРЕЛОЧКА НАЗАД (только если это модальное окно)
             if (isModal)
               Positioned(
                 top: 8,
@@ -92,15 +182,14 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                   splashRadius: 24,
                 ),
               ),
-            
-            // Основной контент
+
             Center(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    /// 🔥 LOGO ANIMATION
+                    /// LOGO ANIMATION
                     FadeTransition(
                       opacity: _logoFade,
                       child: SlideTransition(
@@ -117,83 +206,107 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                     const SizedBox(height: 48),
 
-                    /// 🔥 BUTTONS ANIMATION
+                    /// BUTTONS ANIMATION
                     FadeTransition(
                       opacity: _buttonsFade,
                       child: SlideTransition(
                         position: _buttonsSlide,
                         child: Column(
                           children: [
-                            // Google
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: Obx(() => OutlinedButton.icon(
-                                    onPressed: authController.isLoading.value
-                                        ? null
-                                        : () async {
-                                            await authController.loginWithGoogle();
-                                            if (authController.isLoggedIn) {
-                                              if (Navigator.canPop(context)) {
-                                                Navigator.pop(context, true);
-                                              }
-                                            }
-                                          },
-                                    icon: Container(
-                                      width: 22,
-                                      height: 22,
-                                      alignment: Alignment.center,
-                                      child: Text(
-                                        'G',
-                                        style: TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w600,
-                                          fontFamily: 'Roboto',
-                                          color: isDark
-                                              ? Colors.white
-                                              : Colors.black,
-                                        ),
-                                      ),
-                                    ),
-                                    label: authController.isLoading.value
-                                        ? const SizedBox(
-                                            width: 20,
-                                            height: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : Text(
-                                            'Continue with Google',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w500,
-                                              color: isDark
-                                                  ? Colors.white
-                                                  : Colors.black,
-                                            ),
-                                          ),
-                                    style: OutlinedButton.styleFrom(
-                                      side: BorderSide(
-                                        color: isDark
-                                            ? Colors.grey.shade800
-                                            : Colors.grey.shade300,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(30),
-                                      ),
-                                    ),
-                                  )),
-                            ),
-
-                            const SizedBox(height: 16),
-
-                            // Apple
+                            // Email & Password Sign In
                             SizedBox(
                               width: double.infinity,
                               height: 52,
                               child: OutlinedButton.icon(
-                                onPressed: () {
+                                onPressed: () => _showEmailSignInModal(
+                                    context, authController, isDark),
+                                icon: Icon(
+                                  Icons.mail_outline,
+                                  size: 22,
+                                  color: isDark ? Colors.white : Colors.black,
+                                ),
+                                label: Text(
+                                  'Continue with Email',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color: isDark ? Colors.white : Colors.black,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade300,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Google Sign In
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await authController.loginWithGoogle();
+                                  if (authController.isLoggedIn &&
+                                      context.mounted &&
+                                      Navigator.canPop(context)) {
+                                    Navigator.pop(context, true);
+                                  }
+                                },
+                                icon: Container(
+                                  width: 22,
+                                  height: 22,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    'G',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamily: 'Roboto',
+                                      color: isDark
+                                          ? Colors.white
+                                          : Colors.black,
+                                    ),
+                                  ),
+                                ),
+                                label: Text(
+                                  'Continue with Google',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w500,
+                                    color:
+                                        isDark ? Colors.white : Colors.black,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? Colors.grey.shade800
+                                        : Colors.grey.shade300,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(30),
+                                  ),
+                                ),
+                              ),
+                            ),
+
+                            const SizedBox(height: 12),
+
+                            // Apple Sign In
+                            SizedBox(
+                              width: double.infinity,
+                              height: 52,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
                                   if (kIsWeb) {
                                     Get.snackbar(
                                       'Apple Sign In',
@@ -203,14 +316,18 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                                       colorText: Colors.black,
                                     );
                                   } else {
-                                    authController.loginWithApple();
+                                    await authController.loginWithApple();
+                                    if (authController.isLoggedIn &&
+                                        context.mounted &&
+                                        Navigator.canPop(context)) {
+                                      Navigator.pop(context, true);
+                                    }
                                   }
                                 },
                                 icon: Icon(
                                   Icons.apple,
                                   size: 22,
-                                  color:
-                                      isDark ? Colors.white : Colors.black,
+                                  color: isDark ? Colors.white : Colors.black,
                                 ),
                                 label: Text(
                                   'Continue with Apple',
@@ -234,7 +351,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                               ),
                             ),
 
-                            const SizedBox(height: 40),
+                            const SizedBox(height: 36),
 
                             // Terms
                             Wrap(
