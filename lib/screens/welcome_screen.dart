@@ -63,9 +63,10 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     super.dispose();
   }
 
-  void _showEmailSignInModal(BuildContext context, AuthController authController, bool isDark) {
-    final emailController = TextEditingController(text: 'demoreview@foviox.com');
-    final passwordController = TextEditingController(text: 'Foviox2026!');
+  void _showEmailSignInModal(
+      BuildContext context, AuthController authController, bool isDark) {
+    final emailController = TextEditingController();
+    final passwordController = TextEditingController();
 
     showModalBottomSheet(
       context: context,
@@ -95,6 +96,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
             const SizedBox(height: 20),
             TextField(
               controller: emailController,
+              keyboardType: TextInputType.emailAddress,
               style: TextStyle(color: isDark ? Colors.white : Colors.black),
               decoration: InputDecoration(
                 hintText: 'Email',
@@ -128,7 +130,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
 
                   if (email.isEmpty || password.isEmpty) return;
 
-                  Navigator.pop(ctx); // Закрываем BottomSheet
+                  Navigator.pop(ctx);
 
                   await authController.loginWithEmail(email, password);
                   if (authController.isLoggedIn &&
@@ -213,7 +215,7 @@ class _WelcomeScreenState extends State<WelcomeScreen>
                         position: _buttonsSlide,
                         child: Column(
                           children: [
-                            // Email & Password Sign In
+                            // Email Sign In
                             SizedBox(
                               width: double.infinity,
                               height: 52,
