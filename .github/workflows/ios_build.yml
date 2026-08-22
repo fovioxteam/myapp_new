@@ -60,7 +60,9 @@ jobs:
 
       - name: Build IPA
         run: |
-          flutter build ipa --release --export-options-plist=ios/Runner/ExportOptions.plist
+          flutter build ipa --release \
+            --export-options-plist=ios/Runner/ExportOptions.plist \
+            --build-number=${{ github.run_number }}
 
       - name: Upload to App Store Connect
         env:
