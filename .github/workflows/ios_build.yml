@@ -48,7 +48,7 @@ jobs:
           echo -n "$MOBILEPROVISION_BASE64" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/Foviox_App_ios_app_store_1786387633.mobileprovision
 
       - name: Build Flutter iOS
-        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }} DEVELOPMENT_TEAM=534P6VBYP9
 
       - name: Run Fastlane Release
         env:

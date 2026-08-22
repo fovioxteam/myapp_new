@@ -14,7 +14,8 @@ platform :ios do
       workspace: "Runner.xcworkspace",
       scheme: "Runner",
       export_method: "app-store",
-      export_options: "Runner/ExportOptions.plist"
+      export_options: "Runner/ExportOptions.plist",
+      xcargs: "DEVELOPMENT_TEAM=534P6VBYP9"
     )
 
     upload_to_testflight(
