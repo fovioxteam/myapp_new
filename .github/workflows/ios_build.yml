@@ -58,11 +58,26 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_PRIVATE_KEY" | sed 's/\\n/\n/g' > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Build IPA
+      - name: Build and Package IPA
         run: |
-          flutter build ipa --release \
-            --export-options-plist=ios/Runner/ExportOptions.plist \
-            --build-number=${{ github.run_number }}
+          # 1. Компиляция приложения
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+          
+          # 2. Подготовка структуры Payload
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          
+          # 3. Внедрение Mobileprovision
+          PROVISION_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/Foviox_App_ios_app_store_1786387633.mobileprovision"
+          cp "$PROVISION_PATH" build/ios/ipa/Payload/Runner.app/embedded.mobileprovision
+          
+          # 4. Рекурсивная подпись приложения и ВСЕХ вложенных фреймворков (--deep)
+          codesign --force --deep --sign "Apple Distribution" --keychain $HOME/Library/Keychains/build.keychain-db build/ios/ipa/Payload/Runner.app
+          
+          # 5. Упаковка в IPA
+          cd build/ios/ipa
+          zip -qr Foviox.ipa Payload
+          cd ../../..
 
       - name: Upload to App Store Connect
         env:
@@ -71,6 +86,6 @@ jobs:
         run: |
           xcrun altool --upload-app \
             --type ios \
-            --file build/ios/ipa/*.ipa \
+            --file build/ios/ipa/Foviox.ipa \
             --apiKey "$APPSTORE_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID"
