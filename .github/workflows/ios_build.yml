@@ -60,21 +60,27 @@ jobs:
 
       - name: Build and Package IPA
         run: |
-          # 1. Компиляция приложения
+          # 1. Сборка бинарника
           flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
           
-          # 2. Подготовка структуры Payload
+          # 2. Создание каталога Payload
           mkdir -p build/ios/ipa/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           
-          # 3. Внедрение Mobileprovision
           PROVISION_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/Foviox_App_ios_app_store_1786387633.mobileprovision"
           cp "$PROVISION_PATH" build/ios/ipa/Payload/Runner.app/embedded.mobileprovision
           
-          # 4. Рекурсивная подпись приложения и ВСЕХ вложенных фреймворков (--deep)
-          codesign --force --deep --sign "Apple Distribution" --keychain $HOME/Library/Keychains/build.keychain-db build/ios/ipa/Payload/Runner.app
+          # 3. Извлечение Entitlements из профиля
+          security cms -D -i "$PROVISION_PATH" > provision.plist
+          plutil -extract Entitlements xml1 provision.plist -o entitlements.plist
           
-          # 5. Упаковка в IPA
+          # 4. Переподпись вложенных Frameworks и dylib (внутренняя подпись)
+          find build/ios/ipa/Payload/Runner.app/Frameworks -type f \( -name "*.dylib" -o -name "*.framework" \) -exec codesign --force --sign "Apple Distribution" --keychain $HOME/Library/Keychains/build.keychain-db {} + 2>/dev/null || true
+          
+          # 5. Переподпись основного бандла с указанием Entitlements
+          codesign --force --sign "Apple Distribution" --entitlements entitlements.plist --keychain $HOME/Library/Keychains/build.keychain-db build/ios/ipa/Payload/Runner.app
+          
+          # 6. Упаковка в IPA
           cd build/ios/ipa
           zip -qr Foviox.ipa Payload
           cd ../../..
