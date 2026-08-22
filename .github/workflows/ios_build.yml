@@ -58,11 +58,25 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_PRIVATE_KEY" | sed 's/\\n/\n/g' > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Build IPA
+      - name: Build Archive & Export IPA
         run: |
-          flutter build ipa --release \
-            --export-options-plist=ios/Runner/ExportOptions.plist \
-            --build-number=${{ github.run_number }}
+          # Сборка архива Flutter без жесткой подписи
+          flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
+          
+          # Создание xcarchive
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+                     -scheme Runner \
+                     -configuration Release \
+                     -archivePath ../build/ios/archive/Runner.xcarchive \
+                     archive
+          
+          # Экспорт IPA с использованием вашего ExportOptions.plist
+          xcodebuild -exportArchive \
+                     -archivePath ../build/ios/archive/Runner.xcarchive \
+                     -exportPath ../build/ios/ipa \
+                     -exportOptionsPlist Runner/ExportOptions.plist
+          cd ..
 
       - name: Upload to App Store Connect
         env:
