@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: '17'
@@ -26,31 +26,42 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Install Apple Certificate & Profile
+      - name: Setup Auth Key for Automatic Code Signing
         env:
-          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
           APPSTORE_PRIVATE_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_PRIVATE_KEY" | sed 's/\\n/\n/g' > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Build IPA with Automatic Signing
+      - name: Build Archive and Automatic Signing via Xcode
         env:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
         run: |
-          flutter build ipa --release \
-            --export-options-plist=ios/ExportOptions.plist || \
-          flutter build ipa --release
+          # 1. Собираем предварительный iOS билд
+          flutter build ios --release --no-codesign
 
-      - name: Upload to App Store Connect
+          # 2. Архивируем и автоматически запрашиваем профиль подписи у Apple
+          cd ios
+          xcodebuild -workspace Runner.xcworkspace \
+                     -scheme Runner \
+                     -configuration Release \
+                     -archivePath ../build/ios/archive/Runner.xcarchive \
+                     archive \
+                     -allowProvisioningUpdates \
+                     -authenticationKeyID "$APPSTORE_KEY_ID" \
+                     -authenticationKeyIssuerID "$APPSTORE_ISSUER_ID" \
+                     -authenticationKeyPath "$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8"
+          cd ..
+
+      - name: Export IPA and Upload to App Store
         env:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
           APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
         run: |
           xcrun altool --upload-app \
             --type ios \
-            --file build/ios/ipa/*.ipa \
+            --file build/ios/archive/Runner.xcarchive \
             --apiKey "$APPSTORE_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID"
