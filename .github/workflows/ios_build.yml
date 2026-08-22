@@ -58,23 +58,25 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_PRIVATE_KEY" | sed 's/\\n/\n/g' > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
 
-      - name: Build Archive & Export IPA
+      - name: Build and Package IPA
         run: |
+          # 1. Сборка приложения Flutter
           flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
           
-          cd ios
-          xcodebuild -workspace Runner.xcworkspace \
-                     -scheme Runner \
-                     -configuration Release \
-                     -archivePath ../build/ios/archive/Runner.xcarchive \
-                     CODE_SIGNING_ALLOWED=NO \
-                     archive
+          # 2. Подготовка структуры Payload
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
           
-          xcodebuild -exportArchive \
-                     -archivePath ../build/ios/archive/Runner.xcarchive \
-                     -exportPath ../build/ios/ipa \
-                     -exportOptionsPlist Runner/ExportOptions.plist
-          cd ..
+          # 3. Подпись приложения сертификатом Distribution и профилем
+          PROVISION_PATH="$HOME/Library/MobileDevice/Provisioning Profiles/Foviox_App_ios_app_store_1786387633.mobileprovision"
+          cp "$PROVISION_PATH" build/ios/ipa/Payload/Runner.app/embedded.mobileprovision
+          
+          codesign --force --sign "Apple Distribution" --keychain $HOME/Library/Keychains/build.keychain-db build/ios/ipa/Payload/Runner.app
+          
+          # 4. Упаковка в IPA
+          cd build/ios/ipa
+          zip -qr Foviox.ipa Payload
+          cd ../../..
 
       - name: Upload to App Store Connect
         env:
@@ -83,6 +85,6 @@ jobs:
         run: |
           xcrun altool --upload-app \
             --type ios \
-            --file build/ios/ipa/*.ipa \
+            --file build/ios/ipa/Foviox.ipa \
             --apiKey "$APPSTORE_KEY_ID" \
             --apiIssuer "$APPSTORE_ISSUER_ID"
