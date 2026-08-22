@@ -47,10 +47,8 @@ jobs:
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           echo -n "$MOBILEPROVISION_BASE64" | base64 --decode -o ~/Library/MobileDevice/Provisioning\ Profiles/Foviox_App_ios_app_store_1786387633.mobileprovision
 
-      - name: Set up Fastlane
-        run: |
-          cd ios
-          sudo gem install fastlane --no-document
+      - name: Build Flutter iOS
+        run: flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
 
       - name: Run Fastlane Release
         env:
@@ -59,4 +57,4 @@ jobs:
           APP_STORE_CONNECT_API_KEY_KEY: ${{ secrets.APPSTORE_PRIVATE_KEY }}
         run: |
           cd ios
-          bundle exec fastlane release || fastlane release
+          fastlane release
