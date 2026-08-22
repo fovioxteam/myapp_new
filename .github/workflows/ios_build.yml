@@ -60,18 +60,19 @@ jobs:
 
       - name: Build Archive & Export IPA
         run: |
-          # Сборка архива Flutter без жесткой подписи
           flutter build ios --release --no-codesign --build-number=${{ github.run_number }}
           
-          # Создание xcarchive
           cd ios
           xcodebuild -workspace Runner.xcworkspace \
                      -scheme Runner \
                      -configuration Release \
                      -archivePath ../build/ios/archive/Runner.xcarchive \
+                     CODE_SIGN_STYLE="Manual" \
+                     CODE_SIGN_IDENTITY="Apple Distribution" \
+                     PROVISIONING_PROFILE_SPECIFIER="Foviox_App_ios_app_store_1786387633" \
+                     DEVELOPMENT_TEAM="534P6VBYP9" \
                      archive
           
-          # Экспорт IPA с использованием вашего ExportOptions.plist
           xcodebuild -exportArchive \
                      -archivePath ../build/ios/archive/Runner.xcarchive \
                      -exportPath ../build/ios/ipa \

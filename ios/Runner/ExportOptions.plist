@@ -8,6 +8,11 @@
     <string>manual</string>
     <key>teamID</key>
     <string>534P6VBYP9</string>
+    <key>provisioningProfiles</key>
+    <dict>
+        <key>com.foviox.app</key>
+        <string>Foviox_App_ios_app_store_1786387633</string>
+    </dict>
     <key>stripSwiftSymbols</key>
     <true/>
     <key>uploadSymbols</key>
