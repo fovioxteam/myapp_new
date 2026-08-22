@@ -1,0 +1,17 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and upload IPA to App Store Connect"
+  lane :release do
+    build_app(
+      workspace: "Runner.xcworkspace",
+      scheme: "Runner",
+      export_method: "app-store",
+      export_options: "Runner/ExportOptions.plist"
+    )
+
+    upload_to_testflight(
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

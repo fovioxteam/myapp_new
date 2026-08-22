@@ -1,0 +1,2 @@
+app_identifier("com.foviox.app")
+apple_id("") # Оставляем пустым, так как используем Auth Key
