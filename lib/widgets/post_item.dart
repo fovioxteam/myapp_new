@@ -1643,7 +1643,7 @@ class _PostItemState extends State<PostItem>
                         child: Container(
                           key: ValueKey<bool>(_isFollowing),
                           margin: const EdgeInsets.only(left: 8),
-                          width: 80,
+                          width: 90, // 🔥 УВЕЛИЧЕНО С 80 ДО 90 (чтобы влезало "Following")
                           child: GestureDetector(
                             onTap: _toggleFollow,
                             child: Container(
