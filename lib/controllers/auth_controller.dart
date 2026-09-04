@@ -54,59 +54,6 @@ class AuthController extends GetxController {
   }
 
   // ============================================================
-  // EMAIL / PASSWORD SIGN IN
-  // ============================================================
-
-  Future<void> loginWithEmail(String email, String password) async {
-    try {
-      isLoading.value = true;
-
-      final userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
-
-      final user = userCredential.user;
-      if (user == null) throw Exception('User authentication failed.');
-
-      await _handleUser(user);
-    } on FirebaseAuthException catch (e) {
-      print('🔥 Email login error code: ${e.code}');
-      
-      String message = 'Sign in failed. Please try again.';
-      
-      switch (e.code) {
-        case 'user-not-found':
-          message = 'No account found with this email.';
-          break;
-        case 'wrong-password':
-        case 'invalid-credential':
-          message = 'Incorrect email or password.';
-          break;
-        case 'invalid-email':
-          message = 'Please enter a valid email address.';
-          break;
-        case 'user-disabled':
-          message = 'This user account has been disabled.';
-          break;
-        case 'too-many-requests':
-          message = 'Too many failed attempts. Please try again later.';
-          break;
-        case 'network-request-failed':
-          message = 'Network error. Please check your internet connection.';
-          break;
-      }
-
-      _showErrorSnackBar('Sign In Failed', message);
-    } catch (e) {
-      print('🔥 Email login error: $e');
-      _showErrorSnackBar('Error', 'An unexpected error occurred. Please try again.');
-    } finally {
-      isLoading.value = false;
-    }
-  }
-
-  // ============================================================
   // GOOGLE SIGN IN
   // ============================================================
 

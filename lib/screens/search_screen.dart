@@ -145,7 +145,6 @@ class _SearchScreenState extends State<SearchScreen>
     return false;
   }
 
-  // 🔥 ПОЛУЧАЕМ ТЕГИ ИЗ ПОСТА
   List<PostTag> _getTagsFromPost(Map<String, dynamic> post) {
     final List<PostTag> tags = [];
     final tagsData = post['tags'] as List? ?? [];
@@ -161,22 +160,15 @@ class _SearchScreenState extends State<SearchScreen>
     return tags;
   }
 
-  // 🔥 ОБРАБОТКА НАЖАТИЯ НА ТЕГ
   void _handleTagTap(PostTag tag) {
     if (!mounted) return;
-    // Проверяем что это не ссылка на Storage
     if (tag.url.contains('firebasestorage.googleapis.com') || 
         tag.url.contains('storage.googleapis.com')) {
       print('⚠️ Skipping storage URL');
       return;
     }
     print('🔗 [SEARCH] Opening tag link: ${tag.url}');
-    // Используем LinkLauncher если есть, или просто открываем
     try {
-      // Если есть LinkLauncher
-      // LinkLauncher.openUrl(context, tag.url);
-      // Или используем url_launcher напрямую
-      // launchUrl(Uri.parse(tag.url));
       print('🔗 Opening: ${tag.url}');
     } catch (e) {
       print('❌ Error opening link: $e');
@@ -430,11 +422,9 @@ class _SearchScreenState extends State<SearchScreen>
       print('   👤 Users: ${filteredUsers.length}');
       print('   📷 Posts: ${filteredPosts.length}');
       
-      // 🔥 СОХРАНЯЕМ ТЕГИ ИЗ ALGOLIA
       final processedPosts = filteredPosts.map((post) {
         final postMap = Map<String, dynamic>.from(post);
         
-        // Если есть теги в Algolia
         if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
           postMap['tags'] = List.from(post['tags']);
           print('📦 [SEARCH] Post ${post['id']} has ${(post['tags'] as List).length} tags from Algolia');
@@ -457,7 +447,6 @@ class _SearchScreenState extends State<SearchScreen>
       print('   👤 Users in state: ${_users.length}');
       print('   📷 Posts in state: ${_posts.length}');
       
-      // 🔥 СОХРАНЯЕМ В STORAGE С ТЕГАМИ
       final postsWithTags = _posts.map((post) {
         final postCopy = Map<String, dynamic>.from(post);
         if (post['tags'] != null && post['tags'] is List) {
@@ -655,28 +644,19 @@ class _SearchScreenState extends State<SearchScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _openPostDetail - СОХРАНЯЕТ ТЕГИ
-  // ============================================================
   Future<void> _openPostDetail(int index) async {
     print('🔍 [SEARCH] Opening post detail at index: $index');
     final scrollPosition = _scrollController.position.pixels;
     
-    // 🔥 БЕРЕМ ПОСТЫ НАПРЯМУЮ ИЗ _posts (с тегами)
     final updatedPosts = _posts.map((post) {
       final postId = post['id']?.toString() ?? '';
       
-      // Пытаемся получить из кэша
       final cached = _postController.getPostFromStorage(postId);
       
       if (cached != null) {
-        // 🔥 ОБЪЕДИНЯЕМ ДАННЫЕ: КЭШ + ПОИСК (ТЕГИ ИЗ ПОИСКА ПРИОРИТЕТНЕЕ)
         final merged = Map<String, dynamic>.from(cached);
-        
-        // Сохраняем все поля из поиска
         merged.addAll(post);
         
-        // 🔥 ВАЖНО: СОХРАНЯЕМ ТЕГИ ИЗ ПОИСКА
         if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
           merged['tags'] = List.from(post['tags']);
           print('✅ [SEARCH] Using tags from search: ${(post['tags'] as List).length} tags');
@@ -692,12 +672,10 @@ class _SearchScreenState extends State<SearchScreen>
         return merged;
       }
       
-      // Если нет в кэше, используем данные из поиска
       print('📱 [SEARCH] Using search post $postId (no cache)');
       return post;
     }).toList();
     
-    // 🔥 ПРОВЕРЯЕМ ЧТО ТЕГИ НЕ ПОТЕРЯЛИСЬ
     final testPost = updatedPosts[index];
     print('🔍 [SEARCH] Final post ${testPost['id']} has ${(testPost['tags'] as List?)?.length ?? 0} tags');
     
@@ -726,15 +704,19 @@ class _SearchScreenState extends State<SearchScreen>
     }
   }
 
+  // ============================================================
+  // 🔥 BUILD - С ФИКСОМ КЛАВИАТУРЫ
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     super.build(context);
     
     return Scaffold(
       backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: false, // 🔥 ФИКС - НЕ ПОДНИМАТЬ ПАНЕЛЬ ПРИ КЛАВИАТУРЕ
       body: Column(
         children: [
+          // Верхняя часть - поисковая строка
           Container(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 8,
@@ -777,6 +759,7 @@ class _SearchScreenState extends State<SearchScreen>
             ),
           ),
           
+          // TabBar
           if (_debouncedSearchQuery.isNotEmpty && !_showHistory)
             Container(
               color: Colors.white,
@@ -803,6 +786,7 @@ class _SearchScreenState extends State<SearchScreen>
               ),
             ),
           
+          // Контент
           Expanded(
             child: _showHistory 
                 ? _buildHistoryScreen()
@@ -1101,9 +1085,6 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
-  // ============================================================
-  // 🔥 _buildPostsSearchResults
-  // ============================================================
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
       print('🔍 [SEARCH] No posts found, showing empty state');
@@ -1201,7 +1182,6 @@ class _SearchScreenState extends State<SearchScreen>
                     ),
                   ),
 
-                // 🔥 ИНДИКАТОР ТЕГОВ
                 if (tags.isNotEmpty)
                   Positioned(
                     top: 6,

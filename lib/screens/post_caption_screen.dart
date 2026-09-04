@@ -60,6 +60,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
 
+  // 🔥 КЕШ ДЛЯ ТАМБНЕЙЛА
+  File? _cachedThumbnail;
+  bool _thumbnailLoading = false;
+
   bool get _isVideo => widget.mediaType == MediaUploadType.video;
 
   @override
@@ -71,13 +75,46 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     print('🔥 [CAPTION] Total files: ${widget.selectedFiles.length}');
     print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
     print('🔥 [CAPTION] fitModes: ${widget.fitModes}');
+    
+    // 🔥 ПРЕДЗАГРУЗКА ТАМБНЕЙЛА
+    if (_isVideo) {
+      _preloadThumbnail();
+    }
   }
 
   @override
   void dispose() {
     _captionController.removeListener(_updateRemainingChars);
     _captionController.dispose();
+    _cachedThumbnail = null;
     super.dispose();
+  }
+
+  // ============================================================
+  // 🔥 ПРЕДЗАГРУЗКА ТАМБНЕЙЛА
+  // ============================================================
+  void _preloadThumbnail() async {
+    if (_cachedThumbnail != null || _thumbnailLoading) return;
+    
+    _thumbnailLoading = true;
+    try {
+      final videoFile = widget.selectedFiles.first;
+      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
+      
+      if (mounted) {
+        setState(() {
+          _cachedThumbnail = thumbnail;
+          _thumbnailLoading = false;
+        });
+      }
+    } catch (e) {
+      print('❌ [THUMBNAIL] Preload error: $e');
+      if (mounted) {
+        setState(() {
+          _thumbnailLoading = false;
+        });
+      }
+    }
   }
 
   void _updateRemainingChars() {
@@ -191,56 +228,42 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ТАМБНЕЙЛ ДЛЯ ПРЕВЬЮ
+  // 🔥 ТАМБНЕЙЛ ДЛЯ ПРЕВЬЮ - С КЕШИРОВАНИЕМ
   // ============================================================
-  Future<File?> _getVideoThumbnailFile() async {
-    try {
-      final videoFile = widget.selectedFiles.first;
-      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
-      return thumbnail;
-    } catch (e) {
-      print('❌ [THUMBNAIL] Error: $e');
-      return null;
-    }
-  }
-
   Widget _buildVideoThumbnail() {
-    return FutureBuilder<File?>(
-      future: _getVideoThumbnailFile(),
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data != null) {
-          return Image.file(
-            snapshot.data!,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return Container(
-                color: Colors.grey[900],
-                child: const Center(
-                  child: Icon(
-                    Icons.play_circle_outline,
-                    color: Colors.white54,
-                    size: 50,
-                  ),
-                ),
-              );
-            },
-          );
-        }
-        
-        return Container(
-          color: Colors.grey[900],
-          child: const Center(
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                color: Colors.white,
-                strokeWidth: 2,
+    // ✅ Если есть кеш - показываем сразу
+    if (_cachedThumbnail != null) {
+      return Image.file(
+        _cachedThumbnail!,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: Colors.grey[900],
+            child: const Center(
+              child: Icon(
+                Icons.play_circle_outline,
+                color: Colors.white54,
+                size: 50,
               ),
             ),
+          );
+        },
+      );
+    }
+    
+    // ✅ Показываем статичный лоадер (не мигает)
+    return Container(
+      color: Colors.grey[900],
+      child: const Center(
+        child: SizedBox(
+          width: 30,
+          height: 30,
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -392,7 +415,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         for (int i = 0; i < widget.selectedFiles.length; i++) {
           if (!mounted) return;
           
-          // 🔥 ФАЙЛ УЖЕ СЖАТ В UPLOAD_SCREEN
           final file = widget.selectedFiles[i];
           final size = await file.length();
           print('📸 [UPLOAD] Image $i: size = ${(size / 1024 / 1024).toStringAsFixed(2)} MB');
@@ -515,14 +537,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       if (!mounted) return;
       
       try {
-        // 🔥 ПРОСТО ЗАКРЫВАЕМ ВСЕ ЭКРАНЫ ДО MAINAPP
-        // Никакого обновления ленты, никаких пересозданий
-        // Никакого ProfileController.update()
         Navigator.popUntil(context, (route) => route.isFirst);
-        
-        // 🔥 НЕ ОБНОВЛЯЕМ ПРОФИЛЬ ПРИНУДИТЕЛЬНО
-        // Пост уже добавлен в общий кеш и ленту через addPostsToStorage
-        // Появится при следующем обновлении ленты (pull-to-refresh)
         
         if (mounted) {
           _showSnackBar(
@@ -532,7 +547,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         }
       } catch (e) {
         print('⚠️ [CAPTION] Navigation error: $e');
-        // Фолбек - просто закрываем текущий экран
         if (mounted && context.mounted) {
           Navigator.pop(context);
         }

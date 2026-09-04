@@ -55,7 +55,7 @@ class _TagPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     // 🔥 ЦВЕТ КАК В INSTAGRAM — ТЕМНО-СИНЕ-СЕРЫЙ
     final paint = Paint()
-      ..color = const Color.fromARGB(255, 23, 28, 46) // 🔥 Instagram dark gray/blue
+      ..color = const Color.fromARGB(255, 58, 59, 61) // 🔥 Instagram dark gray/blue
       ..style = PaintingStyle.fill
       ..isAntiAlias = true;
 

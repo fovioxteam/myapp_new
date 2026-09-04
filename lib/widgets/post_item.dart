@@ -73,6 +73,7 @@ class PostItem extends StatefulWidget {
   final VoidCallback? onLinkClick;
   final bool isVisible;
   final int priority;
+  final double? customBottomPadding; // 🔥 НОВЫЙ ПАРАМЕТР - ТОЛЬКО ДЛЯ ПРАВОЙ КОЛОНКИ
 
   const PostItem({
     super.key,
@@ -93,6 +94,7 @@ class PostItem extends StatefulWidget {
     this.onLinkClick,
     this.isVisible = true,
     this.priority = 2,
+    this.customBottomPadding, // 🔥 НОВЫЙ ПАРАМЕТР
   });
 
   @override
@@ -114,14 +116,25 @@ class _PostItemState extends State<PostItem>
 
   String get _postId => widget.post['id']?.toString() ?? '';
 
+  // ============================================================
+  // 🔥 КОНТРОЛЛЕРЫ АНИМАЦИЙ
+  // ============================================================
   late AnimationController _heartAnimationController;
   late AnimationController _likeIconController;
   late AnimationController _saveIconController;
   late AnimationController _followAnimationController;
 
+  // ============================================================
+  // 🔥 АНИМАЦИИ СЕРДЦА
+  // ============================================================
   late Animation<double> _heartScaleAnimation;
   late Animation<double> _heartOpacityAnimation;
   late Animation<double> _heartVerticalAnimation;
+  late Animation<double> _heartRotationAnimation;
+
+  // ============================================================
+  // 🔥 АНИМАЦИИ ИКОНОК
+  // ============================================================
   late Animation<double> _likeIconScale;
   late Animation<double> _saveIconScale;
 
@@ -379,40 +392,79 @@ class _PostItemState extends State<PostItem>
     return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
   }
 
+  // ============================================================
+  // 🔥 ПЛАВНАЯ АНИМАЦИЯ ЛАЙКА (РОЗОВОЕ СЕРДЦЕ, БЕЗ СВЕЧЕНИЯ)
+  // ============================================================
   void _initAnimations() {
+    // Контроллер анимации сердца - 700ms для плавности
     _heartAnimationController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 700),
     );
 
+    // ============================================================
+    // 🔥 ПЛАВНАЯ АНИМАЦИЯ МАСШТАБА
+    // ============================================================
     _heartScaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.5, end: 2.5), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 2.5, end: 1.8), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.8, end: 1.2), weight: 50),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.0, end: 1.5),
+        weight: 35,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.5, end: 0.9),
+        weight: 30,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.9, end: 1.1),
+        weight: 35,
+      ),
     ]).animate(CurvedAnimation(
       parent: _heartAnimationController,
       curve: Curves.easeOut,
     ));
 
+    // ============================================================
+    // 🔥 ПЛАВНАЯ ПРОЗРАЧНОСТЬ
+    // ============================================================
     _heartOpacityAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8), weight: 30),
-      TweenSequenceItem(tween: Tween(begin: 0.8, end: 0.0), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.9), weight: 50),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 0.0), weight: 30),
     ]).animate(CurvedAnimation(
       parent: _heartAnimationController,
-      curve: Curves.easeIn,
+      curve: Curves.easeInOut,
     ));
 
-    _heartVerticalAnimation = Tween<double>(begin: 0, end: -120).animate(
-      CurvedAnimation(parent: _heartAnimationController, curve: Curves.easeOut),
+    // ============================================================
+    // 🔥 ПЛАВНЫЙ ПОДЪЕМ
+    // ============================================================
+    _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(
+      CurvedAnimation(
+        parent: _heartAnimationController,
+        curve: Curves.easeOutCubic,
+      ),
     );
 
+    // ============================================================
+    // 🔥 ПЛАВНОЕ ВРАЩЕНИЕ
+    // ============================================================
+    _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(
+      CurvedAnimation(
+        parent: _heartAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    // Сброс контроллера после завершения
     _heartAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _heartAnimationController.reset();
       }
     });
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ ИКОНКИ ЛАЙКА (при нажатии)
+    // ============================================================
     _likeIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -424,6 +476,9 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ СОХРАНЕНИЯ
+    // ============================================================
     _saveIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -435,6 +490,9 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ КНОПКИ FOLLOW
+    // ============================================================
     _followAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -815,6 +873,9 @@ class _PostItemState extends State<PostItem>
     );
   }
 
+  // ============================================================
+  // 🔥 ОБРАБОТЧИК ДВОЙНОГО ТАПА
+  // ============================================================
   void _handleDoubleTap() {
     if (!mounted) return;
     final postId = widget.post['id']?.toString() ?? '';
@@ -826,6 +887,9 @@ class _PostItemState extends State<PostItem>
     _toggleLike();
   }
 
+  // ============================================================
+  // 🔥 ЗАПУСК АНИМАЦИИ ЛАЙКА
+  // ============================================================
   void _startLikeAnimation() {
     if (!mounted) return;
     _safeSetState(() => _showHeartAnimation = true);
@@ -1008,18 +1072,22 @@ class _PostItemState extends State<PostItem>
                     right: 60,
                     child: _buildUserInfoAndCaption(),
                   ),
+                  // 🔥 ПРАВАЯ КОЛОНКА - ДОБАВЛЯЕМ customBottomPadding
                   Positioned(
-                    bottom: hasCaption ? 2 : 5,
+                    bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
                     right: 0,
                     child: _buildActionButtons(),
                   ),
                 ],
               ),
             ),
+            // ============================================================
+            // 🔥 АНИМАЦИЯ СЕРДЦА ДЛЯ ВИДЕО (РОЗОВОЕ, БЕЗ СВЕЧЕНИЯ)
+            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
-                left: _tapPosition!.dx - 50,
-                top: _tapPosition!.dy - 50,
+                left: _tapPosition!.dx - 55,
+                top: _tapPosition!.dy - 55,
                 child: IgnorePointer(
                   ignoring: true,
                   child: AnimatedBuilder(
@@ -1027,11 +1095,18 @@ class _PostItemState extends State<PostItem>
                     builder: (context, child) {
                       return Transform.translate(
                         offset: Offset(0, _heartVerticalAnimation.value),
-                        child: Opacity(
-                          opacity: _heartOpacityAnimation.value,
-                          child: Transform.scale(
-                            scale: _heartScaleAnimation.value,
-                            child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                        child: Transform.rotate(
+                          angle: _heartRotationAnimation.value,
+                          child: Opacity(
+                            opacity: _heartOpacityAnimation.value,
+                            child: Transform.scale(
+                              scale: _heartScaleAnimation.value,
+                              child: const Icon(
+                                Icons.favorite,
+                                color: Color(0xFFFF2D55),
+                                size: 100,
+                              ),
+                            ),
                           ),
                         ),
                       );
@@ -1141,10 +1216,13 @@ class _PostItemState extends State<PostItem>
                   child: _buildTikTokIndicators(),
                 ),
               ),
+            // ============================================================
+            // 🔥 АНИМАЦИЯ СЕРДЦА ДЛЯ ФОТО (РОЗОВОЕ, БЕЗ СВЕЧЕНИЯ)
+            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
-                left: _tapPosition!.dx - 50,
-                top: _tapPosition!.dy - 50,
+                left: _tapPosition!.dx - 55,
+                top: _tapPosition!.dy - 55,
                 child: IgnorePointer(
                   ignoring: true,
                   child: AnimatedBuilder(
@@ -1152,11 +1230,18 @@ class _PostItemState extends State<PostItem>
                     builder: (context, child) {
                       return Transform.translate(
                         offset: Offset(0, _heartVerticalAnimation.value),
-                        child: Opacity(
-                          opacity: _heartOpacityAnimation.value,
-                          child: Transform.scale(
-                            scale: _heartScaleAnimation.value,
-                            child: const Icon(Icons.favorite, color: Colors.white, size: 100),
+                        child: Transform.rotate(
+                          angle: _heartRotationAnimation.value,
+                          child: Opacity(
+                            opacity: _heartOpacityAnimation.value,
+                            child: Transform.scale(
+                              scale: _heartScaleAnimation.value,
+                              child: const Icon(
+                                Icons.favorite,
+                                color: Color(0xFFFF2D55),
+                                size: 100,
+                              ),
+                            ),
                           ),
                         ),
                       );
@@ -1178,8 +1263,9 @@ class _PostItemState extends State<PostItem>
                     right: 60,
                     child: _buildUserInfoAndCaption(),
                   ),
+                  // 🔥 ПРАВАЯ КОЛОНКА - ДОБАВЛЯЕМ customBottomPadding
                   Positioned(
-                    bottom: hasCaption ? 2 : 5,
+                    bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
                     right: 0,
                     child: _buildActionButtons(),
                   ),
@@ -1561,10 +1647,10 @@ class _PostItemState extends State<PostItem>
                           child: GestureDetector(
                             onTap: _toggleFollow,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                               decoration: BoxDecoration(
                                 color: _isFollowing ? Colors.white.withOpacity(0.2) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(20),
                                 border: Border.all(
                                   color: _isFollowing ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.5),
                                   width: 1,
@@ -1664,14 +1750,14 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS - УМЕНЬШЕННЫЕ РАЗМЕРЫ, ОТСТУП 0
+  // 🔥 ACTION BUTTONS - УВЕЛИЧЕННЫЕ РАЗМЕРЫ
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
     required int count,
     Animation<double>? scaleAnimation,
-    double iconSize = 28,
+    double iconSize = 34,
   }) {
     Widget button = GestureDetector(
       onTap: () {
@@ -1679,7 +1765,7 @@ class _PostItemState extends State<PostItem>
         onTap();
       },
       child: SizedBox(
-        width: 36,
+        width: 42,
         child: Icon(
           icon,
           color: Colors.white,
@@ -1705,12 +1791,12 @@ class _PostItemState extends State<PostItem>
       mainAxisSize: MainAxisSize.min,
       children: [
         button,
-        const SizedBox(height: 0), // 🔥 ОТСТУП 0 (было 3-4)
+        const SizedBox(height: 2),
         Text(
           _formatNumber(count),
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
             shadows: [
               Shadow(
@@ -1744,7 +1830,7 @@ class _PostItemState extends State<PostItem>
       final isTagsVisible = _showTagsForCarouselIndex[_currentCarouselIndex] ?? false;
 
       return SizedBox(
-        width: 48,
+        width: 52,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -1754,29 +1840,29 @@ class _PostItemState extends State<PostItem>
               icon: isLiked ? Icons.favorite : Icons.favorite_border,
               count: likesCount,
               scaleAnimation: _likeIconScale,
-              iconSize: 30,
+              iconSize: 36,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             _buildActionButton(
               onTap: _showCommentsSheet,
               icon: CupertinoIcons.chat_bubble,
               count: commentsCount,
-              iconSize: 26,
+              iconSize: 32,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             _buildActionButton(
               onTap: _toggleSave,
               icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
               count: savesCount,
               scaleAnimation: _saveIconScale,
-              iconSize: 26,
+              iconSize: 32,
             ),
             
             // ============================================================
             // 🔥 БЛОК ТЕГОВ - ПОЛНОСТЬЮ БЕЛАЯ ИКОНКА
             // ============================================================
             if (hasTagsForThisImage) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               RepaintBoundary(
                 child: GestureDetector(
                   onTap: () {
@@ -1784,11 +1870,11 @@ class _PostItemState extends State<PostItem>
                     _toggleTagsForCarouselIndex(_currentCarouselIndex);
                   },
                   child: const SizedBox(
-                    width: 36,
+                    width: 42,
                     child: Icon(
                       Icons.auto_awesome,
-                      color: Colors.white, // 🔥 ВСЕГДА БЕЛАЯ
-                      size: 26,
+                      color: Colors.white,
+                      size: 32,
                     ),
                   ),
                 ),

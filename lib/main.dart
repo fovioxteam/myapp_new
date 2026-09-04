@@ -192,7 +192,7 @@ class MyApp extends StatelessWidget {
         name: '/not-found',
         page: () => const Scaffold(body: Center(child: Text('404'))),
       ),
-      navigatorObservers: [routeObserver], // 🔥 ДОБАВЛЯЕМ ОБСЕРВЕР
+      navigatorObservers: [routeObserver],
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
@@ -496,7 +496,7 @@ class AuthWrapper extends StatelessWidget {
 }
 
 // ============================================================
-// 🔥 MAINAPP
+// 🔥 MAINAPP - РАЗМЫТИЕ С УМЕНЬШЕННОЙ ВЫСОТОЙ (40px)
 // ============================================================
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
@@ -664,6 +664,9 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     if (mounted) setState(() => _isRefreshingProfile = false);
   }
 
+  // ============================================================
+  // 🔥 BUILD - РАЗМЫТИЕ С УМЕНЬШЕННОЙ ВЫСОТОЙ
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
@@ -675,10 +678,14 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     
     return Scaffold(
       backgroundColor: _backgroundColor,
+      resizeToAvoidBottomInset: false,
+      extendBody: true,
       body: Stack(
         children: [
+          // 🔥 ОСНОВНОЙ КОНТЕНТ
           IndexedStack(index: _selectedIndex, children: _screens),
           
+          // 🔥 РАЗМЫТИЕ СНИЗУ - УМЕНЬШЕННАЯ ВЫСОТА (40px)
           Positioned(
             bottom: 0,
             left: 0,
@@ -687,7 +694,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
-                  height: 60,
+                  height: 40, // 🔥 БЫЛО 80, СТАЛО 40
                   color: Colors.transparent,
                 ),
               ),
@@ -695,13 +702,13 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           ),
         ],
       ),
-      extendBody: true,
       bottomNavigationBar: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         child: Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
+            // Бэкграунд панели с размытием
             ClipRRect(
               borderRadius: BorderRadius.circular(30),
               child: BackdropFilter(
@@ -735,6 +742,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               ),
             ),
             
+            // Анимированный индикатор
             AnimatedPositioned(
               duration: const Duration(milliseconds: 500),
               curve: Curves.easeOutCubic,
@@ -767,6 +775,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               ),
             ),
             
+            // Иконки
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
