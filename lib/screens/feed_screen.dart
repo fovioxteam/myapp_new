@@ -115,15 +115,21 @@ class _FeedScreenState extends State<FeedScreen>
     
     _tabController = TabController(length: 2, vsync: this);
     
-    // 🔥 СЛУШАЕМ СМЕНУ ВКЛАДКИ
+    // 🔥 СЛУШАЕМ СМЕНУ ВКЛАДКИ — ИСПРАВЛЕНО!
     _tabController.addListener(() {
-      if (_tabController.indexIsChanging) {
+      // Используем !indexIsChanging, чтобы флаги менялись после завершения анимации
+      if (!_tabController.indexIsChanging) {
         final isForYou = _tabController.index == 0;
         setState(() {
           _isForYouVisible = isForYou;
           _isFollowingVisible = !isForYou;
         });
         print('🔄 [TAB] Switched to: ${isForYou ? "For You" : "Following"}');
+        
+        // 🔥 ОЧИЩАЕМ КЭШ ПРЕДЗАГРУЗКИ ПРИ СМЕНЕ ВКЛАДКИ
+        if (!isForYou) {
+          _postController.clearVideoPreloadCache();
+        }
       }
     });
     
@@ -272,6 +278,7 @@ class _FeedScreenState extends State<FeedScreen>
         setState(() => _isLoading = false);
       }
 
+      // 🔥 УМЕНЬШАЕМ ПРЕДЗАГРУЗКУ ДО 1 ВИДЕО (было 5)
       _preloadFeedVideos();
 
       unawaited(_loadFollowingUsers());
@@ -287,8 +294,9 @@ class _FeedScreenState extends State<FeedScreen>
   void _preloadFeedVideos() {
     final posts = _postController.feedPosts;
     if (posts.isNotEmpty) {
-      _postController.preloadFeedVideos(posts, maxPreload: 5);
-      print('📹 [FEED] Preloading videos for ${posts.length} posts');
+      // 🔥 МАКСИМУМ 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ (было 5)
+      _postController.preloadFeedVideos(posts, maxPreload: 1);
+      print('📹 [FEED] Preloading 1 video (max) for ${posts.length} posts');
     }
   }
 
@@ -470,7 +478,8 @@ class _FeedScreenState extends State<FeedScreen>
           _loadingFollowing = false;
         });
         
-        _postController.preloadFeedVideos(newPosts, maxPreload: 3);
+        // 🔥 МАКСИМУМ 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ (было 3)
+        _postController.preloadFeedVideos(newPosts, maxPreload: 1);
         
         print('Processed ${_followingPostIds.length} following posts');
       } else {
@@ -539,7 +548,8 @@ class _FeedScreenState extends State<FeedScreen>
         
         _postController.addPostsToStorage(newPosts);
         
-        _postController.preloadFeedVideos(newPosts, maxPreload: 3);
+        // 🔥 МАКСИМУМ 1 ВИДЕО
+        _postController.preloadFeedVideos(newPosts, maxPreload: 1);
         
         final newIds = newPosts.map((p) => p['id'] as String).toList();
         
@@ -610,28 +620,32 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
+  // ============================================================
+  // 🔥 ПРЕДЗАГРУЗКА — ТОЛЬКО СЛЕДУЮЩЕЕ 1 ВИДЕО (было 3)
+  // ============================================================
   void _preloadNextPosts(int currentIndex) {
-    for (int i = 1; i <= 3; i++) {
-      final nextIndex = currentIndex + i;
-      if (nextIndex < _forYouPostIds.length) {
-        final nextPostId = _forYouPostIds[nextIndex];
-        final post = _postController.getPostFromStorage(nextPostId);
-        
-        if (post != null) {
-          final imageUrls = (post['imageUrls'] as List<dynamic>? ?? [post['url']]).cast<String>();
-          for (var url in imageUrls.take(1)) {
-            if (url.isNotEmpty && !_preloadedUrls.contains(url)) {
-              _preloadedUrls.add(url);
-              unawaited(precacheImage(CachedNetworkImageProvider(url), context));
-            }
+    // 🔥 Предзагружаем ТОЛЬКО следующее 1 видео (было 3)
+    final nextIndex = currentIndex + 1;
+    if (nextIndex < _forYouPostIds.length) {
+      final nextPostId = _forYouPostIds[nextIndex];
+      final post = _postController.getPostFromStorage(nextPostId);
+      
+      if (post != null) {
+        // 1. Картинки предзагружаем штатно
+        final imageUrls = (post['imageUrls'] as List<dynamic>? ?? [post['url']]).cast<String>();
+        for (var url in imageUrls.take(1)) {
+          if (url.isNotEmpty && !_preloadedUrls.contains(url)) {
+            _preloadedUrls.add(url);
+            unawaited(precacheImage(CachedNetworkImageProvider(url), context));
           }
-          
-          final mediaType = post['mediaType']?.toString() ?? '';
-          if (mediaType == 'video') {
-            final videoUrl = post['videoUrl']?.toString();
-            if (videoUrl != null && videoUrl.isNotEmpty) {
-              _postController.preloadVideo(videoUrl);
-            }
+        }
+        
+        // 2. Предзагрузку видео — ТОЛЬКО 1
+        final mediaType = post['mediaType']?.toString() ?? '';
+        if (mediaType == 'video') {
+          final videoUrl = post['videoUrl']?.toString();
+          if (videoUrl != null && videoUrl.isNotEmpty) {
+            _postController.preloadVideo(videoUrl);
           }
         }
       }

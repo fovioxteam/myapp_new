@@ -1,8 +1,10 @@
 // lib/widgets/video_player_widget.dart
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:video_player/video_player.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 class VideoPlayerWidget extends StatefulWidget {
   final String videoUrl;
@@ -28,17 +30,12 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   VideoPlayerController? _controller;
   bool _isInitialized = false;
   bool _isPlaying = false;
-  bool _wasVisible = true;
-  bool _wasStoppedByScroll = false;
   bool _isPausedByUser = false;
-
-  bool _isVideoFrameReady = false;
-  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _wasVisible = widget.isVisible;
+    // Инициализируем плеер сразу при создании, чтобы оно было готово к показу
     _initVideo();
   }
 
@@ -46,115 +43,120 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void didUpdateWidget(VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
+    // Если изменился URL — полностью пересоздаем плеер
+    if (oldWidget.videoUrl != widget.videoUrl) {
+      _disposeAndReset().then((_) {
+        _initVideo();
+      });
+      return;
+    }
+
+    // Реакция на изменение видимости в ленте
     if (oldWidget.isVisible != widget.isVisible) {
       _handleVisibilityChange(widget.isVisible);
     }
-
-    if (oldWidget.videoUrl != widget.videoUrl) {
-      _disposeController();
-      _isInitialized = false;
-      _isVideoFrameReady = false;
-      _isLoading = true;
-      _initVideo();
-    }
   }
 
-  void _disposeController() {
-    _controller?.removeListener(_videoListener);
-    _controller?.dispose();
-    _controller = null;
+  Future<void> _disposeAndReset() async {
+    _isInitialized = false;
+    _isPlaying = false;
+
+    if (_controller != null) {
+      final controllerToDispose = _controller;
+      _controller = null;
+
+      try {
+        await controllerToDispose?.pause();
+        await controllerToDispose?.dispose();
+        print('🧹 [VIDEO] Released MediaCodec buffers successfully');
+      } catch (e) {
+        print('⚠️ [VIDEO] Error releasing controller: $e');
+      }
+    }
   }
 
   void _handleVisibilityChange(bool isVisible) {
     if (_controller == null || !_isInitialized) return;
 
-    if (isVisible && !_wasVisible) {
+    if (isVisible) {
+      // ⚡ При возврате к видео восстанавливаем проигрывание мгновенно из памяти
       if (!_isPausedByUser) {
         _controller!.play();
-        setState(() {
-          _isPlaying = true;
-          _wasStoppedByScroll = false;
-        });
+        if (mounted) setState(() => _isPlaying = true);
       }
-    } else if (!isVisible && _wasVisible) {
-      if (_isPlaying) {
-        _controller!.pause();
-        _controller!.seekTo(Duration.zero);
-        setState(() {
-          _isPlaying = false;
-          _wasStoppedByScroll = true;
-        });
-      }
+    } else {
+      // ⏸️ Не удаляем плеер! Просто ставим на паузу и сбрасываем в начало
+      _controller!.pause();
+      _controller!.seekTo(Duration.zero);
+      if (mounted) setState(() => _isPlaying = false);
     }
-
-    _wasVisible = isVisible;
   }
 
   Future<void> _initVideo() async {
     try {
-      print('📹 [VIDEO] Initializing: ${widget.videoUrl}');
+      print('📹 [VIDEO] Starting initialization: ${widget.videoUrl}');
 
-      _controller = VideoPlayerController.networkUrl(
-        Uri.parse(widget.videoUrl),
-        videoPlayerOptions: VideoPlayerOptions(
-          mixWithOthers: true,
-        ),
-      );
+      VideoPlayerController controller;
 
-      await _controller!.initialize();
-      print('✅ [VIDEO] Controller initialized: ${_controller!.value.size}');
+      if (widget.videoUrl.startsWith('http')) {
+        // Проверяем наличие файла в локальном кэше диска
+        final fileInfo = await DefaultCacheManager().getFileFromCache(widget.videoUrl);
 
-      await _controller!.setVolume(1.0);
-      await _controller!.setLooping(true);
+        if (fileInfo != null) {
+          print('⚡ [VIDEO] Found in cache! Loading from disk.');
+          controller = VideoPlayerController.file(
+            fileInfo.file,
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+          );
+        } else {
+          print('🌐 [VIDEO] Streaming over HTTP...');
+          controller = VideoPlayerController.networkUrl(
+            Uri.parse(widget.videoUrl),
+            videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+          );
 
-      _controller!.addListener(_videoListener);
+          // Скачиваем файл в фоновом режиме для будущих просмотров
+          DefaultCacheManager().downloadFile(widget.videoUrl).catchError((e) {
+            print('⚠️ [VIDEO] Background cache download failed: $e');
+            return fileInfo!;
+          });
+        }
+      } else {
+        controller = VideoPlayerController.file(
+          File(widget.videoUrl),
+          videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
+        );
+      }
+
+      _controller = controller;
+      await controller.initialize();
 
       if (!mounted) return;
 
-      if (widget.isVisible) {
-        await _controller!.play();
+      controller.setVolume(1.0);
+      controller.setLooping(true);
+
+      // Запускаем только если видео видно в данный момент и не было паузы от пользователя
+      if (widget.isVisible && !_isPausedByUser) {
+        await controller.play();
         _isPlaying = true;
-        print('▶️ [VIDEO] Playing');
       } else {
         _isPlaying = false;
-        print('⏸️ [VIDEO] Paused');
       }
 
-      setState(() {
-        _isInitialized = true;
-        _isLoading = false;
-        // 💡 Если контроллер уже инициализирован и проигрывается, 
-        // сразу взводим флаг готовности, чтобы не ждать срабатывания listener при холодном старте
-        if (_controller!.value.isPlaying || _controller!.value.position > Duration.zero) {
-          _isVideoFrameReady = true;
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _isInitialized = true;
+        });
+      }
 
+      print('✅ [VIDEO] Initialized successfully');
     } catch (e) {
       print('❌ [VIDEO] Error initializing controller: $e');
       if (mounted) {
         setState(() {
           _isInitialized = false;
-          _isLoading = false;
         });
-      }
-    }
-  }
-
-  void _videoListener() {
-    if (_controller != null &&
-        _controller!.value.isInitialized &&
-        !_isVideoFrameReady) {
-      // Расширенная проверка: готово ли видео к отображению
-      if (_controller!.value.position > Duration.zero || 
-          _controller!.value.isPlaying || 
-          !_controller!.value.isBuffering) {
-        if (mounted) {
-          print('🎬 [VIDEO] First frame ready via listener');
-          setState(() {
-            _isVideoFrameReady = true;
-          });
-        }
       }
     }
   }
@@ -167,29 +169,25 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       setState(() {
         _isPlaying = false;
         _isPausedByUser = true;
-        _wasStoppedByScroll = false;
       });
     } else {
       _controller!.play();
       setState(() {
         _isPlaying = true;
         _isPausedByUser = false;
-        _wasStoppedByScroll = false;
       });
     }
   }
 
   @override
   void dispose() {
-    print('🗑️ [VIDEO] Disposing');
-    _disposeController();
+    print('🗑️ [VIDEO] Disposing widget state');
+    _disposeAndReset();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool showVideoNow = _isInitialized && _controller != null && _isVideoFrameReady;
-
     return GestureDetector(
       onTap: _togglePlayback,
       child: Container(
@@ -198,8 +196,16 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
           alignment: Alignment.center,
           fit: StackFit.expand,
           children: [
-            // 1. ВИДЕОПЛЕЕР
-            if (showVideoNow)
+            // 1. Превью / Обложка
+            if (widget.thumbnailUrl != null)
+              Image.network(
+                widget.thumbnailUrl!,
+                fit: widget.fit,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+
+            // 2. Видеоплеер
+            if (_isInitialized && _controller != null)
               Positioned.fill(
                 child: FittedBox(
                   fit: widget.fit,
@@ -211,8 +217,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // 2. ЛОАДЕР
-            if (_isLoading || !_isVideoFrameReady)
+            // 3. Индикатор загрузки
+            if (!_isInitialized)
               const Center(
                 child: SpinKitThreeBounce(
                   color: Colors.white70,
@@ -220,12 +226,8 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // 3. ИКОНКА PLAY
-            if (!_isPlaying &&
-                widget.showControls &&
-                !_wasStoppedByScroll &&
-                _isInitialized &&
-                _isVideoFrameReady)
+            // 4. Иконка паузы
+            if (!_isPlaying && widget.showControls && _isInitialized)
               Icon(
                 Icons.play_arrow,
                 color: Colors.white.withAlpha(216),

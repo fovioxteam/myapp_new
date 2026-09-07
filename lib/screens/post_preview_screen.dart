@@ -1,3 +1,5 @@
+// lib/screens/post_preview_screen.dart
+
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -283,9 +285,6 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
     }
   }
 
-  // ============================================================
-  // 🔥 ВИДЕО - ПРИБЛИЖАЕТ КАК НА ФОТО
-  // ============================================================
   Widget _buildVideoItem(File file, BoxFit fitMode, List<PostTag> tagsForThisImage) {
     if (!_isVideoInitialized || _videoController == null) {
       return Container(
@@ -312,7 +311,6 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 🔥 ВИДЕО - ПРИБЛИЖЕНИЕ (КАК НА ФОТО)
             Center(
               child: isFullScreen
                   ? SizedBox.expand(
@@ -512,43 +510,46 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  // Стрелка назад
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
+                    icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
                     splashColor: Colors.transparent,
                     highlightColor: Colors.transparent,
                   ),
                   
-                  // Кнопка Next (без овала)
+                  // 🔥 КНОПКА NEXT — ВСЕГДА БЕЛАЯ
                   GestureDetector(
                     onTap: _navigateToCaption,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Next',
-                            style: TextStyle(
-                              color: _tags.isNotEmpty ? Colors.blue : Colors.white,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Next',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
-                          if (_tags.isNotEmpty) ...[
-                            const SizedBox(width: 4),
-                            Text(
+                        ),
+                        if (_tags.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
                               '${_tags.length}',
-                              style: TextStyle(
-                                color: Colors.blue,
-                                fontSize: 13,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
-                          ],
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -556,10 +557,10 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
             ),
           ),
 
-          // Правая панель - иконки столбиком (БЕЗ КРУЖКОВ)
+          // 🔥 ПРАВАЯ ПАНЕЛЬ — ВСЁ БЕЛОЕ, БЕЗ ТЕНИ
           Positioned(
             right: 16,
-            bottom: 100,
+            bottom: 120,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -574,7 +575,7 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
                   onTap: _toggleFitMode,
                 ),
                 
-                const SizedBox(height: 20),
+                const SizedBox(height: 24),
                 
                 // Add Link
                 _buildRightIcon(
@@ -584,7 +585,7 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
                 ),
                 
                 if (_tags.isNotEmpty) ...[
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
                   _buildRightIcon(
                     icon: Icons.local_offer,
                     label: '${_tags.length}',
@@ -603,19 +604,19 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
               right: 0,
               child: Center(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.4),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: List.generate(
                       widget.selectedFiles.length,
                       (index) => Container(
-                        width: 6,
-                        height: 6,
-                        margin: const EdgeInsets.symmetric(horizontal: 3),
+                        width: 8,
+                        height: 8,
+                        margin: const EdgeInsets.symmetric(horizontal: 4),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: _currentIndex == index 
@@ -633,7 +634,7 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
     );
   }
 
-  // Иконка справа (БЕЗ КРУЖКА)
+  // 🔥 ИКОНКА СПРАВА — БЕЛАЯ, БЕЗ ТЕНИ
   Widget _buildRightIcon({
     required IconData icon,
     required String label,
@@ -647,14 +648,14 @@ class _PostPreviewScreenState extends State<PostPreviewScreen> {
           Icon(
             icon,
             color: Colors.white,
-            size: 28,
+            size: 32,
           ),
           const SizedBox(height: 4),
           Text(
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 10,
+              fontSize: 11,
               fontWeight: FontWeight.w500,
             ),
           ),

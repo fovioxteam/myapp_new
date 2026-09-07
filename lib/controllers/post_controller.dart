@@ -42,11 +42,12 @@ class PostController extends GetxController {
   static const int maxAuthorCache = 200;
   static const int maxImageCache = 200;
 
-  // 🔥 КЭШ ДЛЯ ВИДЕО (предзагрузка в памяти)
-  static const int _maxVideoCache = 15;
+  // 🔥 КЭШ ДЛЯ ВИДЕО (предзагрузка в памяти) — СТРОГО 1!
+  static const int _maxVideoCache = 1; // 🔥 ТОЛЬКО 1 ВИДЕО!
   final Set<String> _preloadedVideos = {};
   final Map<String, DateTime> _videoCacheTime = {};
   final Map<String, VideoPlayerController> _videoControllers = {};
+  final Set<String> _videoPreloadingInProgress = {};
 
   // 🔥 СЕРВИС ДЛЯ ДИСКОВОГО КЕША ВИДЕО
   final VideoCacheService _videoCacheService = VideoCacheService();
@@ -82,11 +83,41 @@ class PostController extends GetxController {
       sub.cancel();
     }
     clearCache();
+    _disposeAllVideoControllers();
+    super.onClose();
+  }
+
+  // ============================================================
+  // 🔥 ОСВОБОЖДЕНИЕ ВСЕХ ВИДЕОКОНТРОЛЛЕРОВ
+  // ============================================================
+  
+  void _disposeAllVideoControllers() {
     for (var controller in _videoControllers.values) {
+      controller.removeListener(() {});
+      controller.pause();
       controller.dispose();
     }
     _videoControllers.clear();
-    super.onClose();
+    _preloadedVideos.clear();
+    _videoCacheTime.clear();
+    _videoPreloadingInProgress.clear();
+    print('🧹 [VIDEO] All video controllers disposed');
+  }
+
+  void clearVideoPreloadCache() {
+    final urlsToRemove = _videoControllers.keys.toList();
+    for (var url in urlsToRemove) {
+      final controller = _videoControllers.remove(url);
+      if (controller != null) {
+        controller.removeListener(() {});
+        controller.pause();
+        controller.dispose();
+      }
+    }
+    _preloadedVideos.clear();
+    _videoCacheTime.clear();
+    _videoPreloadingInProgress.clear();
+    print('🧹 [VIDEO] Video preload cache cleared');
   }
 
   // ========== ЗАГРУЗКА ЛАЙКОВ/СОХРАНЕНИЙ ==========
@@ -347,50 +378,87 @@ class PostController extends GetxController {
   }
 
   // ============================================================
-  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО
+  // 🔥 ПРЕДЗАГРУЗКА ВИДЕО — МАКСИМУМ 1 ОДНОВРЕМЕННО!
   // ============================================================
   
   void preloadVideo(String videoUrl) {
     if (videoUrl.isEmpty) return;
     
-    if (!_preloadedVideos.contains(videoUrl)) {
-      _preloadedVideos.add(videoUrl);
-      _videoCacheTime[videoUrl] = DateTime.now();
-      
-      print('📹 [PRELOAD] Preloading video in memory: $videoUrl');
-      
-      try {
-        final controller = VideoPlayerController.networkUrl(
-          Uri.parse(videoUrl),
-          videoPlayerOptions: VideoPlayerOptions(
-            mixWithOthers: true,
-          ),
-        );
-        
-        _videoControllers[videoUrl] = controller;
-        
-        controller.initialize().then((_) {
-          print('✅ [PRELOAD] Video preloaded in memory: $videoUrl');
-          controller.dispose();
-          _videoControllers.remove(videoUrl);
-        }).catchError((e) {
-          print('❌ [PRELOAD] Failed to preload in memory: $e');
-          _preloadedVideos.remove(videoUrl);
-          _videoControllers.remove(videoUrl);
-        });
-      } catch (e) {
-        print('❌ [PRELOAD] Error: $e');
-        _preloadedVideos.remove(videoUrl);
-      }
+    // 🔥 НЕ ПРЕДЗАГРУЖАЕМ, ЕСЛИ УЖЕ ЗАГРУЖАЕТСЯ
+    if (_videoPreloadingInProgress.contains(videoUrl)) {
+      print('⏳ [PRELOAD] Already preloading: $videoUrl');
+      return;
     }
     
-    // 🔥 ПРЕДЗАГРУЗКА НА ДИСК
+    // 🔥 НЕ ПРЕДЗАГРУЖАЕМ, ЕСЛИ УЖЕ ЗАКЭШИРОВАНО
+    if (_preloadedVideos.contains(videoUrl)) {
+      print('✅ [PRELOAD] Already cached in memory: $videoUrl');
+      return;
+    }
+    
+    // 🔥 ОЧИЩАЕМ СТАРЫЕ КОНТРОЛЛЕРЫ (максимум 1)
+    if (_videoControllers.length >= 1) {
+      final oldestUrl = _videoControllers.keys.first;
+      final controller = _videoControllers.remove(oldestUrl);
+      if (controller != null) {
+        print('🧹 [PRELOAD] Disposing old controller: $oldestUrl');
+        controller.removeListener(() {});
+        controller.pause();
+        controller.dispose();
+      }
+      _preloadedVideos.remove(oldestUrl);
+      _videoCacheTime.remove(oldestUrl);
+    }
+    
+    _videoPreloadingInProgress.add(videoUrl);
+    _preloadedVideos.add(videoUrl);
+    _videoCacheTime[videoUrl] = DateTime.now();
+    
+    print('📹 [PRELOAD] Preloading video in memory: $videoUrl');
+    
+    try {
+      final controller = VideoPlayerController.networkUrl(
+        Uri.parse(videoUrl),
+        videoPlayerOptions: VideoPlayerOptions(
+          mixWithOthers: true,
+        ),
+      );
+      
+      _videoControllers[videoUrl] = controller;
+      
+      controller.initialize().then((_) {
+        print('✅ [PRELOAD] Video preloaded: $videoUrl');
+        _videoPreloadingInProgress.remove(videoUrl);
+        
+        // 🔥 НЕ ДИСПОЗИМ СРАЗУ — ОСТАВЛЯЕМ В КЭШЕ ДЛЯ БЫСТРОГО ПОКАЗА
+        // Но контроллер остаётся в _videoControllers для использования
+        
+      }).catchError((e) {
+        print('❌ [PRELOAD] Failed to preload: $e');
+        _preloadedVideos.remove(videoUrl);
+        _videoCacheTime.remove(videoUrl);
+        _videoControllers.remove(videoUrl);
+        _videoPreloadingInProgress.remove(videoUrl);
+      });
+    } catch (e) {
+      print('❌ [PRELOAD] Error: $e');
+      _preloadedVideos.remove(videoUrl);
+      _videoCacheTime.remove(videoUrl);
+      _videoPreloadingInProgress.remove(videoUrl);
+    }
+    
+    // 🔥 ПРЕДЗАГРУЗКА НА ДИСК (для кэширования)
     _videoCacheService.preCacheVideo(videoUrl);
     
     _cleanVideoCache();
   }
   
-  void preloadFeedVideos(List<Map<String, dynamic>> posts, {int maxPreload = 5}) {
+  /// 🔥 ПОЛУЧИТЬ ЗАКЭШИРОВАННЫЙ КОНТРОЛЛЕР (для быстрого показа)
+  VideoPlayerController? getCachedVideoController(String videoUrl) {
+    return _videoControllers[videoUrl];
+  }
+  
+  void preloadFeedVideos(List<Map<String, dynamic>> posts, {int maxPreload = 1}) {
     int count = 0;
     for (var post in posts) {
       if (count >= maxPreload) break;
@@ -408,7 +476,7 @@ class PostController extends GetxController {
   }
 
   // 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ПРОФИЛЕ
-  void preloadProfileVideos(List<Map<String, dynamic>> posts, {int maxPreload = 5}) {
+  void preloadProfileVideos(List<Map<String, dynamic>> posts, {int maxPreload = 1}) {
     int count = 0;
     for (var post in posts) {
       if (count >= maxPreload) break;
@@ -451,23 +519,28 @@ class PostController extends GetxController {
     for (var url in toRemove) {
       _preloadedVideos.remove(url);
       _videoCacheTime.remove(url);
-      if (_videoControllers.containsKey(url)) {
-        _videoControllers[url]?.dispose();
-        _videoControllers.remove(url);
+      final controller = _videoControllers.remove(url);
+      if (controller != null) {
+        controller.removeListener(() {});
+        controller.pause();
+        controller.dispose();
       }
     }
     
-    if (_preloadedVideos.length > _maxVideoCache) {
+    // 🔥 СТРОГИЙ ЛИМИТ — ТОЛЬКО 1 ВИДЕО
+    if (_videoControllers.length > _maxVideoCache) {
       final sorted = _videoCacheTime.entries.toList()
         ..sort((a, b) => a.value.compareTo(b.value));
       
-      final toRemoveOld = sorted.take(_preloadedVideos.length - _maxVideoCache).toList();
+      final toRemoveOld = sorted.take(_videoControllers.length - _maxVideoCache).toList();
       for (var entry in toRemoveOld) {
         _preloadedVideos.remove(entry.key);
         _videoCacheTime.remove(entry.key);
-        if (_videoControllers.containsKey(entry.key)) {
-          _videoControllers[entry.key]?.dispose();
-          _videoControllers.remove(entry.key);
+        final controller = _videoControllers.remove(entry.key);
+        if (controller != null) {
+          controller.removeListener(() {});
+          controller.pause();
+          controller.dispose();
         }
       }
     }
@@ -987,7 +1060,8 @@ class PostController extends GetxController {
           _hasMoreFeed = false;
         }
         
-        preloadFeedVideos(feedPosts, maxPreload: 5);
+        // 🔥 ТОЛЬКО 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ
+        preloadFeedVideos(feedPosts, maxPreload: 1);
         
         print('✅ [FEED] Guest feed loaded: ${feedPosts.length} posts');
         return;
@@ -1019,7 +1093,8 @@ class PostController extends GetxController {
       }
       _hasMoreFeed = recommendedPosts.length == RecommendationService.FETCH_LIMIT;
       
-      preloadFeedVideos(feedPosts, maxPreload: 5);
+      // 🔥 ТОЛЬКО 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ
+      preloadFeedVideos(feedPosts, maxPreload: 1);
       
       print('✅ [FEED] Feed loaded: ${feedPosts.length} posts');
     } catch (e) {
@@ -1096,8 +1171,8 @@ class PostController extends GetxController {
           }
         }
 
-        // 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ПРОФИЛЕ
-        preloadProfileVideos(updatedList, maxPreload: 5);
+        // 🔥 ТОЛЬКО 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ В ПРОФИЛЕ
+        preloadProfileVideos(updatedList, maxPreload: 1);
       }
       if (snapshot.docs.isNotEmpty) {
         _lastUserDoc[userId] = snapshot.docs.last;
@@ -1411,12 +1486,7 @@ class PostController extends GetxController {
     _imageProviderCache.clear();
     _searchThumbnailCache.clear();
     
-    _preloadedVideos.clear();
-    _videoCacheTime.clear();
-    for (var controller in _videoControllers.values) {
-      controller.dispose();
-    }
-    _videoControllers.clear();
+    _disposeAllVideoControllers();
     
     print('🗑️ [CACHE] All caches cleared');
   }
@@ -1435,6 +1505,7 @@ class PostController extends GetxController {
     print('📊 Avatar cache: $_avatarUrlCache');
     print('📊 Username cache: $_usernameCache');
     print('📊 Preloaded videos: ${_preloadedVideos.length}');
+    print('📊 Video controllers: ${_videoControllers.length}');
     print('📊 =========================');
   }
 }
