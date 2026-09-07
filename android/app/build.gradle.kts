@@ -7,7 +7,9 @@ plugins {
 android {
     namespace = "com.foviox.app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    
+    // Используем NDK 28, требуемый плагинами приложения
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -39,8 +41,18 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
-            isMinifyEnabled = false
-            isShrinkResources = false
+            
+            // Включаем R8 (обфускацию и минификацию кода)
+            isMinifyEnabled = true
+            
+            // Включаем удаление неиспользуемых ресурсов
+            isShrinkResources = true
+            
+            // Подключаем правила ProGuard
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }

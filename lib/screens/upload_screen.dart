@@ -18,7 +18,6 @@ import '../models/media_types.dart';
 import '../controllers/post_controller.dart';
 import '../extensions/safe_extensions.dart';
 import '../utils/video_compressor.dart';
-import '../utils/image_compressor.dart';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});
@@ -396,12 +395,12 @@ class _UploadScreenState extends State<UploadScreen> {
   }
 
   // ============================================================
-  // 🔥 ВЫБОР ФАЙЛА (БЕЗ СЖАТИЯ)
+  // 🔥 ВЫБОР ВИДЕО - ПЕРЕДАЁМ ОРИГИНАЛ В POST_PREVIEW_SCREEN
   // ============================================================
   void _toggleSelection(AssetEntity asset) async {
     _selectionTimer?.cancel();
     
-    // 🔥 ВИДЕО - СЖАТИЕ ПРИ ВЫБОРЕ (КАК БЫЛО)
+    // 🔥 ВИДЕО - ПЕРЕДАЁМ ОРИГИНАЛ (БЕЗ СЖАТИЯ!)
     if (asset.type == AssetType.video) {
       print('🎬 [UPLOAD] ========== VIDEO SELECTED ==========');
       print('🎬 [UPLOAD] Asset ID: ${asset.id}');
@@ -412,86 +411,31 @@ class _UploadScreenState extends State<UploadScreen> {
       if (file != null && mounted) {
         final originalSize = await file.length();
         print('🎬 [UPLOAD] Original file size: ${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB');
+        print('🎬 [UPLOAD] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen (без сжатия)');
         
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (context) => AlertDialog(
-            backgroundColor: Colors.black,
-            contentPadding: const EdgeInsets.all(24),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(color: Colors.white),
-                const SizedBox(height: 16),
-                const Text(
-                  'Processing video...',
-                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Optimizing for upload',
-                  style: TextStyle(color: Colors.grey[400], fontSize: 12),
-                ),
-              ],
+        // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PostPreviewScreen(
+              selectedFiles: [file],
+              selectedAssets: [],
+              mediaType: MediaUploadType.video,
             ),
           ),
-        );
-        
-        final compressedFile = await VideoCompressor.compressVideo(file.path);
-        
-        if (mounted) Navigator.pop(context);
-        
-        if (compressedFile != null) {
-          final compressedSize = await compressedFile.length();
-          print('🎬 [UPLOAD] Compressed file size: ${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB');
-          
+        ).then((_) {
           if (mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PostPreviewScreen(
-                  selectedFiles: [compressedFile],
-                  selectedAssets: [],
-                  mediaType: MediaUploadType.video,
-                ),
-              ),
-            ).then((_) {
-              if (mounted) {
-                setState(() {
-                  _selectedAssets.clear();
-                  _selectedAssetsOrder.clear();
-                });
-              }
+            setState(() {
+              _selectedAssets.clear();
+              _selectedAssetsOrder.clear();
             });
           }
-        } else {
-          print('⚠️ [UPLOAD] Compression failed, using original');
-          if (mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PostPreviewScreen(
-                  selectedFiles: [file],
-                  selectedAssets: [],
-                  mediaType: MediaUploadType.video,
-                ),
-              ),
-            ).then((_) {
-              if (mounted) {
-                setState(() {
-                  _selectedAssets.clear();
-                  _selectedAssetsOrder.clear();
-                });
-              }
-            });
-          }
-        }
+        });
       }
       return;
     }
     
-    // 🔥 ФОТО - ПРОСТО ВЫБОР (БЕЗ СЖАТИЯ)
+    // 🔥 ФОТО - ПРОСТО ВЫБОР
     print('📸 [UPLOAD] ========== PHOTO SELECTED ==========');
     print('📸 [UPLOAD] Asset ID: ${asset.id}');
     
@@ -607,46 +551,20 @@ class _UploadScreenState extends State<UploadScreen> {
         
         if (video != null && mounted) {
           final file = File(video.path);
+          print('🎬 [CAMERA] Video captured: ${file.path}');
+          print('🎬 [CAMERA] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen');
           
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.black,
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(color: Colors.white),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Processing video...',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                ],
+          // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostPreviewScreen(
+                selectedFiles: [file],
+                selectedAssets: [],
+                mediaType: MediaUploadType.video,
               ),
             ),
           );
-          
-          final compressedFile = await VideoCompressor.compressVideo(file.path);
-          if (mounted) Navigator.pop(context);
-          
-          if (compressedFile != null) {
-            setState(() {
-              _selectedFiles = [compressedFile];
-              _detectedMediaType = MediaUploadType.video;
-              _selectedAssets.clear();
-              _selectedAssetsOrder.clear();
-            });
-            _navigateToPreview();
-          } else {
-            setState(() {
-              _selectedFiles = [file];
-              _detectedMediaType = MediaUploadType.video;
-              _selectedAssets.clear();
-              _selectedAssetsOrder.clear();
-            });
-            _navigateToPreview();
-          }
         }
       } else {
         final file = await picker.pickImage(
@@ -768,52 +686,20 @@ class _UploadScreenState extends State<UploadScreen> {
         
         if (result != null && result.files.isNotEmpty && mounted) {
           final file = File(result.files.first.path!);
+          print('🎬 [FILE_PICKER] Video selected: ${file.path}');
+          print('🎬 [FILE_PICKER] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen');
           
-          showDialog(
-            context: context,
-            barrierDismissible: false,
-            builder: (context) => AlertDialog(
-              backgroundColor: Colors.black,
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(color: Colors.white),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Processing video...',
-                    style: TextStyle(color: Colors.white, fontSize: 16),
-                  ),
-                ],
+          // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => PostPreviewScreen(
+                selectedFiles: [file],
+                selectedAssets: [],
+                mediaType: MediaUploadType.video,
               ),
             ),
           );
-          
-          final compressedFile = await VideoCompressor.compressVideo(file.path);
-          if (mounted) Navigator.pop(context);
-          
-          if (compressedFile != null) {
-            setState(() {
-              _selectedFiles = [compressedFile];
-              _detectedMediaType = MediaUploadType.video;
-              _isFilePickerMode = true;
-              _isCameraMode = false;
-              _cameraImage = null;
-              _selectedAssets.clear();
-              _selectedAssetsOrder.clear();
-            });
-            _navigateToPreview();
-          } else {
-            setState(() {
-              _selectedFiles = [file];
-              _detectedMediaType = MediaUploadType.video;
-              _isFilePickerMode = true;
-              _isCameraMode = false;
-              _cameraImage = null;
-              _selectedAssets.clear();
-              _selectedAssetsOrder.clear();
-            });
-            _navigateToPreview();
-          }
         }
       } else {
         result = await FilePicker.platform.pickFiles(
@@ -824,7 +710,6 @@ class _UploadScreenState extends State<UploadScreen> {
         if (result != null && result.files.isNotEmpty && mounted) {
           final paths = result.paths.where((p) => p != null).cast<String>().toList();
           
-          // 🔥 СОХРАНЯЕМ ОРИГИНАЛЫ (БЕЗ СЖАТИЯ)
           setState(() {
             _selectedFiles = paths.map((path) => File(path)).toList();
             _isFilePickerMode = true;
@@ -866,61 +751,11 @@ class _UploadScreenState extends State<UploadScreen> {
     });
   }
 
-  void _navigateToPreview() {
-    if (_selectedFiles.isEmpty) return;
-    
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostPreviewScreen(
-          selectedFiles: _selectedFiles,
-          selectedAssets: [],
-          mediaType: _detectedMediaType,
-        ),
-      ),
-    ).then((_) {
-      if (mounted) {
-        setState(() {
-          _selectedAssets.clear();
-          _selectedAssetsOrder.clear();
-          _selectedFiles.clear();
-          _detectedMediaType = MediaUploadType.image;
-        });
-      }
-    });
-  }
-
   // ============================================================
-  // 🔥 ПЕРЕХОД НА ПРЕВЬЮ - С СЖАТИЕМ ФОТО
+  // 🔥 ПЕРЕХОД В POST_PREVIEW_SCREEN ДЛЯ ФОТО
   // ============================================================
   void _navigateToPreviewFromGallery() async {
     if (_selectedAssetsOrder.isEmpty) return;
-    
-    // 🔥 ПОКАЗЫВАЕМ ЛОАДЕР
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: Colors.black,
-        contentPadding: const EdgeInsets.all(24),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(color: Colors.white),
-            const SizedBox(height: 16),
-            Text(
-              'Processing ${_selectedAssetsOrder.length} photos...',
-              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Optimizing for upload',
-              style: TextStyle(color: Colors.grey[400], fontSize: 12),
-            ),
-          ],
-        ),
-      ),
-    );
     
     List<File> selectedFiles = [];
     
@@ -931,25 +766,16 @@ class _UploadScreenState extends State<UploadScreen> {
       );
       final file = await _getFileForAsset(asset);
       if (file != null) {
-        // 🔥 СЖИМАЕМ ФОТО ПРЯМО ЗДЕСЬ
-        final compressed = await ImageCompressor.compressImage(
-          file,
-          maxWidth: 900,
-          maxHeight: 1600,
-          quality: 75,
-        );
-        selectedFiles.add(compressed ?? file);
+        selectedFiles.add(file);
       }
     }
-    
-    if (mounted) Navigator.pop(context); // Закрываем лоадер
     
     if (selectedFiles.isNotEmpty && mounted) {
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (context) => PostPreviewScreen(
-            selectedFiles: selectedFiles, // 🔥 УЖЕ СЖАТЫЕ
+            selectedFiles: selectedFiles,
             selectedAssets: [],
             mediaType: MediaUploadType.image,
           ),
@@ -988,67 +814,24 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-// ============================================================
-// 🔥 ПЕРЕХОД НА ПРЕВЬЮ ИЗ ФАЙЛОВ - С СЖАТИЕМ
-// ============================================================
-void _navigateToPreviewFromFiles() async { // ✅ ДОБАВЛЯЕМ async
-  if (_selectedFiles.isEmpty) return;
-  
-  // 🔥 ПОКАЗЫВАЕМ ЛОАДЕР
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      backgroundColor: Colors.black,
-      contentPadding: const EdgeInsets.all(24),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(color: Colors.white),
-          const SizedBox(height: 16),
-          Text(
-            'Processing ${_selectedFiles.length} photos...',
-            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+  void _navigateToPreviewFromFiles() async {
+    if (_selectedFiles.isEmpty) return;
+    
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PostPreviewScreen(
+            selectedFiles: _selectedFiles,
+            selectedAssets: [],
+            mediaType: _detectedMediaType,
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Optimizing for upload',
-            style: TextStyle(color: Colors.grey[400], fontSize: 12),
-          ),
-        ],
-      ),
-    ),
-  );
-  
-  // 🔥 СЖИМАЕМ ВСЕ ФОТО
-  List<File> compressedFiles = [];
-  for (var file in _selectedFiles) {
-    final compressed = await ImageCompressor.compressImage(
-      file,
-      maxWidth: 900,
-      maxHeight: 1600,
-      quality: 75,
-    );
-    compressedFiles.add(compressed ?? file);
-  }
-  
-  if (mounted) Navigator.pop(context); // Закрываем лоадер
-  
-  if (mounted) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostPreviewScreen(
-          selectedFiles: compressedFiles,
-          selectedAssets: [],
-          mediaType: _detectedMediaType,
         ),
-      ),
-    ).then((_) {
-      _resetFiles();
-    });
+      ).then((_) {
+        _resetFiles();
+      });
+    }
   }
-}
 
   Widget _buildGalleryMode() {
     return Scaffold(

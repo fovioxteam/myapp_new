@@ -60,7 +60,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
 
-  // 🔥 КЕШ ДЛЯ ТАМБНЕЙЛА
   File? _cachedThumbnail;
   bool _thumbnailLoading = false;
 
@@ -74,9 +73,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     print('🔥 [CAPTION] Media type: ${widget.mediaType}');
     print('🔥 [CAPTION] Total files: ${widget.selectedFiles.length}');
     print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
-    print('🔥 [CAPTION] fitModes: ${widget.fitModes}');
     
-    // 🔥 ПРЕДЗАГРУЗКА ТАМБНЕЙЛА
     if (_isVideo) {
       _preloadThumbnail();
     }
@@ -86,13 +83,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   void dispose() {
     _captionController.removeListener(_updateRemainingChars);
     _captionController.dispose();
+    
+    // 🧹 Очистка временного файла превью при выходе с экрана
+    if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
+      _cachedThumbnail!.delete().catchError((e) => print('Thumbnail cleanup error: $e'));
+    }
     _cachedThumbnail = null;
+    
     super.dispose();
   }
 
-  // ============================================================
-  // 🔥 ПРЕДЗАГРУЗКА ТАМБНЕЙЛА
-  // ============================================================
   void _preloadThumbnail() async {
     if (_cachedThumbnail != null || _thumbnailLoading) return;
     
@@ -178,49 +178,89 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ВИДЕО В R2
+  // 🔥 ЗАГРУЗКА ВИДЕО В R2 (с параллельной обработкой)
   // ============================================================
-  Future<String?> _uploadVideoToR2(File videoFile, String userId) async {
-    try {
-      print('🎬 [UPLOAD] Starting video upload to R2...');
-      
+  Future<Map<String, String?>> _processVideo(String userId) async {
+    print('🎬 [PROCESS] Starting parallel video processing...');
+    final stopwatch = Stopwatch()..start();
+    
+    final videoFile = widget.selectedFiles.first;
+    
+    if (mounted) {
       setState(() {
-        _uploadStatus = 'Uploading video to Cloudflare R2...';
+        _uploadStatus = 'Compressing video...';
+        _uploadProgress = 0.05;
       });
-      
-      final videoUrl = await _r2Service.uploadVideo(videoFile, userId);
-      
-      print('✅ [UPLOAD] Video uploaded: $videoUrl');
-      return videoUrl;
-      
-    } catch (e) {
-      print('❌ [UPLOAD] Video upload failed: $e');
-      return null;
     }
+
+    // 🔥 ПАРАЛЛЕЛЬНО: сжатие видео + генерация обложки
+    final results = await Future.wait([
+      VideoCompressor.compressVideo(videoFile.path),
+      VideoCompressor.generateThumbnail(videoFile.path),
+    ]);
+
+    final compressedVideo = results[0] as File? ?? videoFile;
+    final thumbnail = results[1] as File?;
+
+    stopwatch.stop();
+    print('⏱️ [PROCESS] Compression+Thumbnail took: ${stopwatch.elapsed.inSeconds} sec');
+
+    if (mounted) {
+      setState(() {
+        _uploadStatus = 'Uploading video...';
+        _uploadProgress = 0.3;
+      });
+    }
+
+    // 🔥 ПАРАЛЛЕЛЬНО: загрузка видео и обложки
+    final uploadStopwatch = Stopwatch()..start();
+    
+    final uploadTasks = <Future>[];
+    String? videoUrl;
+    String? thumbnailUrl;
+
+    // Загрузка видео
+    uploadTasks.add(() async {
+      videoUrl = await _r2Service.uploadVideo(compressedVideo, userId);
+    }());
+
+    // Загрузка обложки (если есть)
+    if (thumbnail != null) {
+      uploadTasks.add(() async {
+        thumbnailUrl = await _uploadThumbnailToStorage(thumbnail, userId);
+      }());
+    }
+
+    await Future.wait(uploadTasks);
+    uploadStopwatch.stop();
+    
+    print('⏱️ [PROCESS] Upload took: ${uploadStopwatch.elapsed.inSeconds} sec');
+    print('⏱️ [PROCESS] TOTAL time: ${stopwatch.elapsed.inSeconds + uploadStopwatch.elapsed.inSeconds} sec');
+
+    // Чистим временные файлы
+    try {
+      if (compressedVideo.path != videoFile.path) {
+        await compressedVideo.delete();
+      }
+      if (thumbnail != null) {
+        await thumbnail.delete();
+      }
+    } catch (e) {
+      print('⚠️ [PROCESS] Could not delete temp files: $e');
+    }
+
+    return {
+      'videoUrl': videoUrl,
+      'thumbnailUrl': thumbnailUrl,
+    };
   }
 
-  // ============================================================
-  // 🔥 ЗАГРУЗКА ПРЕВЬЮ ВИДЕО (thumbnail)
-  // ============================================================
-  Future<String?> _uploadThumbnail(File videoFile, String userId) async {
+  Future<String?> _uploadThumbnailToStorage(File thumbnail, String userId) async {
     try {
-      print('🎬 [UPLOAD] Generating thumbnail...');
-      
-      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
-      
-      if (thumbnail == null) {
-        print('⚠️ [UPLOAD] Failed to generate thumbnail');
-        return null;
-      }
-      
       final fileName = 'thumbnails/${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final storageRef = _storage.ref().child(fileName);
       await storageRef.putFile(thumbnail);
-      final downloadUrl = await storageRef.getDownloadURL();
-      
-      print('✅ [UPLOAD] Thumbnail uploaded: $downloadUrl');
-      return downloadUrl;
-      
+      return await storageRef.getDownloadURL();
     } catch (e) {
       print('❌ [UPLOAD] Thumbnail upload failed: $e');
       return null;
@@ -228,10 +268,56 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ТАМБНЕЙЛ ДЛЯ ПРЕВЬЮ - С КЕШИРОВАНИЕМ
+  // 🔥 ЗАГРУЗКА ФОТО (параллельно) — БЕЗОПАСНЫЙ setState
+  // ============================================================
+  Future<List<String>> _uploadPhotos(String userId) async {
+    final int total = widget.selectedFiles.length;
+    final List<Future<String?>> uploadFutures = [];
+
+    for (int i = 0; i < total; i++) {
+      final file = widget.selectedFiles[i];
+      final index = i;
+
+      uploadFutures.add(() async {
+        try {
+          // Сжимаем фото
+          final compressed = await ImageCompressor.compressImage(file);
+          
+          final fileName = '${userId}_${DateTime.now().millisecondsSinceEpoch}_$index${path.extension(file.path)}';
+          final storageRef = _storage.ref().child('posts').child(fileName);
+          
+          await storageRef.putFile(compressed);
+          final url = await storageRef.getDownloadURL();
+          
+          // Чистим временный файл
+          if (compressed.path != file.path) {
+            await compressed.delete();
+          }
+          
+          // 🔥 БЕЗОПАСНОЕ ОБНОВЛЕНИЕ ПРОГРЕССА (с проверкой mounted)
+          if (mounted) {
+            setState(() {
+              _uploadStatus = 'Uploading photo ${index + 1}/$total...';
+              _uploadProgress = 0.1 + ((index + 1) / total) * 0.7;
+            });
+          }
+          
+          return url;
+        } catch (e) {
+          print('❌ [UPLOAD] Photo $index failed: $e');
+          return null;
+        }
+      }());
+    }
+
+    final results = await Future.wait(uploadFutures);
+    return results.whereType<String>().toList();
+  }
+
+  // ============================================================
+  // 🔥 ТАМБНЕЙЛ ДЛЯ ПРЕВЬЮ
   // ============================================================
   Widget _buildVideoThumbnail() {
-    // ✅ Если есть кеш - показываем сразу
     if (_cachedThumbnail != null) {
       return Image.file(
         _cachedThumbnail!,
@@ -251,7 +337,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       );
     }
     
-    // ✅ Показываем статичный лоадер (не мигает)
     return Container(
       color: Colors.grey[900],
       child: const Center(
@@ -268,7 +353,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ПОСТА
+  // 🔥 ПУБЛИКАЦИЯ ПОСТА
   // ============================================================
   Future<void> _uploadPost() async {
     if (!mounted) return;
@@ -293,6 +378,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       _uploadStatus = 'Preparing...';
     });
 
+    final totalStopwatch = Stopwatch()..start();
+
     try {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       if (!mounted) return;
@@ -307,40 +394,31 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       final fitModesToSave = widget.fitModes ?? 
           List.filled(widget.selectedFiles.length, 'contain');
 
+      String? videoUrl;
+      String? thumbnailUrl;
+      List<String> imageUrls = [];
+
       if (_isVideo) {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('🎬 [CAPTION] ========== CREATING VIDEO POST ==========');
         print('🎬 [CAPTION] Username: $userName');
-        print('🎬 [CAPTION] Tags count: ${widget.tags.length}');
-        print('🎬 [CAPTION] fitModesToSave: $fitModesToSave');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        setState(() {
-          _uploadStatus = 'Uploading video...';
-          _uploadProgress = 0.3;
-        });
-        
-        final videoFile = widget.selectedFiles.first;
-        
-        final videoUrl = await _uploadVideoToR2(videoFile, user.uid);
+        final result = await _processVideo(user.uid);
+        videoUrl = result['videoUrl'];
+        thumbnailUrl = result['thumbnailUrl'];
+
         if (videoUrl == null) {
           throw Exception('Video upload failed');
         }
-        
-        print('🎬 [CAPTION] videoUrl from R2: $videoUrl');
 
-        setState(() {
-          _uploadProgress = 0.7;
-          _uploadStatus = 'Generating thumbnail...';
-        });
-        
-        final thumbnailUrl = await _uploadThumbnail(videoFile, user.uid);
-        
-        setState(() {
-          _uploadProgress = 0.9;
-          _uploadStatus = 'Saving post...';
-        });
-        
+        if (mounted) {
+          setState(() {
+            _uploadProgress = 0.9;
+            _uploadStatus = 'Saving post...';
+          });
+        }
+
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
         
@@ -370,11 +448,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'hotScore': 0.0,
         };
 
-        print('🎬 [CAPTION] postData BEFORE saving: mediaType=${postData['mediaType']}, videoUrl=${postData['videoUrl']}, fitModes=${postData['fitModes']}');
-
         await docRef.set(postData);
-
-        print('✅ [CAPTION] Video post saved with ID: $docId');
 
         await _firestore
             .collection('users')
@@ -386,93 +460,32 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
               'createdAt': FieldValue.serverTimestamp(),
             });
 
+        // 🔥 Используем serverTimestamp для локального кэша
         final newPost = {
           'id': docId,
           ...postData,
-          'createdAt': DateTime.now(),
+          'createdAt': DateTime.now().toIso8601String(),
         };
-        
-        newPost['mediaType'] = 'video';
-        newPost['videoUrl'] = videoUrl;
-        newPost['thumbnailUrl'] = thumbnailUrl ?? '';
-
-        print('🔍 [CAPTION] newPost before addPostsToStorage: mediaType=${newPost['mediaType']}, videoUrl=${newPost['videoUrl']}, fitModes=${newPost['fitModes']}');
-
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
 
       } else {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('📸 [CAPTION] ========== CREATING PHOTO POST ==========');
-        print('📸 [CAPTION] Username: $userName');
         print('📸 [CAPTION] Total images: ${widget.selectedFiles.length}');
-        print('📸 [CAPTION] Tags count: ${widget.tags.length}');
-        print('📸 [CAPTION] fitModesToSave: $fitModesToSave');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-        List<String> imageUrls = [];
-        List<int> failedUploads = [];
-
-        for (int i = 0; i < widget.selectedFiles.length; i++) {
-          if (!mounted) return;
-          
-          final file = widget.selectedFiles[i];
-          final size = await file.length();
-          print('📸 [UPLOAD] Image $i: size = ${(size / 1024 / 1024).toStringAsFixed(2)} MB');
-          
-          setState(() {
-            _uploadStatus = 'Uploading image ${i + 1}/${widget.selectedFiles.length}...';
-          });
-          
-          try {
-            final fileName = '${user.uid}_${DateTime.now().millisecondsSinceEpoch}_$i${path.extension(file.path)}';
-            final storageRef = _storage.ref().child('posts').child(fileName);
-            
-            final uploadTask = storageRef.putFile(file);
-            
-            uploadTask.snapshotEvents.listen((snapshot) {
-              if (!mounted) return;
-              final progress = snapshot.bytesTransferred / snapshot.totalBytes;
-              setState(() {
-                _uploadProgress = (i + progress) / widget.selectedFiles.length;
-              });
-            });
-            
-            await uploadTask;
-            
-            if (!mounted) return;
-            
-            String downloadUrl;
-            try {
-              downloadUrl = await storageRef.getDownloadURL();
-            } catch (e) {
-              print('❌ Failed to get download URL for image $i: $e');
-              failedUploads.add(i);
-              continue;
-            }
-            
-            if (downloadUrl.isEmpty) {
-              print('❌ Empty download URL for image $i');
-              failedUploads.add(i);
-              continue;
-            }
-            
-            imageUrls.add(downloadUrl);
-            print('✅ Image $i uploaded successfully');
-            
-          } catch (e) {
-            print('❌ Error uploading image $i: $e');
-            failedUploads.add(i);
-          }
-        }
+        imageUrls = await _uploadPhotos(user.uid);
 
         if (imageUrls.isEmpty) {
           throw Exception('Failed to upload images');
         }
 
-        setState(() {
-          _uploadStatus = 'Saving post...';
-          _uploadProgress = 0.95;
-        });
+        if (mounted) {
+          setState(() {
+            _uploadProgress = 0.95;
+            _uploadStatus = 'Saving post...';
+          });
+        }
 
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
@@ -501,11 +514,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'hotScore': 0.0,
         };
 
-        print('📦 [CAPTION] Saving photo post to Firestore...');
-        
         await docRef.set(postData);
-        
-        print('✅ [CAPTION] Photo post saved with ID: $docId');
 
         await _firestore
             .collection('users')
@@ -520,10 +529,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         final newPost = {
           'id': docId,
           ...postData,
-          'createdAt': DateTime.now(),
+          'createdAt': DateTime.now().toIso8601String(),
         };
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
       }
+
+      totalStopwatch.stop();
+      print('⏱️ [CAPTION] TOTAL PUBLISH TIME: ${totalStopwatch.elapsed.inSeconds} sec');
 
       if (!mounted) return;
       
@@ -538,7 +550,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       
       try {
         Navigator.popUntil(context, (route) => route.isFirst);
-        
         if (mounted) {
           _showSnackBar(
             _isVideo ? 'Video shared successfully!' : 'Post shared successfully!',
@@ -567,339 +578,346 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isUploading, // 🛡️ Блокируем кнопку "Назад" во время загрузки
+      child: Scaffold(
         backgroundColor: Colors.black,
-        elevation: 0,
-        leading: IconButton(
-          onPressed: () {
-            if (mounted) Navigator.pop(context);
-          },
-          icon: const Icon(Icons.arrow_back, color: Colors.white, size: 26),
-        ),
-        title: const Text(
-          'Add Caption',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          if (_isUploading)
-            const Padding(
-              padding: EdgeInsets.all(16.0),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              ),
-            )
-          else
-            TextButton(
-              onPressed: _uploadPost,
-              child: const Text(
-                'Share',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          elevation: 0,
+          leading: IconButton(
+            onPressed: _isUploading ? null : () {
+              if (mounted) Navigator.pop(context);
+            },
+            icon: Icon(
+              Icons.arrow_back,
+              color: _isUploading ? Colors.grey[600] : Colors.white,
+              size: 26,
             ),
-        ],
-      ),
-      body: _isUploading
-          ? Center(
-              child: Container(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        SizedBox(
-                          width: 100,
-                          height: 100,
-                          child: CircularProgressIndicator(
-                            value: _uploadProgress,
-                            color: Colors.white,
-                            backgroundColor: Colors.grey[800],
-                            strokeWidth: 4,
-                          ),
-                        ),
-                        Text(
-                          '${(_uploadProgress * 100).toInt()}%',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    Text(
-                      _uploadStatus,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
+          ),
+          title: const Text(
+            'Add Caption',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          centerTitle: true,
+          actions: [
+            if (_isUploading)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                ),
+              )
+            else
+              TextButton(
+                onPressed: _uploadPost,
+                child: const Text(
+                  'Share',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            )
-          : SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: SizedBox(
-                        width: MediaQuery.of(context).size.width * 0.5,
-                        child: AspectRatio(
-                          aspectRatio: 4 / 5,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.grey[800]!,
-                                width: 1,
-                              ),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: widget.selectedFiles.isNotEmpty
-                                  ? _isVideo
-                                      ? _buildVideoThumbnail()
-                                      : Image.file(
-                                          widget.selectedFiles.first,
-                                          fit: BoxFit.cover,
-                                        )
-                                  : Container(
-                                      color: Colors.grey[800],
-                                      child: Icon(
-                                        _isVideo ? Icons.videocam : Icons.broken_image,
-                                        color: Colors.grey,
-                                        size: 50,
-                                      ),
-                                    ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    
-                    const SizedBox(height: 16),
-
-                    if (widget.selectedFiles.length > 1 && !_isVideo)
-                      Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[900],
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${widget.selectedFiles.length} photos selected',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    if (widget.tags.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[900],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.link, color: Colors.grey, size: 14),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${widget.tags.length} tags added',
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    
-                    const SizedBox(height: 24),
-
-                    TextField(
-                      controller: _captionController,
-                      maxLines: null,
-                      style: const TextStyle(color: Colors.white, fontSize: 16),
-                      decoration: InputDecoration(
-                        hintText: 'Write a caption...',
-                        hintStyle: TextStyle(color: Colors.grey[600], fontSize: 16),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        filled: false,
-                        fillColor: Colors.transparent,
-                      ),
-                      cursorColor: Colors.white,
-                    ),
-
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8, bottom: 16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
+          ],
+        ),
+        body: _isUploading
+            ? Center(
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Stack(
+                        alignment: Alignment.center,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[900],
-                              borderRadius: BorderRadius.circular(12),
+                          SizedBox(
+                            width: 100,
+                            height: 100,
+                            child: CircularProgressIndicator(
+                              value: _uploadProgress,
+                              color: Colors.white,
+                              backgroundColor: Colors.grey[800],
+                              strokeWidth: 4,
                             ),
-                            child: Text(
-                              '$_currentLength/$_maxCaptionLength',
-                              style: TextStyle(
-                                color: _currentLength > _maxCaptionLength 
-                                    ? Colors.red 
-                                    : _currentLength > _maxCaptionLength - 100 
-                                        ? Colors.orange 
-                                        : Colors.grey[400],
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                              ),
+                          ),
+                          Text(
+                            '${(_uploadProgress * 100).toInt()}%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ],
                       ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    const Text(
-                      'Hashtags',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                      const SizedBox(height: 24),
+                      Text(
+                        _uploadStatus,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
-                    ),
-                    
-                    const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              )
+            : SafeArea(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: SizedBox(
+                          width: MediaQuery.of(context).size.width * 0.5,
+                          child: AspectRatio(
+                            aspectRatio: 4 / 5,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.grey[800]!,
+                                  width: 1,
+                                ),
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: widget.selectedFiles.isNotEmpty
+                                    ? _isVideo
+                                        ? _buildVideoThumbnail()
+                                        : Image.file(
+                                            widget.selectedFiles.first,
+                                            fit: BoxFit.cover,
+                                          )
+                                    : Container(
+                                        color: Colors.grey[800],
+                                        child: Icon(
+                                          _isVideo ? Icons.videocam : Icons.broken_image,
+                                          color: Colors.grey,
+                                          size: 50,
+                                        ),
+                                      ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 16),
 
-                    if (_selectedHashtags.isNotEmpty)
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _selectedHashtags.map((tag) {
-                            return Container(
+                      if (widget.selectedFiles.length > 1 && !_isVideo)
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[900],
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${widget.selectedFiles.length} photos selected',
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      if (widget.tags.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Center(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[900],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.link, color: Colors.grey, size: 14),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    '${widget.tags.length} tags added',
+                                    style: const TextStyle(
+                                      color: Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      
+                      const SizedBox(height: 24),
+
+                      TextField(
+                        controller: _captionController,
+                        maxLines: null,
+                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        decoration: InputDecoration(
+                          hintText: 'Write a caption...',
+                          hintStyle: TextStyle(color: Colors.grey[600], fontSize: 16),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          filled: false,
+                          fillColor: Colors.transparent,
+                        ),
+                        cursorColor: Colors.white,
+                      ),
+
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.grey[900],
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '$_currentLength/$_maxCaptionLength',
+                                style: TextStyle(
+                                  color: _currentLength > _maxCaptionLength 
+                                      ? Colors.red 
+                                      : _currentLength > _maxCaptionLength - 100 
+                                          ? Colors.orange 
+                                          : Colors.grey[400],
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 8),
+
+                      const Text(
+                        'Hashtags',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 12),
+
+                      if (_selectedHashtags.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _selectedHashtags.map((tag) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '#$tag',
+                                      style: const TextStyle(
+                                        color: Colors.black,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    GestureDetector(
+                                      onTap: () {
+                                        if (mounted) {
+                                          setState(() {
+                                            _selectedHashtags.remove(tag);
+                                          });
+                                        }
+                                      },
+                                      child: const Icon(
+                                        Icons.close,
+                                        color: Colors.black,
+                                        size: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _suggestedHashtags.map((tag) {
+                          final isSelected = _selectedHashtags.contains(tag);
+                          
+                          if (isSelected) return const SizedBox.shrink();
+                          
+                          return GestureDetector(
+                            onTap: () {
+                              if (mounted) {
+                                setState(() {
+                                  _selectedHashtags.add(tag);
+                                });
+                              }
+                            },
+                            child: Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 6,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: Colors.transparent,
                                 borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: Colors.grey[700]!,
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    '#$tag',
-                                    style: const TextStyle(
-                                      color: Colors.black,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  GestureDetector(
-                                    onTap: () {
-                                      if (mounted) {
-                                        setState(() {
-                                          _selectedHashtags.remove(tag);
-                                        });
-                                      }
-                                    },
-                                    child: const Icon(
-                                      Icons.close,
-                                      color: Colors.black,
-                                      size: 14,
-                                    ),
-                                  ),
-                                ],
+                              child: Text(
+                                '#$tag',
+                                style: TextStyle(
+                                  color: Colors.grey[400],
+                                  fontSize: 13,
+                                ),
                               ),
-                            );
-                          }).toList(),
-                        ),
+                            ),
+                          );
+                        }).toList(),
                       ),
-
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: _suggestedHashtags.map((tag) {
-                        final isSelected = _selectedHashtags.contains(tag);
-                        
-                        if (isSelected) return const SizedBox.shrink();
-                        
-                        return GestureDetector(
-                          onTap: () {
-                            if (mounted) {
-                              setState(() {
-                                _selectedHashtags.add(tag);
-                              });
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: Colors.grey[700]!,
-                              ),
-                            ),
-                            child: Text(
-                              '#$tag',
-                              style: TextStyle(
-                                color: Colors.grey[400],
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                    
-                    const SizedBox(height: 30),
-                  ],
+                      
+                      const SizedBox(height: 30),
+                    ],
+                  ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }
