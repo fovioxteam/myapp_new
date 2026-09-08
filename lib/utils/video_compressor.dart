@@ -1,7 +1,6 @@
 // lib/utils/video_compressor.dart
 
 import 'dart:io';
-
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
@@ -9,7 +8,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 class VideoCompressor {
-  /// Видео до 15 MB не трогаем (отдаем оригинал)
   static const int maxUncompressedSizeBytes = 15 * 1024 * 1024;
 
   static Future<File?> compressVideo(String inputPath) async {
@@ -21,7 +19,6 @@ class VideoCompressor {
     Function(double progress)? onProgress,
   }) async {
     final inputFile = File(inputPath);
-
     if (!await inputFile.exists()) {
       print('❌ [FFMPEG] Input file does not exist.');
       return null;
@@ -31,9 +28,7 @@ class VideoCompressor {
     final originalSizeMB = originalSizeBytes / (1024 * 1024);
 
     if (originalSizeBytes <= maxUncompressedSizeBytes) {
-      print(
-        '⚡ [FFMPEG] File size is ${originalSizeMB.toStringAsFixed(2)} MB (<= 15 MB). Skipping compression.',
-      );
+      print('⚡ [FFMPEG] File size is ${originalSizeMB.toStringAsFixed(2)} MB (<= 15 MB). Skipping.');
       onProgress?.call(100.0);
       return inputFile;
     }
@@ -42,8 +37,7 @@ class VideoCompressor {
 
     try {
       final tempDir = await getTemporaryDirectory();
-      final outputFileName =
-          'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final outputFileName = 'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4';
       final outputPath = p.join(tempDir.path, outputFileName);
       final outputFile = File(outputPath);
 
@@ -53,30 +47,36 @@ class VideoCompressor {
 
       final totalDurationMs = await getVideoDurationMs(inputPath);
 
-      // Orientation-aware scale filter (16:9 -> max 1920x1080, 9:16 -> max 1080x1920, без апскейла)
-      const String scaleFilter =
-          "scale='if(gt(iw,ih),min(1920,iw),-2)':'if(gt(iw,ih),-2,min(1920,ih))':flags=bicubic,format=yuv420p";
+      // ============================================================
+      // 🔥 SCALE: минимальная сторона 1080, вторая сохраняет пропорции
+      // ============================================================
+      // Для вертикального 9:16 → 1080×1920
+      // Для горизонтального 16:9 → 1920×1080
+      // Для квадратного 1:1 → 1080×1080
+      // БЕЗ ЧЁРНЫХ ПОЛОС!
+      final String scaleFilter = 
+          "scale='if(gt(iw,ih),-2,1080)':'if(gt(iw,ih),1080,-2)',format=yuv420p";
 
-      // 1. Hardware Encoder
-      final String videoCodec =
-          Platform.isAndroid ? 'h264_mediacodec' : 'h264_videotoolbox';
+      print('🚀 [FFMPEG] Starting compression with libx264 (software)');
+      print('📊 [FFMPEG] Original: ${originalSizeMB.toStringAsFixed(2)} MB');
+      print('📐 [FFMPEG] Target: min side 1080p (Full HD)');
 
-      final List<String> hwArgs = [
+      final List<String> args = [
         '-y',
         '-i',
         inputFile.path,
         '-vf',
         scaleFilter,
         '-c:v',
-        videoCodec,
-        '-b:v',
-        '6M',
-        if (Platform.isAndroid) ...[
-          '-maxrate',
-          '10M',
-          '-bufsize',
-          '12M',
-        ],
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-crf',
+        '26', // Хорошее качество
+        '-profile:v',
+        'baseline',
+        '-level',
+        '4.0',
         '-c:a',
         'aac',
         '-b:a',
@@ -86,71 +86,35 @@ class VideoCompressor {
         outputPath,
       ];
 
-      print(
-        '🚀 [FFMPEG] Starting hardware compression (max 1080p, codec: $videoCodec)...',
-      );
+      print('📝 [FFMPEG] Command: ${args.join(' ')}');
 
-      var session = await FFmpegKit.executeWithArgumentsAsync(
-        hwArgs,
-        (completedSession) {},
-        (log) {},
-        (statistics) {
-          if (totalDurationMs > 0 && onProgress != null) {
-            final timeInMs = statistics.getTime();
-            if (timeInMs > 0) {
-              double progress = (timeInMs / totalDurationMs) * 100;
-              onProgress(progress.clamp(0.0, 100.0));
-            }
-          }
-        },
-      );
-
-      var returnCode = await session.getReturnCode();
+      final session = await FFmpegKit.executeWithArguments(args);
+      final returnCode = await session.getReturnCode();
+      stopwatch.stop();
 
       if (ReturnCode.isSuccess(returnCode)) {
         if (await outputFile.exists()) {
           final compressedSizeBytes = await outputFile.length();
+          final compressedSizeMB = compressedSizeBytes / (1024 * 1024);
 
           if (compressedSizeBytes < originalSizeBytes) {
-            stopwatch.stop();
+            print('✅ [FFMPEG] Compression successful in ${stopwatch.elapsed.inSeconds}s.');
+            print('📉 [FFMPEG] ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB');
             onProgress?.call(100.0);
-
-            final compressedSizeMB = compressedSizeBytes / (1024 * 1024);
-            print(
-              '✅ [FFMPEG] Hardware compression successful in ${stopwatch.elapsed.inSeconds}s.',
-            );
-            print(
-              '📉 [FFMPEG] ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB',
-            );
-
             return outputFile;
           }
 
           await outputFile.delete();
+          print('⚠️ [FFMPEG] Compressed file was larger than original. Using original.');
         }
       }
 
-      // 2. Software Fallback (libx264)
-      print(
-        '⚠️ [FFMPEG] Hardware failed or output was larger. Switching to Software libx264...',
-      );
+      // ============================================================
+      // 🔥 FALLBACK: 720p
+      // ============================================================
+      print('🔄 [FFMPEG] 1080p failed, trying 720p fallback...');
+      return await _compressFallback(inputFile, outputPath, totalDurationMs, onProgress, stopwatch);
 
-      final result = await _compressVideoSoftware(
-        inputFile: inputFile,
-        outputPath: outputPath,
-        scaleFilter: scaleFilter,
-        totalDurationMs: totalDurationMs,
-        onProgress: onProgress,
-      );
-
-      stopwatch.stop();
-      if (result != null && result.path != inputFile.path) {
-        print(
-          '✅ [FFMPEG] Software compression finished in ${stopwatch.elapsed.inSeconds}s.',
-        );
-      }
-
-      return result;
     } catch (e, stackTrace) {
       stopwatch.stop();
       print('❌ [FFMPEG] Exception during compression: $e\n$stackTrace');
@@ -158,14 +122,20 @@ class VideoCompressor {
     }
   }
 
-  static Future<File?> _compressVideoSoftware({
-    required File inputFile,
-    required String outputPath,
-    required String scaleFilter,
-    required int totalDurationMs,
-    required Function(double progress)? onProgress,
-  }) async {
-    final List<String> swArgs = [
+  static Future<File?> _compressFallback(
+    File inputFile,
+    String outputPath,
+    int totalDurationMs,
+    Function(double progress)? onProgress,
+    Stopwatch stopwatch,
+  ) async {
+    final originalSizeBytes = await inputFile.length();
+    final originalSizeMB = originalSizeBytes / (1024 * 1024);
+
+    final String scaleFilter = 
+        "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuv420p";
+
+    final List<String> args = [
       '-y',
       '-i',
       inputFile.path,
@@ -174,64 +144,40 @@ class VideoCompressor {
       '-c:v',
       'libx264',
       '-preset',
-      'veryfast',
+      'ultrafast',
       '-crf',
-      '22',
-      '-pix_fmt',
-      'yuv420p',
+      '28',
+      '-profile:v',
+      'baseline',
+      '-level',
+      '3.1',
       '-c:a',
       'aac',
       '-b:a',
-      '128k',
+      '96k',
       '-movflags',
       '+faststart',
       outputPath,
     ];
 
-    final session = await FFmpegKit.executeWithArgumentsAsync(
-      swArgs,
-      (completedSession) {},
-      (log) {},
-      (statistics) {
-        if (totalDurationMs > 0 && onProgress != null) {
-          final timeInMs = statistics.getTime();
-          if (timeInMs > 0) {
-            double progress = (timeInMs / totalDurationMs) * 100;
-            onProgress(progress.clamp(0.0, 100.0));
-          }
-        }
-      },
-    );
-
+    print('🔄 [FFMPEG] Running fallback: min side 720p');
+    final session = await FFmpegKit.executeWithArguments(args);
     final returnCode = await session.getReturnCode();
+    stopwatch.stop();
 
     if (ReturnCode.isSuccess(returnCode)) {
-      onProgress?.call(100.0);
       final outputFile = File(outputPath);
-
       if (await outputFile.exists()) {
         final compressedSizeBytes = await outputFile.length();
-        final originalSizeBytes = await inputFile.length();
-
         if (compressedSizeBytes < originalSizeBytes) {
           final compressedSizeMB = compressedSizeBytes / (1024 * 1024);
-          final originalSizeMB = originalSizeBytes / (1024 * 1024);
-
-          print(
-            '📉 [FFMPEG] Software: ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB',
-          );
-
+          print('✅ [FFMPEG] 720p fallback successful');
+          print('📉 [FFMPEG] ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB');
+          onProgress?.call(100.0);
           return outputFile;
         }
-
         await outputFile.delete();
       }
-    }
-
-    final failLogs = await session.getLogs();
-    print('❌ [FFMPEG] Software compression failed. Logs:');
-    for (final log in failLogs.take(5)) {
-      print('   > ${log.getMessage()}');
     }
 
     return inputFile;
@@ -241,7 +187,6 @@ class VideoCompressor {
     try {
       final session = await FFprobeKit.getMediaInformation(videoPath);
       final information = session.getMediaInformation();
-
       if (information != null) {
         final durationStr = information.getDuration();
         if (durationStr != null) {
@@ -252,37 +197,62 @@ class VideoCompressor {
     } catch (e) {
       print('❌ [FFPROBE] Failed to extract duration: $e');
     }
-
     return 0;
   }
 
   static Future<File?> generateThumbnail(String videoPath) async {
     try {
       final tempDir = await getTemporaryDirectory();
-      final outputPath =
-          '${tempDir.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final outputPath = '${tempDir.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      // Без лишней цветокоррекции: точные цвета исходника + адекватный масштаб без апскейла
-      final List<String> thumbArgs = [
+      final List<String> args = [
         '-ss',
         '00:00:00.500',
         '-i',
         videoPath,
         '-vf',
-        "scale='if(gt(iw,ih),min(1080,iw),-2)':'if(gt(iw,ih),-2,min(1080,ih))':flags=bicubic,format=yuv420p",
+        "colorspace=bt709:iall=bt709:all=bt709,scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuvj420p",
         '-vframes',
         '1',
         '-q:v',
-        '2',
+        '3',
         '-y',
         outputPath,
       ];
 
-      final session = await FFmpegKit.executeWithArguments(thumbArgs);
+      print('🎨 [FFMPEG] Generating thumbnail with color correction...');
+
+      final session = await FFmpegKit.executeWithArguments(args);
 
       if (ReturnCode.isSuccess(await session.getReturnCode())) {
         final thumbFile = File(outputPath);
         if (await thumbFile.exists() && await thumbFile.length() > 0) {
+          print('✅ [FFMPEG] Thumbnail generated with correct colors');
+          return thumbFile;
+        }
+      }
+
+      print('⚠️ [FFMPEG] Color correction failed, trying fallback...');
+      final List<String> fallbackArgs = [
+        '-ss',
+        '00:00:00.500',
+        '-i',
+        videoPath,
+        '-vf',
+        "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuvj420p",
+        '-vframes',
+        '1',
+        '-q:v',
+        '3',
+        '-y',
+        outputPath,
+      ];
+
+      final fallbackSession = await FFmpegKit.executeWithArguments(fallbackArgs);
+      if (ReturnCode.isSuccess(await fallbackSession.getReturnCode())) {
+        final thumbFile = File(outputPath);
+        if (await thumbFile.exists() && await thumbFile.length() > 0) {
+          print('✅ [FFMPEG] Thumbnail generated (fallback)');
           return thumbFile;
         }
       }
