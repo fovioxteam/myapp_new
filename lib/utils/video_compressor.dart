@@ -48,18 +48,22 @@ class VideoCompressor {
       final totalDurationMs = await getVideoDurationMs(inputPath);
 
       // ============================================================
-      // 🔥 SCALE: минимальная сторона 1080, вторая сохраняет пропорции
+      // 🔥 БЕЗОПАСНЫЙ SCALE (ЧЁТНЫЕ ПИКСЕЛИ) + HDR → SDR
       // ============================================================
-      // Для вертикального 9:16 → 1080×1920
-      // Для горизонтального 16:9 → 1920×1080
-      // Для квадратного 1:1 → 1080×1080
-      // БЕЗ ЧЁРНЫХ ПОЛОС!
-      final String scaleFilter = 
-          "scale='if(gt(iw,ih),-2,1080)':'if(gt(iw,ih),1080,-2)',format=yuv420p";
+      final String scaleFilter =
+          "scale='trunc(if(gt(iw,ih),-2,1080)/2)*2':'trunc(if(gt(iw,ih),1080,-2)/2)*2',"
+          "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
+          "format=yuv420p";
 
-      print('🚀 [FFMPEG] Starting compression with libx264 (software)');
+      // 🔥 АППАРАТНОЕ УСКОРЕНИЕ ДЛЯ ПЛАТФОРМ
+      final bool isIOS = Platform.isIOS;
+      final String videoCodec = isIOS ? 'h264_videotoolbox' : 'libx264';
+      final List<String> codecParams = isIOS
+          ? ['-q:v', '65'] // Быстрое аппаратное сжатие Apple
+          : ['-preset', 'ultrafast', '-crf', '26', '-profile:v', 'baseline', '-level', '4.0'];
+
+      print('🚀 [FFMPEG] Starting compression with $videoCodec (HDR→SDR)');
       print('📊 [FFMPEG] Original: ${originalSizeMB.toStringAsFixed(2)} MB');
-      print('📐 [FFMPEG] Target: min side 1080p (Full HD)');
 
       final List<String> args = [
         '-y',
@@ -68,15 +72,8 @@ class VideoCompressor {
         '-vf',
         scaleFilter,
         '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        '-crf',
-        '26', // Хорошее качество
-        '-profile:v',
-        'baseline',
-        '-level',
-        '4.0',
+        videoCodec,
+        ...codecParams,
         '-c:a',
         'aac',
         '-b:a',
@@ -105,14 +102,14 @@ class VideoCompressor {
           }
 
           await outputFile.delete();
-          print('⚠️ [FFMPEG] Compressed file was larger than original. Using original.');
+          print('⚠️ [FFMPEG] Compressed file was larger than original. Skipping.');
         }
       }
 
       // ============================================================
-      // 🔥 FALLBACK: 720p
+      // 🔥 FALLBACK: 720p (SOFTWARE)
       // ============================================================
-      print('🔄 [FFMPEG] 1080p failed, trying 720p fallback...');
+      print('🔄 [FFMPEG] Primary compression failed, trying 720p fallback...');
       return await _compressFallback(inputFile, outputPath, totalDurationMs, onProgress, stopwatch);
 
     } catch (e, stackTrace) {
@@ -132,8 +129,10 @@ class VideoCompressor {
     final originalSizeBytes = await inputFile.length();
     final originalSizeMB = originalSizeBytes / (1024 * 1024);
 
-    final String scaleFilter = 
-        "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuv420p";
+    final String scaleFilter =
+        "scale='trunc(if(gt(iw,ih),-2,720)/2)*2':'trunc(if(gt(iw,ih),720,-2)/2)*2',"
+        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
+        "format=yuv420p";
 
     final List<String> args = [
       '-y',
@@ -160,7 +159,7 @@ class VideoCompressor {
       outputPath,
     ];
 
-    print('🔄 [FFMPEG] Running fallback: min side 720p');
+    print('🔄 [FFMPEG] Running fallback: 720p SDR');
     final session = await FFmpegKit.executeWithArguments(args);
     final returnCode = await session.getReturnCode();
     stopwatch.stop();
@@ -200,6 +199,9 @@ class VideoCompressor {
     return 0;
   }
 
+  // ============================================================
+  // 🔥 THUMBNAIL — ТОЖЕ HDR→SDR
+  // ============================================================
   static Future<File?> generateThumbnail(String videoPath) async {
     try {
       final tempDir = await getTemporaryDirectory();
@@ -211,39 +213,40 @@ class VideoCompressor {
         '-i',
         videoPath,
         '-vf',
-        "colorspace=bt709:iall=bt709:all=bt709,scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuvj420p",
+        "scale='trunc(if(gt(iw,ih),-2,720)/2)*2':'trunc(if(gt(iw,ih),720,-2)/2)*2',"
+        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
+        "format=yuv420p",
         '-vframes',
         '1',
         '-q:v',
-        '3',
+        '2',
         '-y',
         outputPath,
       ];
 
-      print('🎨 [FFMPEG] Generating thumbnail with color correction...');
+      print('🎨 [FFMPEG] Generating thumbnail (HDR→SDR)...');
 
       final session = await FFmpegKit.executeWithArguments(args);
 
       if (ReturnCode.isSuccess(await session.getReturnCode())) {
         final thumbFile = File(outputPath);
         if (await thumbFile.exists() && await thumbFile.length() > 0) {
-          print('✅ [FFMPEG] Thumbnail generated with correct colors');
+          print('✅ [FFMPEG] Thumbnail generated');
           return thumbFile;
         }
       }
 
-      print('⚠️ [FFMPEG] Color correction failed, trying fallback...');
+      // 🔥 FALLBACK
+      print('⚠️ [FFMPEG] Fallback thumbnail...');
       final List<String> fallbackArgs = [
         '-ss',
         '00:00:00.500',
         '-i',
         videoPath,
-        '-vf',
-        "scale='if(gt(iw,ih),-2,720)':'if(gt(iw,ih),720,-2)',format=yuvj420p",
         '-vframes',
         '1',
         '-q:v',
-        '3',
+        '2',
         '-y',
         outputPath,
       ];
