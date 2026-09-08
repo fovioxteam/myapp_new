@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:get/get.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../controllers/post_controller.dart';
 import '../controllers/profile_controller.dart';
 import '../screens/profile_screen.dart' as profile;
@@ -48,6 +49,12 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
   bool _hasMore = true;
   bool _isLoadingMore = false;
   int _totalComments = 0;
+
+  // ============================================================
+  // 🔥 КЭШ ДЛЯ ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ (ОДИН РАЗ ЗАГРУЖАЕМ)
+  // ============================================================
+  final Map<String, Map<String, String>> _userCache = {};
+  final Map<String, bool> _loadingUsers = {};
 
   @override
   void initState() {
@@ -247,7 +254,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
       
       print('✅ Comment added and counter incremented in PostController');
 
-      // Отправка уведомлений
       if (widget.postOwnerId != currentUser.uid && _replyingToUserId == null) {
         await _sendNotification(
           userId: widget.postOwnerId,
@@ -403,6 +409,48 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
     return '${(diff.inDays / 365).floor()}y';
   }
 
+  // ============================================================
+  // 🔥 ПОЛУЧЕНИЕ ДАННЫХ ПОЛЬЗОВАТЕЛЯ С КЭШИРОВАНИЕМ
+  // ============================================================
+  Future<Map<String, String>> _getUserData(String userId) async {
+    // 🔥 ЕСЛИ УЖЕ ЗАГРУЖЕНО — ВОЗВРАЩАЕМ ИЗ КЭША
+    if (_userCache.containsKey(userId)) {
+      return _userCache[userId]!;
+    }
+
+    // 🔥 ЕСЛИ УЖЕ ЗАГРУЖАЕТСЯ — ЖДЁМ
+    if (_loadingUsers[userId] == true) {
+      // Ждём завершения загрузки
+      await Future.delayed(const Duration(milliseconds: 50));
+      return _userCache[userId] ?? {'username': 'User', 'avatarUrl': ''};
+    }
+
+    _loadingUsers[userId] = true;
+
+    try {
+      final userDoc = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .get();
+      
+      if (userDoc.exists) {
+        final data = userDoc.data() ?? {};
+        final result = {
+          'username': data['username']?.toString() ?? 'User',
+          'avatarUrl': data['avatarUrl']?.toString() ?? '',
+        };
+        _userCache[userId] = result;
+        _loadingUsers[userId] = false;
+        return result;
+      }
+    } catch (e) {
+      print('❌ Error fetching user data: $e');
+    }
+    
+    _loadingUsers[userId] = false;
+    return {'username': 'User', 'avatarUrl': ''};
+  }
+
   @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
@@ -424,7 +472,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
             ),
             child: Column(
               children: [
-                // Drag handle
                 Container(
                   margin: const EdgeInsets.symmetric(vertical: 12),
                   width: 40,
@@ -435,7 +482,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   ),
                 ),
 
-                // Comments list
                 Expanded(
                   child: StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
@@ -517,7 +563,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   ),
                 ),
 
-                // Reply indicator
                 if (_replyingToUserId != null)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -548,7 +593,6 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     ),
                   ),
 
-                // Input field
                 Container(
                   padding: EdgeInsets.only(
                     left: 16,
@@ -604,7 +648,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
                             color: (_controller.text.trim().isNotEmpty && !_isSending)
                                 ? Colors.black
                                 : Colors.grey[400],
-                            size: 24, // 🔥 УВЕЛИЧЕНО С 22 ДО 24
+                            size: 24,
                           ),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -622,6 +666,9 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
     );
   }
 
+  // ============================================================
+  // 🔥 ПОСТРОЕНИЕ КОММЕНТАРИЯ (ДИЗАЙН СОХРАНЁН, КЭШИРОВАНИЕ ДОБАВЛЕНО)
+  // ============================================================
   Widget _buildCommentTile(DocumentSnapshot commentDoc, List<DocumentSnapshot> allComments) {
     final comment = commentDoc.data() as Map<String, dynamic>;
     final currentUser = FirebaseAuth.instance.currentUser;
@@ -629,6 +676,7 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final likedBy = List<String>.from(comment['likedBy'] ?? []);
     final isLiked = currentUser != null && likedBy.contains(currentUser.uid);
     final timestamp = comment['createdAt'] as Timestamp?;
+    final userId = comment['userId'] as String? ?? '';
 
     final replies = allComments
         .where((doc) {
@@ -640,195 +688,207 @@ class _CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final hasReplies = replies.isNotEmpty;
     final isExpanded = _expandedReplies[commentId] ?? false;
 
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // 🔥 УВЕЛИЧЕНО С 8 ДО 12
-          child: IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 🔥 АВАТАРКА УВЕЛИЧЕНА (30x30 → 40x40)
-                GestureDetector(
-                  onTap: () => _navigateToProfile(comment['userId']),
-                  child: Container(
-                    width: 40, // 🔥 БЫЛО 30
-                    height: 40, // 🔥 БЫЛО 30
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.grey[200],
-                      image: (comment['userAvatar']?.isNotEmpty ?? false)
-                          ? DecorationImage(
-                              image: NetworkImage(comment['userAvatar']),
-                              fit: BoxFit.cover,
-                            )
-                          : null,
+    // ============================================================
+    // 🔥 РЕЗЕРВНЫЕ ДАННЫЕ ИЗ КОММЕНТАРИЯ (ПОКА НЕТ КЭША)
+    // ============================================================
+    final fallbackUsername = comment['username'] ?? 'User';
+    final fallbackAvatar = comment['userAvatar'] ?? '';
+
+    // ============================================================
+    // 🔥 ИСПОЛЬЗУЕМ FutureBuilder С КЭШЕМ
+    // ============================================================
+    return FutureBuilder<Map<String, String>>(
+      future: _getUserData(userId),
+      builder: (context, userSnapshot) {
+        // 🔥 БЕРЕМ ДАННЫЕ ИЗ КЭША ИЛИ РЕЗЕРВ
+        final currentUsername = userSnapshot.hasData 
+            ? userSnapshot.data!['username'] ?? fallbackUsername
+            : fallbackUsername;
+        final currentAvatar = userSnapshot.hasData 
+            ? userSnapshot.data!['avatarUrl'] ?? fallbackAvatar
+            : fallbackAvatar;
+
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: () => _navigateToProfile(userId),
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.grey[200],
+                          image: currentAvatar.isNotEmpty
+                              ? DecorationImage(
+                                  image: CachedNetworkImageProvider(currentAvatar),
+                                  fit: BoxFit.cover,
+                                )
+                              : null,
+                        ),
+                        child: currentAvatar.isEmpty
+                            ? Icon(Icons.person, color: Colors.grey[400], size: 22)
+                            : null,
+                      ),
                     ),
-                    child: (comment['userAvatar']?.isEmpty ?? true)
-                        ? Icon(Icons.person, color: Colors.grey[400], size: 22) // 🔥 УВЕЛИЧЕНО С 16 ДО 22
-                        : null,
-                  ),
-                ),
-                const SizedBox(width: 12), // 🔥 УВЕЛИЧЕНО С 10 ДО 12
+                    const SizedBox(width: 12),
 
-                // Content
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Никнейм
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          GestureDetector(
-                            onTap: () => _navigateToProfile(comment['userId']),
-                            child: Text(
-                              comment['username'] ?? 'User',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14, // 🔥 УВЕЛИЧЕНО С 12 ДО 14
-                                color: Colors.black,
-                              ),
-                            ),
-                          ),
-                          if (timestamp != null) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              _getTimeAgo(timestamp),
-                              style: TextStyle(
-                                fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
-                                color: Colors.grey[500],
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 4), // 🔥 УВЕЛИЧЕНО С 3 ДО 4
-                      
-                      // 🔥 ТЕКСТ КОММЕНТАРИЯ УВЕЛИЧЕН
-                      Text(
-                        comment['text'] ?? '',
-                        style: TextStyle(
-                          fontSize: 16, // 🔥 УВЕЛИЧЕНО С 14 ДО 16
-                          color: Colors.grey[900],
-                          fontWeight: FontWeight.w400,
-                          height: 1.4, // 🔥 УВЕЛИЧЕНО С 1.3 ДО 1.4
-                        ),
-                      ),
-                      
-                      // Показываем на кого ответ
-                      if (comment['replyToUsername'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 3),
-                          child: Text(
-                            'Replying to @${comment['replyToUsername']}',
-                            style: TextStyle(
-                              fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
-                              color: Colors.grey[500],
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ),
-                      
-                      const SizedBox(height: 6), // 🔥 УВЕЛИЧЕНО С 5 ДО 6
-
-                      // Кнопка Reply
-                      GestureDetector(
-                        onTap: () => _setReply(
-                          comment['userId'],
-                          comment['username'] ?? 'User',
-                          commentDoc.id,
-                        ),
-                        child: Text(
-                          'Reply',
-                          style: TextStyle(
-                            fontSize: 12, // 🔥 УВЕЛИЧЕНО С 11 ДО 12
-                            color: Colors.grey[600],
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 🔥 КНОПКА ЛАЙКА УВЕЛИЧЕНА
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  child: GestureDetector(
-                    onTap: () => _toggleLike(
-                      commentId,
-                      likedBy,
-                      comment['likes'] ?? 0,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4), // 🔥 УВЕЛИЧЕНО
+                    Expanded(
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            isLiked ? Icons.favorite : Icons.favorite_border,
-                            color: isLiked ? Colors.black : Colors.grey[400],
-                            size: 22, // 🔥 УВЕЛИЧЕНО С 18 ДО 22
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              GestureDetector(
+                                onTap: () => _navigateToProfile(userId),
+                                child: Text(
+                                  currentUsername,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ),
+                              if (timestamp != null) ...[
+                                const SizedBox(width: 6),
+                                Text(
+                                  _getTimeAgo(timestamp),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                          if ((comment['likes'] ?? 0) > 0)
+                          const SizedBox(height: 4),
+                          
+                          Text(
+                            comment['text'] ?? '',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[900],
+                              fontWeight: FontWeight.w400,
+                              height: 1.4,
+                            ),
+                          ),
+                          
+                          if (comment['replyToUsername'] != null)
                             Padding(
-                              padding: const EdgeInsets.only(top: 3), // 🔥 УВЕЛИЧЕНО С 2 ДО 3
+                              padding: const EdgeInsets.only(top: 3),
                               child: Text(
-                                '${comment['likes']}',
+                                'Replying to @${comment['replyToUsername']}',
                                 style: TextStyle(
-                                  fontSize: 13, // 🔥 УВЕЛИЧЕНО С 11 ДО 13
-                                  fontWeight: FontWeight.w600,
-                                  color: isLiked ? Colors.black : Colors.grey[600],
+                                  fontSize: 12,
+                                  color: Colors.grey[500],
+                                  fontStyle: FontStyle.italic,
                                 ),
                               ),
                             ),
+                          
+                          const SizedBox(height: 6),
+
+                          GestureDetector(
+                            onTap: () => _setReply(
+                              userId,
+                              currentUsername,
+                              commentDoc.id,
+                            ),
+                            child: Text(
+                              'Reply',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      child: GestureDetector(
+                        onTap: () => _toggleLike(
+                          commentId,
+                          likedBy,
+                          comment['likes'] ?? 0,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isLiked ? Icons.favorite : Icons.favorite_border,
+                                color: isLiked ? Colors.black : Colors.grey[400],
+                                size: 22,
+                              ),
+                              if ((comment['likes'] ?? 0) > 0)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Text(
+                                    '${comment['likes']}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: isLiked ? Colors.black : Colors.grey[600],
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            if (hasReplies)
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 52, right: 16, bottom: 4),
+                    child: GestureDetector(
+                      onTap: () => _toggleReplies(commentId),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 24,
+                            height: 2,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            isExpanded ? 'Hide replies' : 'View ${replies.length} repl${replies.length == 1 ? 'y' : 'ies'}',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey[600],
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        // Replies
-        if (hasReplies)
-          Column(
-            children: [
-              // Кнопка показа/скрытия ответов
-              Padding(
-                padding: const EdgeInsets.only(left: 52, right: 16, bottom: 4), // 🔥 УВЕЛИЧЕНО С 46 ДО 52
-                child: GestureDetector(
-                  onTap: () => _toggleReplies(commentId),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 24, // 🔥 УВЕЛИЧЕНО С 20 ДО 24
-                        height: 2, // 🔥 УВЕЛИЧЕНО С 1 ДО 2
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(width: 12), // 🔥 УВЕЛИЧЕНО С 10 ДО 12
-                      Text(
-                        isExpanded ? 'Hide replies' : 'View ${replies.length} repl${replies.length == 1 ? 'y' : 'ies'}',
-                        style: TextStyle(
-                          fontSize: 13, // 🔥 УВЕЛИЧЕНО С 12 ДО 13
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                  
+                  if (isExpanded)
+                    ...replies.map((replyDoc) => _buildCommentTile(replyDoc, allComments)),
+                ],
               ),
-              
-              // Ответы
-              if (isExpanded)
-                ...replies.map((replyDoc) => _buildCommentTile(replyDoc, allComments)),
-            ],
-          ),
-      ],
+          ],
+        );
+      },
     );
   }
 }
