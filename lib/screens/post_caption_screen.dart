@@ -84,7 +84,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     _captionController.removeListener(_updateRemainingChars);
     _captionController.dispose();
     
-    // 🧹 Очистка временного файла превью при выходе с экрана
     if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
       _cachedThumbnail!.delete().catchError((e) => print('Thumbnail cleanup error: $e'));
     }
@@ -99,7 +98,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     _thumbnailLoading = true;
     try {
       final videoFile = widget.selectedFiles.first;
-      final thumbnail = await VideoCompressor.generateThumbnail(videoFile.path);
+      // 🔥 ИСПРАВЛЕНО: передаём File, а не String
+      final thumbnail = await VideoCompressor.generateThumbnail(videoFile);
       
       if (mounted) {
         setState(() {
@@ -194,9 +194,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
 
     // 🔥 ПАРАЛЛЕЛЬНО: сжатие видео + генерация обложки
+    // 🔥 ИСПРАВЛЕНО: передаём File, а не String
     final results = await Future.wait([
-      VideoCompressor.compressVideo(videoFile.path),
-      VideoCompressor.generateThumbnail(videoFile.path),
+      VideoCompressor.compressVideo(videoFile),
+      VideoCompressor.generateThumbnail(videoFile),
     ]);
 
     final compressedVideo = results[0] as File? ?? videoFile;
@@ -280,7 +281,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
       uploadFutures.add(() async {
         try {
-          // Сжимаем фото
           final compressed = await ImageCompressor.compressImage(file);
           
           final fileName = '${userId}_${DateTime.now().millisecondsSinceEpoch}_$index${path.extension(file.path)}';
@@ -289,12 +289,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           await storageRef.putFile(compressed);
           final url = await storageRef.getDownloadURL();
           
-          // Чистим временный файл
           if (compressed.path != file.path) {
             await compressed.delete();
           }
           
-          // 🔥 БЕЗОПАСНОЕ ОБНОВЛЕНИЕ ПРОГРЕССА (с проверкой mounted)
           if (mounted) {
             setState(() {
               _uploadStatus = 'Uploading photo ${index + 1}/$total...';
@@ -314,9 +312,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     return results.whereType<String>().toList();
   }
 
-  // ============================================================
-  // 🔥 ТАМБНЕЙЛ ДЛЯ ПРЕВЬЮ
-  // ============================================================
   Widget _buildVideoThumbnail() {
     if (_cachedThumbnail != null) {
       return Image.file(
@@ -460,7 +455,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
               'createdAt': FieldValue.serverTimestamp(),
             });
 
-        // 🔥 Используем serverTimestamp для локального кэша
         final newPost = {
           'id': docId,
           ...postData,
@@ -579,7 +573,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_isUploading, // 🛡️ Блокируем кнопку "Назад" во время загрузки
+      canPop: !_isUploading,
       child: Scaffold(
         backgroundColor: Colors.black,
         appBar: AppBar(

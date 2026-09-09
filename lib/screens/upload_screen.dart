@@ -290,68 +290,172 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
+  // ============================================================
+  // 🔥 1. ЗАМЕНЁННЫЙ _preloadThumbnails
+  // ============================================================
   Future<void> _preloadThumbnails(List<AssetEntity> media) async {
-    for (var asset in media) {
-      if (!_thumbnailCache.containsKey(asset.id) && !_loadingAssets.contains(asset.id)) {
-        _loadingAssets.add(asset.id);
-        
-        final thumbnail = await asset.thumbnailDataWithSize(
-          const ThumbnailSize(200, 200),
-        );
-        
-        _loadingAssets.remove(asset.id);
-        
-        if (mounted && thumbnail != null) {
-          setState(() {
-            if (_thumbnailCache.length > _maxCacheSize) {
-              final oldestKey = _thumbnailCache.keys.first;
-              _thumbnailCache.remove(oldestKey);
-            }
-            _thumbnailCache[asset.id] = thumbnail;
-          });
-        }
+    for (final asset in media) {
+      if (_thumbnailCache.containsKey(asset.id) ||
+          _loadingAssets.contains(asset.id)) {
+        continue;
       }
-    }
-  }
 
-  Future<Uint8List?> _getVideoThumbnail(AssetEntity asset) async {
-    if (_thumbnailCache.containsKey(asset.id)) {
-      return _thumbnailCache[asset.id];
-    }
-    
-    if (_loadingAssets.contains(asset.id)) {
-      return null;
-    }
-    
-    _loadingAssets.add(asset.id);
-    
-    try {
-      final thumbnail = await asset.thumbnailDataWithSize(
-        const ThumbnailSize(200, 200),
-      );
-      
-      _loadingAssets.remove(asset.id);
-      
-      if (thumbnail != null) {
-        setState(() {
-          if (_thumbnailCache.length > _maxCacheSize) {
-            final oldestKey = _thumbnailCache.keys.first;
-            _thumbnailCache.remove(oldestKey);
-          }
-          _thumbnailCache[asset.id] = thumbnail;
-        });
-        return thumbnail;
+      if (asset.type == AssetType.video) {
+        await _getVideoThumbnail(asset);
+      } else {
+        await _getImageThumbnail(asset);
       }
-      return null;
-    } catch (e) {
-      _loadingAssets.remove(asset.id);
-      print('❌ Thumbnail error: $e');
-      return null;
     }
   }
 
   // ============================================================
-  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО
+  // 🔥 2. НОВЫЙ _getImageThumbnail
+  // ============================================================
+  Future<Uint8List?> _getImageThumbnail(
+    AssetEntity asset,
+  ) async {
+    if (_thumbnailCache.containsKey(asset.id)) {
+      return _thumbnailCache[asset.id];
+    }
+
+    _loadingAssets.add(asset.id);
+
+    try {
+      final thumbnail = await asset.thumbnailDataWithSize(
+        const ThumbnailSize(200, 200),
+      );
+
+      if (thumbnail != null && mounted) {
+        setState(() {
+          if (_thumbnailCache.length >= _maxCacheSize) {
+            _thumbnailCache.remove(
+              _thumbnailCache.keys.first,
+            );
+          }
+
+          _thumbnailCache[asset.id] = thumbnail;
+        });
+      }
+
+      return thumbnail;
+    } catch (e) {
+      print('❌ [THUMBNAIL] Image error: $e');
+      return null;
+    } finally {
+      _loadingAssets.remove(asset.id);
+    }
+  }
+
+  // ============================================================
+  // 🔥 3. ЗАМЕНЁННЫЙ _getVideoThumbnail (СОВМЕСТИМ С video_compress)
+  // ============================================================
+  Future<Uint8List?> _getVideoThumbnail(
+    AssetEntity asset,
+  ) async {
+    if (_thumbnailCache.containsKey(asset.id)) {
+      return _thumbnailCache[asset.id];
+    }
+
+    if (_loadingAssets.contains(asset.id)) {
+      return null;
+    }
+
+    _loadingAssets.add(asset.id);
+
+    try {
+      // Сначала пробуем обычный thumbnail.
+      try {
+        final thumbnail = await asset.thumbnailDataWithSize(
+          const ThumbnailSize(200, 200),
+        );
+
+        if (thumbnail != null && thumbnail.isNotEmpty) {
+          if (mounted) {
+            setState(() {
+              if (_thumbnailCache.length >= _maxCacheSize) {
+                _thumbnailCache.remove(
+                  _thumbnailCache.keys.first,
+                );
+              }
+
+              _thumbnailCache[asset.id] = thumbnail;
+            });
+          }
+
+          return thumbnail;
+        }
+      } catch (e) {
+        print(
+          '⚠️ [THUMBNAIL] Native video thumbnail failed: $e',
+        );
+      }
+
+      // Native decoder не смог открыть видео → video_compress.
+      print(
+        '🎬 [THUMBNAIL] Trying video_compress...',
+      );
+
+      final file = await asset.file;
+
+      if (file == null || !await file.exists()) {
+        print(
+          '❌ [THUMBNAIL] Video file unavailable',
+        );
+        return null;
+      }
+
+      final thumbnailFile =
+          await VideoCompressor.generateThumbnail(file);
+
+      if (thumbnailFile == null ||
+          !await thumbnailFile.exists()) {
+        print(
+          '❌ [THUMBNAIL] video_compress failed',
+        );
+        return null;
+      }
+
+      final bytes = await thumbnailFile.readAsBytes();
+
+      if (bytes.isEmpty) {
+        return null;
+      }
+
+      // Удаляем временный файл thumbnail
+      try {
+        await thumbnailFile.delete();
+      } catch (_) {}
+
+      if (mounted) {
+        setState(() {
+          if (_thumbnailCache.length >= _maxCacheSize) {
+            _thumbnailCache.remove(
+              _thumbnailCache.keys.first,
+            );
+          }
+
+          _thumbnailCache[asset.id] = bytes;
+        });
+      }
+
+      print(
+        '✅ [THUMBNAIL] video_compress thumbnail generated',
+      );
+
+      return bytes;
+    } catch (e, stackTrace) {
+      print(
+        '❌ [THUMBNAIL] Video error: $e',
+      );
+      print(stackTrace);
+      return null;
+    } finally {
+      _loadingAssets.remove(asset.id);
+    }
+  }
+
+  // ============================================================
+  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО (СОВМЕСТИМ С video_compress)
   // ============================================================
   Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
     if (asset.type != AssetType.video) return null;
@@ -368,7 +472,7 @@ class _UploadScreenState extends State<UploadScreen> {
         print('🎬 [DURATION] Getting duration for: ${file.path}');
         
         final durationMs = await VideoCompressor.getVideoDurationMs(file.path);
-        if (durationMs > 0) {
+        if (durationMs != null && durationMs > 0) {
           final duration = Duration(milliseconds: durationMs);
           _durationCache[assetId] = duration;
           print('🎬 [DURATION] Duration: ${duration.inSeconds} sec');
@@ -987,7 +1091,7 @@ class _UploadScreenState extends State<UploadScreen> {
             ),
 
             // ============================================================
-            // 🔥 ГРИД - ВЫБОР ФОТО
+            // 🔥 ГРИД - ВЫБОР ФОТО (ИСПРАВЛЕНО!)
             // ============================================================
             Expanded(
               child: Container(
@@ -1040,7 +1144,10 @@ class _UploadScreenState extends State<UploadScreen> {
                             final isVideo = asset.type == AssetType.video;
                             
                             return FutureBuilder<Uint8List?>(
-                              future: _getVideoThumbnail(asset),
+                              // 🔥 4. ИСПРАВЛЕННЫЙ future
+                              future: asset.type == AssetType.video
+                                  ? _getVideoThumbnail(asset)
+                                  : _getImageThumbnail(asset),
                               builder: (context, thumbSnapshot) {
                                 final hasThumbnail = thumbSnapshot.hasData && thumbSnapshot.data != null;
                                 

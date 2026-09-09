@@ -1,269 +1,156 @@
-// lib/utils/video_compressor.dart
-
 import 'dart:io';
-import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min_gpl/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
+import 'package:video_compress/video_compress.dart';
+import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 class VideoCompressor {
   static const int maxUncompressedSizeBytes = 15 * 1024 * 1024;
 
-  static Future<File?> compressVideo(String inputPath) async {
-    return await compressVideoWithProgress(inputPath: inputPath);
-  }
-
-  static Future<File?> compressVideoWithProgress({
-    required String inputPath,
-    Function(double progress)? onProgress,
-  }) async {
-    final inputFile = File(inputPath);
-    if (!await inputFile.exists()) {
-      print('❌ [FFMPEG] Input file does not exist.');
-      return null;
-    }
-
-    final originalSizeBytes = await inputFile.length();
-    final originalSizeMB = originalSizeBytes / (1024 * 1024);
-
-    if (originalSizeBytes <= maxUncompressedSizeBytes) {
-      print('⚡ [FFMPEG] File size is ${originalSizeMB.toStringAsFixed(2)} MB (<= 15 MB). Skipping.');
-      onProgress?.call(100.0);
-      return inputFile;
-    }
-
-    final stopwatch = Stopwatch()..start();
-
+  /// Безопасное получение миниатюры (thumbnail) без вылетов на null.
+  /// 
+  /// Использует сначала video_compress, а в случае NullThrownError/Exception
+  /// переключается на fallback через video_thumbnail.
+  static Future<File?> generateThumbnail(File inputFile) async {
     try {
-      final tempDir = await getTemporaryDirectory();
-      final outputFileName = 'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4';
-      final outputPath = p.join(tempDir.path, outputFileName);
-      final outputFile = File(outputPath);
-
-      if (await outputFile.exists()) {
-        await outputFile.delete();
+      if (!await inputFile.exists()) {
+        debugPrint('❌ [THUMBNAIL] Input file does not exist');
+        return null;
       }
 
-      final totalDurationMs = await getVideoDurationMs(inputPath);
+      debugPrint('🎬 [THUMBNAIL] Generating thumbnail...');
 
-      // ============================================================
-      // 🔥 БЕЗОПАСНЫЙ SCALE (ЧЁТНЫЕ ПИКСЕЛИ) + HDR → SDR
-      // ============================================================
-      final String scaleFilter =
-          "scale='trunc(if(gt(iw,ih),-2,1080)/2)*2':'trunc(if(gt(iw,ih),1080,-2)/2)*2',"
-          "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
-          "format=yuv420p";
+      // 1. Первая попытка: через video_compress
+      try {
+        final File thumbnailFile = await VideoCompress.getFileThumbnail(
+          inputFile.path,
+          quality: 80,
+          position: 1000, // 1 секунда
+        );
 
-      // 🔥 АППАРАТНОЕ УСКОРЕНИЕ ДЛЯ ПЛАТФОРМ
-      final bool isIOS = Platform.isIOS;
-      final String videoCodec = isIOS ? 'h264_videotoolbox' : 'libx264';
-      final List<String> codecParams = isIOS
-          ? ['-q:v', '65'] // Быстрое аппаратное сжатие Apple
-          : ['-preset', 'ultrafast', '-crf', '26', '-profile:v', 'baseline', '-level', '4.0'];
+        if (await thumbnailFile.exists()) {
+          debugPrint('✅ [THUMBNAIL] Generated via video_compress');
+          return thumbnailFile;
+        }
+      } catch (e) {
+        debugPrint('⚠️ [THUMBNAIL] video_compress failed ($e). Trying fallback...');
+      }
 
-      print('🚀 [FFMPEG] Starting compression with $videoCodec (HDR→SDR)');
-      print('📊 [FFMPEG] Original: ${originalSizeMB.toStringAsFixed(2)} MB');
+      // 2. Вторая попытка (Fallback): через video_thumbnail
+      final String? thumbPath = await vt.VideoThumbnail.thumbnailFile(
+        video: inputFile.path,
+        imageFormat: vt.ImageFormat.JPEG,
+        maxHeight: 400,
+        quality: 75,
+        timeMs: 1000,
+      );
 
-      final List<String> args = [
-        '-y',
-        '-i',
-        inputFile.path,
-        '-vf',
-        scaleFilter,
-        '-c:v',
-        videoCodec,
-        ...codecParams,
-        '-c:a',
-        'aac',
-        '-b:a',
-        '128k',
-        '-movflags',
-        '+faststart',
-        outputPath,
-      ];
-
-      print('📝 [FFMPEG] Command: ${args.join(' ')}');
-
-      final session = await FFmpegKit.executeWithArguments(args);
-      final returnCode = await session.getReturnCode();
-      stopwatch.stop();
-
-      if (ReturnCode.isSuccess(returnCode)) {
-        if (await outputFile.exists()) {
-          final compressedSizeBytes = await outputFile.length();
-          final compressedSizeMB = compressedSizeBytes / (1024 * 1024);
-
-          if (compressedSizeBytes < originalSizeBytes) {
-            print('✅ [FFMPEG] Compression successful in ${stopwatch.elapsed.inSeconds}s.');
-            print('📉 [FFMPEG] ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB');
-            onProgress?.call(100.0);
-            return outputFile;
-          }
-
-          await outputFile.delete();
-          print('⚠️ [FFMPEG] Compressed file was larger than original. Skipping.');
+      if (thumbPath != null) {
+        final file = File(thumbPath);
+        if (await file.exists()) {
+          debugPrint('✅ [THUMBNAIL] Generated via fallback (video_thumbnail)');
+          return file;
         }
       }
 
-      // ============================================================
-      // 🔥 FALLBACK: 720p (SOFTWARE)
-      // ============================================================
-      print('🔄 [FFMPEG] Primary compression failed, trying 720p fallback...');
-      return await _compressFallback(inputFile, outputPath, totalDurationMs, onProgress, stopwatch);
-
+      debugPrint('❌ [THUMBNAIL] All thumbnail generation attempts failed');
+      return null;
     } catch (e, stackTrace) {
-      stopwatch.stop();
-      print('❌ [FFMPEG] Exception during compression: $e\n$stackTrace');
-      return inputFile;
-    }
-  }
-
-  static Future<File?> _compressFallback(
-    File inputFile,
-    String outputPath,
-    int totalDurationMs,
-    Function(double progress)? onProgress,
-    Stopwatch stopwatch,
-  ) async {
-    final originalSizeBytes = await inputFile.length();
-    final originalSizeMB = originalSizeBytes / (1024 * 1024);
-
-    final String scaleFilter =
-        "scale='trunc(if(gt(iw,ih),-2,720)/2)*2':'trunc(if(gt(iw,ih),720,-2)/2)*2',"
-        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
-        "format=yuv420p";
-
-    final List<String> args = [
-      '-y',
-      '-i',
-      inputFile.path,
-      '-vf',
-      scaleFilter,
-      '-c:v',
-      'libx264',
-      '-preset',
-      'ultrafast',
-      '-crf',
-      '28',
-      '-profile:v',
-      'baseline',
-      '-level',
-      '3.1',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '96k',
-      '-movflags',
-      '+faststart',
-      outputPath,
-    ];
-
-    print('🔄 [FFMPEG] Running fallback: 720p SDR');
-    final session = await FFmpegKit.executeWithArguments(args);
-    final returnCode = await session.getReturnCode();
-    stopwatch.stop();
-
-    if (ReturnCode.isSuccess(returnCode)) {
-      final outputFile = File(outputPath);
-      if (await outputFile.exists()) {
-        final compressedSizeBytes = await outputFile.length();
-        if (compressedSizeBytes < originalSizeBytes) {
-          final compressedSizeMB = compressedSizeBytes / (1024 * 1024);
-          print('✅ [FFMPEG] 720p fallback successful');
-          print('📉 [FFMPEG] ${originalSizeMB.toStringAsFixed(2)} MB -> ${compressedSizeMB.toStringAsFixed(2)} MB');
-          onProgress?.call(100.0);
-          return outputFile;
-        }
-        await outputFile.delete();
-      }
-    }
-
-    return inputFile;
-  }
-
-  static Future<int> getVideoDurationMs(String videoPath) async {
-    try {
-      final session = await FFprobeKit.getMediaInformation(videoPath);
-      final information = session.getMediaInformation();
-      if (information != null) {
-        final durationStr = information.getDuration();
-        if (durationStr != null) {
-          final seconds = double.tryParse(durationStr) ?? 0.0;
-          return (seconds * 1000).toInt();
-        }
-      }
-    } catch (e) {
-      print('❌ [FFPROBE] Failed to extract duration: $e');
-    }
-    return 0;
-  }
-
-  // ============================================================
-  // 🔥 THUMBNAIL — ТОЖЕ HDR→SDR
-  // ============================================================
-  static Future<File?> generateThumbnail(String videoPath) async {
-    try {
-      final tempDir = await getTemporaryDirectory();
-      final outputPath = '${tempDir.path}/thumb_${DateTime.now().millisecondsSinceEpoch}.jpg';
-
-      final List<String> args = [
-        '-ss',
-        '00:00:00.500',
-        '-i',
-        videoPath,
-        '-vf',
-        "scale='trunc(if(gt(iw,ih),-2,720)/2)*2':'trunc(if(gt(iw,ih),720,-2)/2)*2',"
-        "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709,"
-        "format=yuv420p",
-        '-vframes',
-        '1',
-        '-q:v',
-        '2',
-        '-y',
-        outputPath,
-      ];
-
-      print('🎨 [FFMPEG] Generating thumbnail (HDR→SDR)...');
-
-      final session = await FFmpegKit.executeWithArguments(args);
-
-      if (ReturnCode.isSuccess(await session.getReturnCode())) {
-        final thumbFile = File(outputPath);
-        if (await thumbFile.exists() && await thumbFile.length() > 0) {
-          print('✅ [FFMPEG] Thumbnail generated');
-          return thumbFile;
-        }
-      }
-
-      // 🔥 FALLBACK
-      print('⚠️ [FFMPEG] Fallback thumbnail...');
-      final List<String> fallbackArgs = [
-        '-ss',
-        '00:00:00.500',
-        '-i',
-        videoPath,
-        '-vframes',
-        '1',
-        '-q:v',
-        '2',
-        '-y',
-        outputPath,
-      ];
-
-      final fallbackSession = await FFmpegKit.executeWithArguments(fallbackArgs);
-      if (ReturnCode.isSuccess(await fallbackSession.getReturnCode())) {
-        final thumbFile = File(outputPath);
-        if (await thumbFile.exists() && await thumbFile.length() > 0) {
-          print('✅ [FFMPEG] Thumbnail generated (fallback)');
-          return thumbFile;
-        }
-      }
-
-      return null;
-    } catch (e) {
-      print('❌ [FFMPEG] Thumbnail generation failed: $e');
+      debugPrint('❌ [THUMBNAIL] Critical error: $e');
+      debugPrint('$stackTrace');
       return null;
     }
+  }
+
+  /// Безопасное получение длительности видео.
+  static Future<int?> getVideoDurationMs(String filePath) async {
+    try {
+      final info = await VideoCompress.getMediaInfo(filePath);
+      return info.duration?.round();
+    } catch (e) {
+      debugPrint('❌ [VIDEO] Duration error: $e');
+      return null;
+    }
+  }
+
+  /// Сжатие видео с проверкой на HDR и размер.
+  static Future<File?> compressVideo(
+    File inputFile, {
+    void Function(double progress)? onProgress,
+  }) async {
+    Subscription? subscription;
+
+    try {
+      if (!await inputFile.exists()) return null;
+
+      final inputSize = await inputFile.length();
+      final isHdr = await _isHdrVideo(inputFile.path);
+
+      if (inputSize <= maxUncompressedSizeBytes && !isHdr) {
+        onProgress?.call(1.0);
+        return inputFile;
+      }
+
+      if (onProgress != null) {
+        subscription = VideoCompress.compressProgress$.subscribe((progress) {
+          onProgress((progress / 100.0).clamp(0.0, 1.0));
+        });
+      }
+
+      final MediaInfo? info = await VideoCompress.compressVideo(
+        inputFile.path,
+        quality: VideoQuality.HighestQuality,
+        deleteOrigin: false,
+        includeAudio: true,
+      );
+
+      subscription?.unsubscribe();
+
+      if (info?.file == null || !await info!.file!.exists()) {
+        return null;
+      }
+
+      final compressedFile = info.file!;
+      final compressedSize = await compressedFile.length();
+
+      if (compressedSize >= inputSize && !isHdr) {
+        await deleteIfExists(compressedFile);
+        onProgress?.call(1.0);
+        return inputFile;
+      }
+
+      onProgress?.call(1.0);
+      return compressedFile;
+    } catch (e) {
+      subscription?.unsubscribe();
+      debugPrint('❌ [VIDEO] Compress error: $e');
+      return null;
+    }
+  }
+
+  static Future<bool> _isHdrVideo(String filePath) async {
+    try {
+      final pathLower = filePath.toLowerCase();
+      if (pathLower.contains('dovi') || pathLower.contains('hdr')) return true;
+
+      final info = await VideoCompress.getMediaInfo(filePath);
+      if ((info.width ?? 0) >= 3840 || (info.height ?? 0) >= 3840) return true;
+
+      return false;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> clearCache() async {
+    try {
+      await VideoCompress.deleteAllCache();
+    } catch (_) {}
+  }
+
+  static Future<void> deleteIfExists(File? file) async {
+    if (file == null) return;
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 }
