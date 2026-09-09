@@ -60,6 +60,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
 
+  // ✅ Только один thumbnail для всего экрана
   File? _cachedThumbnail;
   bool _thumbnailLoading = false;
 
@@ -74,6 +75,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     print('🔥 [CAPTION] Total files: ${widget.selectedFiles.length}');
     print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
     
+    // ✅ Генерируем thumbnail только один раз при инициализации
     if (_isVideo) {
       _preloadThumbnail();
     }
@@ -92,13 +94,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     super.dispose();
   }
 
+  // ✅ Генерация thumbnail ТОЛЬКО здесь (один раз)
   void _preloadThumbnail() async {
     if (_cachedThumbnail != null || _thumbnailLoading) return;
     
     _thumbnailLoading = true;
     try {
       final videoFile = widget.selectedFiles.first;
-      // 🔥 ИСПРАВЛЕНО: передаём File, а не String
+      print('🎬 [THUMBNAIL] Generating thumbnail...');
+      
+      // ✅ Используем VideoCompressor.generateThumbnail (с H.264 копией)
       final thumbnail = await VideoCompressor.generateThumbnail(videoFile);
       
       if (mounted) {
@@ -106,6 +111,12 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           _cachedThumbnail = thumbnail;
           _thumbnailLoading = false;
         });
+        
+        if (thumbnail != null) {
+          print('✅ [THUMBNAIL] Generated successfully');
+        } else {
+          print('⚠️ [THUMBNAIL] Could not generate thumbnail');
+        }
       }
     } catch (e) {
       print('❌ [THUMBNAIL] Preload error: $e');
@@ -178,10 +189,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ВИДЕО В R2 (с параллельной обработкой)
+  // 🔥 ЗАГРУЗКА ВИДЕО В R2 (БЕЗ повторной генерации thumbnail)
   // ============================================================
   Future<Map<String, String?>> _processVideo(String userId) async {
-    print('🎬 [PROCESS] Starting parallel video processing...');
+    print('🎬 [PROCESS] Starting video processing...');
     final stopwatch = Stopwatch()..start();
     
     final videoFile = widget.selectedFiles.first;
@@ -193,18 +204,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
-    // 🔥 ПАРАЛЛЕЛЬНО: сжатие видео + генерация обложки
-    // 🔥 ИСПРАВЛЕНО: передаём File, а не String
-    final results = await Future.wait([
-      VideoCompressor.compressVideo(videoFile),
-      VideoCompressor.generateThumbnail(videoFile),
-    ]);
-
-    final compressedVideo = results[0] as File? ?? videoFile;
-    final thumbnail = results[1] as File?;
-
+    // ✅ ТОЛЬКО сжатие видео (НЕ генерируем thumbnail повторно)
+    // ✅ Используем существующий _cachedThumbnail
+    print('🎬 [PROCESS] Compressing video...');
+    final compressedVideo = await VideoCompressor.compressVideo(videoFile);
+    
     stopwatch.stop();
-    print('⏱️ [PROCESS] Compression+Thumbnail took: ${stopwatch.elapsed.inSeconds} sec');
+    print('⏱️ [PROCESS] Compression took: ${stopwatch.elapsed.inSeconds} sec');
 
     if (mounted) {
       setState(() {
@@ -216,23 +222,30 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     // 🔥 ПАРАЛЛЕЛЬНО: загрузка видео и обложки
     final uploadStopwatch = Stopwatch()..start();
     
-    final uploadTasks = <Future>[];
     String? videoUrl;
     String? thumbnailUrl;
 
     // Загрузка видео
-    uploadTasks.add(() async {
+    try {
       videoUrl = await _r2Service.uploadVideo(compressedVideo, userId);
-    }());
-
-    // Загрузка обложки (если есть)
-    if (thumbnail != null) {
-      uploadTasks.add(() async {
-        thumbnailUrl = await _uploadThumbnailToStorage(thumbnail, userId);
-      }());
+      print('✅ [PROCESS] Video uploaded: $videoUrl');
+    } catch (e) {
+      print('❌ [PROCESS] Video upload failed: $e');
     }
 
-    await Future.wait(uploadTasks);
+    // ✅ Загрузка существующего thumbnail (НЕ генерируем новый)
+    if (_cachedThumbnail != null && await _cachedThumbnail!.exists()) {
+      try {
+        print('🎬 [PROCESS] Uploading cached thumbnail...');
+        thumbnailUrl = await _uploadThumbnailToStorage(_cachedThumbnail!, userId);
+        print('✅ [PROCESS] Thumbnail uploaded: $thumbnailUrl');
+      } catch (e) {
+        print('❌ [PROCESS] Thumbnail upload failed: $e');
+      }
+    } else {
+      print('⚠️ [PROCESS] No cached thumbnail available');
+    }
+
     uploadStopwatch.stop();
     
     print('⏱️ [PROCESS] Upload took: ${uploadStopwatch.elapsed.inSeconds} sec');
@@ -243,9 +256,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
       }
-      if (thumbnail != null) {
-        await thumbnail.delete();
-      }
+      // ✅ НЕ удаляем _cachedThumbnail, он ещё нужен для отображения
     } catch (e) {
       print('⚠️ [PROCESS] Could not delete temp files: $e');
     }
@@ -313,11 +324,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   Widget _buildVideoThumbnail() {
-    if (_cachedThumbnail != null) {
+    // ✅ Используем кэшированный thumbnail
+    if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
       return Image.file(
         _cachedThumbnail!,
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
+          print('⚠️ [UI] Thumbnail display error: $error');
           return Container(
             color: Colors.grey[900],
             child: const Center(
@@ -332,6 +345,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       );
     }
     
+    // ✅ Показываем индикатор загрузки
     return Container(
       color: Colors.grey[900],
       child: const Center(
@@ -397,8 +411,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         print('🎬 [CAPTION] ========== CREATING VIDEO POST ==========');
         print('🎬 [CAPTION] Username: $userName');
+        print('🎬 [CAPTION] Has thumbnail: ${_cachedThumbnail != null}');
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
+        // ✅ Загружаем видео (без повторной генерации thumbnail)
         final result = await _processVideo(user.uid);
         videoUrl = result['videoUrl'];
         thumbnailUrl = result['thumbnailUrl'];
@@ -417,6 +433,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
         
+        // ✅ Для видео: imageUrls = [thumbnailUrl] (совместимость со старым форматом)
         final Map<String, dynamic> postData = {
           'id': docId,
           'userId': user.uid,
@@ -425,7 +442,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'mediaType': 'video',
           'videoUrl': videoUrl,
           'thumbnailUrl': thumbnailUrl ?? '',
-          'imageUrls': [thumbnailUrl ?? ''],
+          'imageUrls': [thumbnailUrl ?? ''], // ✅ Для совместимости
           'fitModes': fitModesToSave,
           'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
           'caption': fullCaption,
@@ -461,6 +478,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'createdAt': DateTime.now().toIso8601String(),
         };
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
+
+        // ✅ Удаляем thumbnail после публикации
+        if (_cachedThumbnail != null) {
+          try {
+            await _cachedThumbnail!.delete();
+          } catch (_) {}
+        }
 
       } else {
         print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

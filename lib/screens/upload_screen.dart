@@ -290,9 +290,6 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ============================================================
-  // 🔥 1. ЗАМЕНЁННЫЙ _preloadThumbnails
-  // ============================================================
   Future<void> _preloadThumbnails(List<AssetEntity> media) async {
     for (final asset in media) {
       if (_thumbnailCache.containsKey(asset.id) ||
@@ -308,9 +305,6 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ============================================================
-  // 🔥 2. НОВЫЙ _getImageThumbnail
-  // ============================================================
   Future<Uint8List?> _getImageThumbnail(
     AssetEntity asset,
   ) async {
@@ -346,9 +340,6 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ============================================================
-  // 🔥 3. ЗАМЕНЁННЫЙ _getVideoThumbnail (СОВМЕСТИМ С video_compress)
-  // ============================================================
   Future<Uint8List?> _getVideoThumbnail(
     AssetEntity asset,
   ) async {
@@ -363,7 +354,6 @@ class _UploadScreenState extends State<UploadScreen> {
     _loadingAssets.add(asset.id);
 
     try {
-      // Сначала пробуем обычный thumbnail.
       try {
         final thumbnail = await asset.thumbnailDataWithSize(
           const ThumbnailSize(200, 200),
@@ -390,7 +380,6 @@ class _UploadScreenState extends State<UploadScreen> {
         );
       }
 
-      // Native decoder не смог открыть видео → video_compress.
       print(
         '🎬 [THUMBNAIL] Trying video_compress...',
       );
@@ -421,7 +410,6 @@ class _UploadScreenState extends State<UploadScreen> {
         return null;
       }
 
-      // Удаляем временный файл thumbnail
       try {
         await thumbnailFile.delete();
       } catch (_) {}
@@ -454,9 +442,7 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ============================================================
-  // 🔥 ПОЛУЧЕНИЕ ДЛИТЕЛЬНОСТИ ВИДЕО (СОВМЕСТИМ С video_compress)
-  // ============================================================
+  // ✅ ИСПРАВЛЕННЫЙ МЕТОД - передаем File, а не String
   Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
     if (asset.type != AssetType.video) return null;
     
@@ -471,7 +457,8 @@ class _UploadScreenState extends State<UploadScreen> {
       if (file != null) {
         print('🎬 [DURATION] Getting duration for: ${file.path}');
         
-        final durationMs = await VideoCompressor.getVideoDurationMs(file.path);
+        // ✅ ИСПРАВЛЕНО: передаем File, а не String
+        final durationMs = await VideoCompressor.getVideoDurationMs(file);
         if (durationMs != null && durationMs > 0) {
           final duration = Duration(milliseconds: durationMs);
           _durationCache[assetId] = duration;
@@ -498,13 +485,9 @@ class _UploadScreenState extends State<UploadScreen> {
     return await asset.file;
   }
 
-  // ============================================================
-  // 🔥 ВЫБОР ВИДЕО - ПЕРЕДАЁМ ОРИГИНАЛ В POST_PREVIEW_SCREEN
-  // ============================================================
   void _toggleSelection(AssetEntity asset) async {
     _selectionTimer?.cancel();
     
-    // 🔥 ВИДЕО - ПЕРЕДАЁМ ОРИГИНАЛ (БЕЗ СЖАТИЯ!)
     if (asset.type == AssetType.video) {
       print('🎬 [UPLOAD] ========== VIDEO SELECTED ==========');
       print('🎬 [UPLOAD] Asset ID: ${asset.id}');
@@ -517,7 +500,6 @@ class _UploadScreenState extends State<UploadScreen> {
         print('🎬 [UPLOAD] Original file size: ${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB');
         print('🎬 [UPLOAD] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen (без сжатия)');
         
-        // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -539,7 +521,6 @@ class _UploadScreenState extends State<UploadScreen> {
       return;
     }
     
-    // 🔥 ФОТО - ПРОСТО ВЫБОР
     print('📸 [UPLOAD] ========== PHOTO SELECTED ==========');
     print('📸 [UPLOAD] Asset ID: ${asset.id}');
     
@@ -658,7 +639,6 @@ class _UploadScreenState extends State<UploadScreen> {
           print('🎬 [CAMERA] Video captured: ${file.path}');
           print('🎬 [CAMERA] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen');
           
-          // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -793,7 +773,6 @@ class _UploadScreenState extends State<UploadScreen> {
           print('🎬 [FILE_PICKER] Video selected: ${file.path}');
           print('🎬 [FILE_PICKER] 🔥 Передаём ОРИГИНАЛ в PostPreviewScreen');
           
-          // ✅ ИДЁМ В POST_PREVIEW_SCREEN (без компрессии)
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -855,9 +834,6 @@ class _UploadScreenState extends State<UploadScreen> {
     });
   }
 
-  // ============================================================
-  // 🔥 ПЕРЕХОД В POST_PREVIEW_SCREEN ДЛЯ ФОТО
-  // ============================================================
   void _navigateToPreviewFromGallery() async {
     if (_selectedAssetsOrder.isEmpty) return;
     
@@ -943,7 +919,6 @@ class _UploadScreenState extends State<UploadScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Top bar
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               child: Row(
@@ -972,7 +947,6 @@ class _UploadScreenState extends State<UploadScreen> {
               ),
             ),
 
-            // Preview area
             Container(
               height: 280,
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1016,7 +990,6 @@ class _UploadScreenState extends State<UploadScreen> {
               ),
             ),
 
-            // Albums
             if (_albums.isNotEmpty)
               Column(
                 children: [
@@ -1076,7 +1049,6 @@ class _UploadScreenState extends State<UploadScreen> {
                 ],
               ),
 
-            // Bottom buttons
             Container(
               color: Colors.black,
               padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
@@ -1090,9 +1062,6 @@ class _UploadScreenState extends State<UploadScreen> {
               ),
             ),
 
-            // ============================================================
-            // 🔥 ГРИД - ВЫБОР ФОТО (ИСПРАВЛЕНО!)
-            // ============================================================
             Expanded(
               child: Container(
                 color: Colors.black,
@@ -1144,7 +1113,6 @@ class _UploadScreenState extends State<UploadScreen> {
                             final isVideo = asset.type == AssetType.video;
                             
                             return FutureBuilder<Uint8List?>(
-                              // 🔥 4. ИСПРАВЛЕННЫЙ future
                               future: asset.type == AssetType.video
                                   ? _getVideoThumbnail(asset)
                                   : _getImageThumbnail(asset),
@@ -1161,7 +1129,6 @@ class _UploadScreenState extends State<UploadScreen> {
                                       child: Stack(
                                         fit: StackFit.expand,
                                         children: [
-                                          // ТАМБНЕЙЛ
                                           if (hasThumbnail)
                                             Image.memory(
                                               thumbSnapshot.data!,
@@ -1183,11 +1150,9 @@ class _UploadScreenState extends State<UploadScreen> {
                                               ),
                                             ),
                                           
-                                          // ЗАТЕМНЕНИЕ ПРИ ВЫБОРЕ
                                           if (selectedNumber != null)
                                             Container(color: Colors.black.withOpacity(0.4)),
                                           
-                                          // ВРЕМЯ ДЛЯ ВИДЕО
                                           if (isVideo && duration != null)
                                             Positioned(
                                               bottom: 4,
@@ -1209,7 +1174,6 @@ class _UploadScreenState extends State<UploadScreen> {
                                               ),
                                             ),
                                           
-                                          // НОМЕР ВЫБРАННОГО
                                           if (selectedNumber != null)
                                             Positioned(
                                               top: 4,
