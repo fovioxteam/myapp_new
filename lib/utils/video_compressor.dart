@@ -1,246 +1,147 @@
 import 'dart:io';
 
+import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit_config.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
 import 'package:flutter/foundation.dart';
-import 'package:video_compress/video_compress.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 class VideoCompressor {
   static const int maxUncompressedSizeBytes = 15 * 1024 * 1024; // 15 MB
-  static const int targetCompressedMaxBytes = 35 * 1024 * 1024; // 35 MB
 
-  /// Генерация thumbnail.
-  ///
-  /// Сначала пробуем video_thumbnail (кадр на 1-й секунде).
-  /// Если не получилось — используем video_compress.
-  static Future<File?> generateThumbnail(File inputFile) async {
-    try {
-      if (!await inputFile.exists()) {
-        debugPrint('❌ [THUMBNAIL] Input file does not exist');
-        return null;
-      }
-
-      debugPrint('🎬 [THUMBNAIL] Generating thumbnail...');
-
-      // ------------------------------------------------------------
-      // Попытка 1: video_thumbnail
-      // ------------------------------------------------------------
-      try {
-        final String? thumbPath = await vt.VideoThumbnail.thumbnailFile(
-          video: inputFile.path,
-          imageFormat: vt.ImageFormat.JPEG,
-          maxHeight: 720,
-          quality: 85,
-          timeMs: 1000,
-        );
-
-        if (thumbPath != null) {
-          final file = File(thumbPath);
-
-          if (await file.exists()) {
-            debugPrint('✅ [THUMBNAIL] Generated via video_thumbnail');
-            return file;
-          }
-        }
-      } catch (e) {
-        debugPrint('⚠️ [THUMBNAIL] video_thumbnail failed: $e');
-      }
-
-      // ------------------------------------------------------------
-      // Попытка 2: video_compress
-      // ------------------------------------------------------------
-      try {
-        final File thumbnailFile = await VideoCompress.getFileThumbnail(
-          inputFile.path,
-          quality: 80,
-          position: 1000,
-        );
-
-        if (await thumbnailFile.exists()) {
-          debugPrint('✅ [THUMBNAIL] Generated via video_compress');
-          return thumbnailFile;
-        }
-      } catch (e) {
-        debugPrint('❌ [THUMBNAIL] video_compress failed: $e');
-      }
-
-      debugPrint('❌ [THUMBNAIL] Could not generate thumbnail');
-      return null;
-    } catch (e, stackTrace) {
-      debugPrint('❌ [THUMBNAIL] Critical error: $e');
-      debugPrint('$stackTrace');
-      return null;
-    }
-  }
-
-  /// Получение длительности видео в миллисекундах.
+  /// Получение длительности видео в миллисекундах через FFprobe.
   static Future<int?> getVideoDurationMs(String filePath) async {
     try {
-      final info = await VideoCompress.getMediaInfo(filePath);
-      return info.duration?.round();
+      final session = await FFprobeKit.getMediaInformation(filePath);
+      final information = session.getMediaInformation();
+
+      if (information != null) {
+        final String? durationStr = information.getDuration();
+        if (durationStr != null) {
+          final double? durationSec = double.tryParse(durationStr);
+          if (durationSec != null) {
+            return (durationSec * 1000).round();
+          }
+        }
+      }
+      return null;
     } catch (e) {
-      debugPrint('❌ [VIDEO] Duration error: $e');
+      debugPrint('❌ [FFPROBE] Error getting duration: $e');
       return null;
     }
   }
 
-  /// Сжатие видео.
-  ///
-  /// Логика:
-  /// <= 15 MB → оригинал
-  /// > 15 MB  → 1080p
-  /// 1080p > 35 MB → 720p
-  /// Сжатый >= оригинала → оригинал
+  /// Быстрое извлечение обложки с 1-й секунды.
+  static Future<File?> generateThumbnail(File inputFile) async {
+    try {
+      if (!await inputFile.exists()) return null;
+
+      final String? thumbPath = await vt.VideoThumbnail.thumbnailFile(
+        video: inputFile.path,
+        imageFormat: vt.ImageFormat.JPEG,
+        maxHeight: 720,
+        quality: 85,
+        timeMs: 1000,
+      );
+
+      if (thumbPath != null) {
+        final file = File(thumbPath);
+        if (await file.exists()) return file;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('❌ [THUMBNAIL] Error: $e');
+      return null;
+    }
+  }
+
+  /// Надежное сжатие 1-минутных видео до ~18-22 МБ.
   static Future<File?> compressVideo(
     File inputFile, {
     void Function(double progress)? onProgress,
   }) async {
-    Subscription? subscription;
-
     try {
-      if (!await inputFile.exists()) {
-        debugPrint('❌ [VIDEO] Input file does not exist');
-        return null;
-      }
+      if (!await inputFile.exists()) return null;
 
       final int inputSize = await inputFile.length();
 
-      debugPrint(
-        '🎬 [VIDEO] Original: '
-        '${(inputSize / (1024 * 1024)).toStringAsFixed(1)} MB',
-      );
-
-      // ------------------------------------------------------------
-      // До 15 МБ вообще не трогаем.
-      // ------------------------------------------------------------
+      // Файлы <= 15 МБ отдаем без изменений
       if (inputSize <= maxUncompressedSizeBytes) {
-        debugPrint('✅ [VIDEO] File <= 15 MB, using original');
+        debugPrint('✅ [FFMPEG] File <= 15MB, returning original');
         onProgress?.call(1.0);
         return inputFile;
       }
 
-      // ------------------------------------------------------------
-      // Progress
-      // ------------------------------------------------------------
-      if (onProgress != null) {
-        subscription = VideoCompress.compressProgress$.subscribe((progress) {
-          final double value = (progress / 100.0).clamp(0.0, 1.0);
-          onProgress(value);
-        });
-      }
-
-      // ------------------------------------------------------------
-      // Попытка 1 — Full HD / 1080p
-      // ------------------------------------------------------------
-      debugPrint('🎬 [VIDEO] Compressing to 1080p...');
-
-      MediaInfo? info = await VideoCompress.compressVideo(
-        inputFile.path,
-        quality: VideoQuality.Res1920x1080Quality,
-        deleteOrigin: false,
-        includeAudio: true,
+      final tempDir = await getTemporaryDirectory();
+      final String outputPath = p.join(
+        tempDir.path,
+        'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
       );
 
-      // ------------------------------------------------------------
-      // Проверяем результат 1080p.
-      // ------------------------------------------------------------
-      if (info?.file != null) {
-        final File firstResult = info!.file!;
+      debugPrint('🎬 [FFMPEG] Encoding 1080p with 2.5M bitrate limit...');
 
-        if (await firstResult.exists()) {
-          final int firstSize = await firstResult.length();
+      // Настройка прогресса для UI (исходя из лимита 60000 мс)
+      FFmpegKitConfig.enableStatisticsCallback((stats) {
+        final timeInMs = stats.getTime();
+        if (timeInMs > 0) {
+          final progress = (timeInMs / 60000.0).clamp(0.0, 0.99);
+          onProgress?.call(progress);
+        }
+      });
 
+      // Команда FFmpeg:
+      // - Max 1080p без искажения пропорций
+      // - SDR цвет (yuv420p)
+      // - Ограничение битрейта 2.5M (гарантирует ~18-22 MB на 60 сек)
+      final String command =
+          '-y -i "${inputFile.path}" '
+          '-vf "scale=\'min(1080,iw)\':\'min(1920,ih)\':force_original_aspect_ratio=decrease,format=yuv420p" '
+          '-c:v libx264 -preset ultrafast -b:v 2500k -maxrate 3000k -bufsize 6000k '
+          '-c:a aac -b:a 128k "$outputPath"';
+
+      final session = await FFmpegKit.execute(command);
+      final returnCode = await session.getReturnCode();
+
+      FFmpegKitConfig.enableStatisticsCallback(null);
+
+      if (ReturnCode.isSuccess(returnCode)) {
+        final compressedFile = File(outputPath);
+        if (await compressedFile.exists()) {
+          final int compressedSize = await compressedFile.length();
           debugPrint(
-            '📦 [VIDEO] 1080p result: '
-            '${(firstSize / (1024 * 1024)).toStringAsFixed(1)} MB',
+            '📉 [FFMPEG] Success: '
+            '${(inputSize / (1024 * 1024)).toStringAsFixed(1)} MB -> '
+            '${(compressedSize / (1024 * 1024)).toStringAsFixed(1)} MB',
           );
 
-          // --------------------------------------------------------
-          // Если 1080p > 35 MB → пробуем 720p.
-          // --------------------------------------------------------
-          if (firstSize > targetCompressedMaxBytes) {
-            debugPrint('⚠️ [VIDEO] 1080p > 35 MB, trying 720p...');
-            await deleteIfExists(firstResult);
-
-            info = await VideoCompress.compressVideo(
-              inputFile.path,
-              quality: VideoQuality.Res1280x720Quality,
-              deleteOrigin: false,
-              includeAudio: true,
-            );
+          if (compressedSize >= inputSize) {
+            await deleteIfExists(compressedFile);
+            onProgress?.call(1.0);
+            return inputFile;
           }
+
+          onProgress?.call(1.0);
+          return compressedFile;
         }
       }
 
-      subscription?.unsubscribe();
-      subscription = null;
-
-      // ------------------------------------------------------------
-      // Проверяем финальный результат.
-      // ------------------------------------------------------------
-      if (info?.file == null) {
-        debugPrint('❌ [VIDEO] Compression returned no file');
-        return null;
-      }
-
-      final File compressedFile = info!.file!;
-
-      if (!await compressedFile.exists()) {
-        debugPrint('❌ [VIDEO] Compressed file does not exist');
-        return null;
-      }
-
-      final int compressedSize = await compressedFile.length();
-
-      debugPrint(
-        '📉 [VIDEO] Final: '
-        '${(inputSize / (1024 * 1024)).toStringAsFixed(1)} MB'
-        ' → '
-        '${(compressedSize / (1024 * 1024)).toStringAsFixed(1)} MB',
-      );
-
-      // ------------------------------------------------------------
-      // Если сжатый файл больше или равен оригиналу — используем оригинал.
-      // ------------------------------------------------------------
-      if (compressedSize >= inputSize) {
-        debugPrint(
-          '⚠️ [VIDEO] Compressed file is not smaller. Using original.',
-        );
-        await deleteIfExists(compressedFile);
-        onProgress?.call(1.0);
-        return inputFile;
-      }
-
-      debugPrint('✅ [VIDEO] Compression successful');
-      onProgress?.call(1.0);
-      return compressedFile;
+      debugPrint('❌ [FFMPEG] Failed with return code: $returnCode');
+      return null;
     } catch (e, stackTrace) {
-      subscription?.unsubscribe();
-      debugPrint('❌ [VIDEO] Compression error: $e');
+      FFmpegKitConfig.enableStatisticsCallback(null);
+      debugPrint('❌ [FFMPEG] Critical error: $e');
       debugPrint('$stackTrace');
       return null;
     }
   }
 
-  /// Очистка кэша video_compress.
-  static Future<void> clearCache() async {
-    try {
-      await VideoCompress.deleteAllCache();
-      debugPrint('🧹 [VIDEO] VideoCompress cache cleared');
-    } catch (e) {
-      debugPrint('⚠️ [VIDEO] Cache clear error: $e');
-    }
-  }
-
-  /// Удаление файла, если он существует.
   static Future<void> deleteIfExists(File? file) async {
     if (file == null) return;
-
     try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (e) {
-      debugPrint('⚠️ [VIDEO] Failed to delete file: $e');
-    }
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 }
