@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_min_gpl/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new_min_gpl/statistics.dart';
 
@@ -11,49 +11,145 @@ class VideoCompressor {
   static const int maxOriginalSizeBytes = 15 * 1024 * 1024;
   static const int maxDimension = 1920;
   static const int crf = 20;
-  static const String preset = 'medium';
+  static const String preset = 'fast';
 
-  // ===========================================================================
-  // VIDEO DURATION
-  // ===========================================================================
+  static bool? _hasZscale;
+  static bool? _hasTonemap;
+  static bool? _hasColorspace;
 
-  static Future<int?> getVideoDurationMs(File file) async {
+  static Future<void> _checkFFmpegCapabilities() async {
+    if (_hasZscale != null &&
+        _hasTonemap != null &&
+        _hasColorspace != null) {
+      return;
+    }
+
     try {
-      if (!await file.exists()) return null;
+      final session = await FFmpegKit.execute('-filters');
+      final logs = await session.getLogs();
+      final text = logs.map((e) => e.getMessage().toLowerCase()).join('\n');
 
-      final session = await FFmpegKit.execute(
-        '-v error '
-        '-show_entries format=duration '
-        '-of default=noprint_wrappers=1:nokey=1 '
-        '"${file.path}"',
-      );
+      _hasZscale = RegExp(r'\bzscale\b').hasMatch(text);
+      _hasTonemap = RegExp(r'\btonemap\b').hasMatch(text);
+      _hasColorspace = RegExp(r'\bcolorspace\b').hasMatch(text);
+    } catch (_) {
+      _hasZscale = false;
+      _hasTonemap = false;
+      _hasColorspace = false;
+    }
+  }
+
+  static Future<String> _getProbeOutput(File file) async {
+    try {
+      final session = await FFprobeKit.getMediaInformation(file.path);
+
+      final output = await session.getOutput();
+
+      if (output != null && output.isNotEmpty) {
+        return output.toLowerCase();
+      }
 
       final logs = await session.getLogs();
 
-      for (final log in logs) {
-        final value = double.tryParse(log.getMessage().trim());
+      return logs.map((e) => e.getMessage()).join('\n').toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  }
 
-        if (value != null) {
-          return (value * 1000).round();
+  static Future<bool> isHdrVideo(File file) async {
+    if (!await file.exists()) {
+      return false;
+    }
+
+    final text = await _getProbeOutput(file);
+
+    if (text.isEmpty) {
+      return false;
+    }
+
+    return text.contains('dvhe') ||
+        text.contains('dvh1') ||
+        text.contains('dovi') ||
+        text.contains('bt2020') ||
+        text.contains('arib-std-b67') ||
+        text.contains('smpte2084') ||
+        text.contains('display primary') ||
+        text.contains('mastering display');
+  }
+
+  static Future<int?> getVideoDurationMs(File file) async {
+    try {
+      if (!await file.exists()) {
+        return null;
+      }
+
+      final session = await FFprobeKit.getMediaInformation(file.path);
+      final info = session.getMediaInformation();
+      final duration = info?.getDuration();
+
+      if (duration != null) {
+        final seconds = double.tryParse(duration);
+
+        if (seconds != null && seconds > 0) {
+          return (seconds * 1000).round();
         }
       }
-    } catch (e) {
-      debugPrint('❌ Duration error: $e');
-    }
+    } catch (_) {}
 
     return null;
   }
 
-  // ===========================================================================
-  // THUMBNAIL
-  // ===========================================================================
+  static Future<String> _buildVideoFilter({
+    required bool isHdr,
+    required int targetDimension,
+  }) async {
+    await _checkFFmpegCapabilities();
+
+    final scale =
+        "scale='if(gt(iw,ih),min($targetDimension,iw),-2)':"
+        "'if(gt(iw,ih),-2,min($targetDimension,ih))':"
+        "flags=lanczos";
+
+    if (!isHdr) {
+      return '$scale,format=yuv420p';
+    }
+
+    if (_hasZscale == true && _hasTonemap == true) {
+      return 'zscale=t=linear:npl=100,'
+          'tonemap=mobius,'
+          'zscale=p=bt709:t=bt709:m=bt709,'
+          '$scale,'
+          'format=yuv420p';
+    }
+
+    if (_hasTonemap == true && _hasColorspace == true) {
+      return 'tonemap=mobius,'
+          'colorspace=bt709:'
+          'iall=bt2020:'
+          'itrc=arib-std-b67:'
+          'iprimaries=bt2020,'
+          '$scale,'
+          'format=yuv420p';
+    }
+
+    throw Exception(
+      'HDR video detected, but required FFmpeg HDR filters are unavailable.',
+    );
+  }
 
   static Future<File?> generateThumbnail(File inputFile) async {
     try {
       if (!await inputFile.exists()) {
-        debugPrint('❌ Thumbnail: input file does not exist');
         return null;
       }
+
+      final isHdr = await isHdrVideo(inputFile);
+
+      final filter = await _buildVideoFilter(
+        isHdr: isHdr,
+        targetDimension: 720,
+      );
 
       final tempDir = await getTemporaryDirectory();
 
@@ -64,29 +160,18 @@ class VideoCompressor {
 
       final arguments = <String>[
         '-y',
-
         '-ss',
         '1',
-
         '-i',
         inputFile.path,
-
         '-frames:v',
         '1',
-
         '-vf',
-        "scale='if(gt(iw,ih),min(720,iw),-2)':"
-            "'if(gt(iw,ih),-2,min(720,ih))':"
-            "flags=lanczos,format=yuv420p",
-
+        filter,
         '-q:v',
         '2',
-
         outputPath,
       ];
-
-      debugPrint('🎬 Generating thumbnail...');
-      debugPrint(arguments.join(' '));
 
       final completer = Completer<ReturnCode?>();
 
@@ -105,26 +190,12 @@ class VideoCompressor {
             }
           }
         },
-        (log) {
-          final message = log.getMessage();
-          final lower = message.toLowerCase();
-
-          if (lower.contains('error') ||
-              lower.contains('failed') ||
-              lower.contains('invalid') ||
-              lower.contains('unsupported')) {
-            debugPrint('❌ Thumbnail FFmpeg: $message');
-          }
-        },
       );
 
       final returnCode = await completer.future;
 
-      if (!ReturnCode.isSuccess(returnCode)) {
-        debugPrint(
-          '❌ Thumbnail failed: ${returnCode?.getValue()}',
-        );
-
+      if (!ReturnCode.isSuccess(returnCode) ||
+          !await outputFile.exists()) {
         if (await outputFile.exists()) {
           await outputFile.delete();
         }
@@ -132,45 +203,18 @@ class VideoCompressor {
         return null;
       }
 
-      if (!await outputFile.exists()) {
-        debugPrint('❌ Thumbnail output does not exist');
-        return null;
-      }
-
       final size = await outputFile.length();
 
-      if (size == 0) {
+      if (size <= 0) {
         await outputFile.delete();
         return null;
       }
 
-      debugPrint(
-        '✅ Thumbnail generated: ${outputFile.path} '
-        '(${(size / 1024).toStringAsFixed(1)} KB)',
-      );
-
       return outputFile;
-    } catch (e, stack) {
-      debugPrint('❌ Thumbnail error: $e');
-      debugPrint('$stack');
+    } catch (_) {
       return null;
     }
   }
-
-  // ===========================================================================
-  // SCALE
-  // ===========================================================================
-
-  static String _buildVideoFilter() {
-    return "scale="
-        "'if(gt(iw,ih),min($maxDimension,iw),-2)':"
-        "'if(gt(iw,ih),-2,min($maxDimension,ih))':"
-        "flags=lanczos,format=yuv420p";
-  }
-
-  // ===========================================================================
-  // COMPRESS VIDEO
-  // ===========================================================================
 
   static Future<File> compressVideo(
     File inputFile, {
@@ -184,19 +228,19 @@ class VideoCompressor {
 
     final originalSize = await inputFile.length();
 
-    debugPrint('');
-    debugPrint('🎬 Video compression started');
-    debugPrint(
-      '📦 Original: '
-      '${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB',
-    );
-
-    // Files <= 15 MB are uploaded as-is.
     if (originalSize <= maxOriginalSizeBytes) {
-      debugPrint('✅ File <= 15 MB, compression skipped');
       onProgress?.call(1.0);
       return inputFile;
     }
+
+    final isHdr = await isHdrVideo(inputFile);
+
+    final filter = await _buildVideoFilter(
+      isHdr: isHdr,
+      targetDimension: maxDimension,
+    );
+
+    final durationMs = await getVideoDurationMs(inputFile);
 
     final tempDir = await getTemporaryDirectory();
 
@@ -205,76 +249,45 @@ class VideoCompressor {
 
     final outputFile = File(outputPath);
 
-    final durationMs = await getVideoDurationMs(inputFile);
-
     final arguments = <String>[
       '-y',
-
       '-i',
       inputFile.path,
-
       '-map',
       '0:v:0',
-
       '-map',
       '0:a:0?',
-
       '-vf',
-      _buildVideoFilter(),
-
+      filter,
       '-c:v',
       'libx264',
-
       '-preset',
       preset,
-
       '-crf',
       '$crf',
-
       '-pix_fmt',
       'yuv420p',
-
-      '-color_primaries',
-      'bt709',
-
-      '-color_trc',
-      'bt709',
-
-      '-colorspace',
-      'bt709',
-
       '-c:a',
       'aac',
-
       '-b:a',
       '128k',
-
       '-ac',
       '2',
-
       '-movflags',
       '+faststart',
-
       '-map_metadata',
       '-1',
-
       '-sn',
       '-dn',
-
       outputPath,
     ];
 
-    debugPrint('🎥 FFmpeg compression started');
-
     final completer = Completer<ReturnCode?>();
-
     int lastPercent = -1;
 
     try {
       await FFmpegKit.executeWithArgumentsAsync(
         arguments,
-
-        // Completion
         (session) async {
           try {
             final code = await session.getReturnCode();
@@ -288,40 +301,25 @@ class VideoCompressor {
             }
           }
         },
-
-        // Logs
-        (log) {
-          final message = log.getMessage();
-          final lower = message.toLowerCase();
-
-          if (lower.contains('error') ||
-              lower.contains('failed') ||
-              lower.contains('invalid') ||
-              lower.contains('unsupported')) {
-            debugPrint('❌ FFmpeg: $message');
-          }
-        },
-
-        // Progress
+        null,
         (Statistics statistics) {
-          if (durationMs == null || durationMs <= 0) return;
+          if (durationMs == null || durationMs <= 0) {
+            return;
+          }
 
           final timeMs = statistics.getTime();
 
-          if (timeMs <= 0) return;
+          if (timeMs <= 0) {
+            return;
+          }
 
-          var progress = timeMs / durationMs;
-
-          if (progress > 1) progress = 1;
-          if (progress < 0) progress = 0;
+          final progress =
+              (timeMs / durationMs).clamp(0.0, 1.0).toDouble();
 
           final percent = (progress * 100).round();
 
           if (percent != lastPercent) {
             lastPercent = percent;
-
-            debugPrint('📊 Compression: $percent%');
-
             onProgress?.call(progress);
           }
         },
@@ -336,9 +334,6 @@ class VideoCompressor {
       );
     }
 
-    // IMPORTANT:
-    // executeWithArgumentsAsync() returns before FFmpeg finishes.
-    // We wait for the completion callback here.
     ReturnCode? returnCode;
 
     try {
@@ -380,17 +375,6 @@ class VideoCompressor {
       );
     }
 
-    debugPrint('');
-    debugPrint('📦 Compression finished');
-    debugPrint(
-      '📦 Original: '
-      '${(originalSize / 1024 / 1024).toStringAsFixed(2)} MB',
-    );
-    debugPrint(
-      '📦 Compressed: '
-      '${(compressedSize / 1024 / 1024).toStringAsFixed(2)} MB',
-    );
-
     if (compressedSize >= originalSize) {
       await outputFile.delete();
 
@@ -400,10 +384,6 @@ class VideoCompressor {
     }
 
     onProgress?.call(1.0);
-
-    debugPrint(
-      '✅ Compression success: ${outputFile.path}',
-    );
 
     return outputFile;
   }

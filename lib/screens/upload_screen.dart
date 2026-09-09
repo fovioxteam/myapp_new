@@ -442,37 +442,61 @@ class _UploadScreenState extends State<UploadScreen> {
     }
   }
 
-  // ✅ ИСПРАВЛЕННЫЙ МЕТОД - передаем File, а не String
+  // ✅ ИСПРАВЛЕННЫЙ МЕТОД - сначала asset.duration, потом FFmpeg как fallback
   Future<Duration?> _getVideoDurationForAsset(AssetEntity asset) async {
     if (asset.type != AssetType.video) return null;
-    
+
     final assetId = asset.id;
-    
+
     if (_durationCache.containsKey(assetId)) {
       return _durationCache[assetId];
     }
-    
+
+    // ✅ Сначала используем asset.duration - мгновенно и без FFmpeg
+    try {
+      final seconds = asset.duration;
+
+      print(
+        '🎬 [DURATION] ${asset.id}: '
+        '$seconds seconds',
+      );
+
+      if (seconds > 0) {
+        final duration = Duration(seconds: seconds);
+        _durationCache[assetId] = duration;
+        print('🎬 [DURATION] Duration: ${duration.inSeconds} sec (from photo_manager)');
+        return duration;
+      }
+
+      print(
+        '⚠️ [DURATION] photo_manager returned 0 '
+        'for ${asset.id}, trying file...',
+      );
+    } catch (e) {
+      print('❌ [DURATION] Error reading asset.duration: $e');
+    }
+
+    // ✅ Fallback: пробуем получить файл и достать duration через FFmpeg
     try {
       final file = await asset.file;
-      if (file != null) {
-        print('🎬 [DURATION] Getting duration for: ${file.path}');
+      if (file != null && await file.exists()) {
+        print('🎬 [DURATION] Getting duration from file: ${file.path}');
         
-        // ✅ ИСПРАВЛЕНО: передаем File, а не String
         final durationMs = await VideoCompressor.getVideoDurationMs(file);
         if (durationMs != null && durationMs > 0) {
           final duration = Duration(milliseconds: durationMs);
           _durationCache[assetId] = duration;
-          print('🎬 [DURATION] Duration: ${duration.inSeconds} sec');
+          print('🎬 [DURATION] Duration: ${duration.inSeconds} sec (from FFmpeg)');
           return duration;
         }
       }
     } catch (e) {
-      print('❌ [DURATION] Error: $e');
+      print('❌ [DURATION] Fallback error: $e');
     }
-    
-    print('⚠️ [DURATION] Could not get duration, showing 0:00');
-    _durationCache[assetId] = Duration.zero;
-    return Duration.zero;
+
+    print('⚠️ [DURATION] Could not get duration for ${asset.id}');
+    // ⚠️ Не сохраняем null в кэш, чтобы не блокировать повторные попытки
+    return null;
   }
 
   String _formatDuration(Duration d) {
