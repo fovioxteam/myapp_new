@@ -4,12 +4,9 @@ import 'package:video_compress/video_compress.dart';
 import 'package:video_thumbnail/video_thumbnail.dart' as vt;
 
 class VideoCompressor {
-  static const int maxUncompressedSizeBytes = 15 * 1024 * 1024;
+  static const int maxUncompressedSizeBytes = 15 * 1024 * 1024; // 15 MB
 
-  /// Безопасное получение миниатюры (thumbnail) без вылетов на null.
-  /// 
-  /// Использует сначала video_compress, а в случае NullThrownError/Exception
-  /// переключается на fallback через video_thumbnail.
+  /// Извлечение обложки в начале видео (1-я секунда).
   static Future<File?> generateThumbnail(File inputFile) async {
     try {
       if (!await inputFile.exists()) {
@@ -19,12 +16,33 @@ class VideoCompressor {
 
       debugPrint('🎬 [THUMBNAIL] Generating thumbnail...');
 
-      // 1. Первая попытка: через video_compress
+      // 1. Основной надежный вариант: video_thumbnail (четко вырезает нужный миллисекундный кадр)
+      try {
+        final String? thumbPath = await vt.VideoThumbnail.thumbnailFile(
+          video: inputFile.path,
+          imageFormat: vt.ImageFormat.JPEG,
+          maxHeight: 600,
+          quality: 85,
+          timeMs: 1000, // Кадр на 1-й секунде
+        );
+
+        if (thumbPath != null) {
+          final file = File(thumbPath);
+          if (await file.exists()) {
+            debugPrint('✅ [THUMBNAIL] Generated via video_thumbnail (1s frame)');
+            return file;
+          }
+        }
+      } catch (e) {
+        debugPrint('⚠️ [THUMBNAIL] video_thumbnail failed ($e). Trying fallback...');
+      }
+
+      // 2. Фолбэк: video_compress
       try {
         final File thumbnailFile = await VideoCompress.getFileThumbnail(
           inputFile.path,
           quality: 80,
-          position: 1000, // 1 секунда
+          position: 1000,
         );
 
         if (await thumbnailFile.exists()) {
@@ -32,27 +50,9 @@ class VideoCompressor {
           return thumbnailFile;
         }
       } catch (e) {
-        debugPrint('⚠️ [THUMBNAIL] video_compress failed ($e). Trying fallback...');
+        debugPrint('❌ [THUMBNAIL] Fallback video_compress failed: $e');
       }
 
-      // 2. Вторая попытка (Fallback): через video_thumbnail
-      final String? thumbPath = await vt.VideoThumbnail.thumbnailFile(
-        video: inputFile.path,
-        imageFormat: vt.ImageFormat.JPEG,
-        maxHeight: 400,
-        quality: 75,
-        timeMs: 1000,
-      );
-
-      if (thumbPath != null) {
-        final file = File(thumbPath);
-        if (await file.exists()) {
-          debugPrint('✅ [THUMBNAIL] Generated via fallback (video_thumbnail)');
-          return file;
-        }
-      }
-
-      debugPrint('❌ [THUMBNAIL] All thumbnail generation attempts failed');
       return null;
     } catch (e, stackTrace) {
       debugPrint('❌ [THUMBNAIL] Critical error: $e');
@@ -61,7 +61,7 @@ class VideoCompressor {
     }
   }
 
-  /// Безопасное получение длительности видео.
+  /// Получение длительности видео (в мс).
   static Future<int?> getVideoDurationMs(String filePath) async {
     try {
       final info = await VideoCompress.getMediaInfo(filePath);
@@ -72,7 +72,8 @@ class VideoCompressor {
     }
   }
 
-  /// Сжатие видео с проверкой на HDR и размер.
+  /// Эффективное сжатие видео.
+  /// Переведено на MediumQuality для ощутимого уменьшения размера файла (до 30-60%).
   static Future<File?> compressVideo(
     File inputFile, {
     void Function(double progress)? onProgress,
@@ -96,9 +97,10 @@ class VideoCompressor {
         });
       }
 
+      // MediumQuality дает оптимальный баланс: уменьшает размер в 2-4 раза при отличном качестве
       final MediaInfo? info = await VideoCompress.compressVideo(
         inputFile.path,
-        quality: VideoQuality.HighestQuality,
+        quality: VideoQuality.MediumQuality,
         deleteOrigin: false,
         includeAudio: true,
       );
@@ -112,11 +114,14 @@ class VideoCompressor {
       final compressedFile = info.file!;
       final compressedSize = await compressedFile.length();
 
+      // Если после сжатия размер не уменьшился (и это не HDR), отдаем оригинал
       if (compressedSize >= inputSize && !isHdr) {
         await deleteIfExists(compressedFile);
         onProgress?.call(1.0);
         return inputFile;
       }
+
+      debugPrint('📉 [VIDEO] Original: ${(inputSize / (1024 * 1024)).toStringAsFixed(1)}MB -> Compressed: ${(compressedSize / (1024 * 1024)).toStringAsFixed(1)}MB');
 
       onProgress?.call(1.0);
       return compressedFile;
