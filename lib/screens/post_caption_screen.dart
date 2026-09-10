@@ -204,13 +204,21 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
-    // ✅ ТОЛЬКО сжатие видео (НЕ генерируем thumbnail повторно)
-    // ✅ Используем существующий _cachedThumbnail
+    // ✅ compressVideo возвращает File? - может быть null при ошибке
     print('🎬 [PROCESS] Compressing video...');
-    final compressedVideo = await VideoCompressor.compressVideo(videoFile);
+    final File? compressedVideo = await VideoCompressor.compressVideo(videoFile);
     
     stopwatch.stop();
     print('⏱️ [PROCESS] Compression took: ${stopwatch.elapsed.inSeconds} sec');
+
+    // ✅ Если сжатие не удалось (HDR конвертация провалилась) - ошибка
+    if (compressedVideo == null) {
+      print('❌ [PROCESS] Compression returned null - cannot proceed');
+      return {
+        'videoUrl': null,
+        'thumbnailUrl': null,
+      };
+    }
 
     if (mounted) {
       setState(() {
@@ -253,6 +261,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
     // Чистим временные файлы
     try {
+      // ✅ compressedVideo гарантированно не null здесь
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
       }
@@ -420,7 +429,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         thumbnailUrl = result['thumbnailUrl'];
 
         if (videoUrl == null) {
-          throw Exception('Video upload failed');
+          throw Exception(
+            'Video upload failed. The video could not be converted to a compatible format.'
+          );
         }
 
         if (mounted) {
