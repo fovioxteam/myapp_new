@@ -71,10 +71,10 @@ public class HdrToSdrTranscoder {
         let width = abs(naturalSize.width)
         let height = abs(naturalSize.height)
 
-        // Расчет разрешения под 720p с сохранением пропорций (кратно 2)
-        let targetDimension: CGFloat = 720.0
-        let maxDim = max(width, height)
-        let scale = maxDim > targetDimension ? targetDimension / maxDim : 1.0
+        // Расчет разрешения: 720p по МЕНЬШЕЙ стороне (для вертикальных видео 720x1280)
+        let targetShortSide: CGFloat = 720.0
+        let minDim = min(width, height)
+        let scale = minDim > targetShortSide ? targetShortSide / minDim : 1.0
 
         var targetWidth = Int((width * scale) / 2) * 2
         var targetHeight = Int((height * scale) / 2) * 2
@@ -99,7 +99,7 @@ public class HdrToSdrTranscoder {
                 assetReader!.add(videoReaderOutput)
             }
 
-            // 2. Настройка Writer (Кодер H.264 с битрейтом 2.5 Mbps -> размер 3–6 МБ)
+            // 2. Настройка Writer (H.264, 2.5 Mbps -> размер ~3–6 МБ)
             let videoWriterInputSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: targetWidth,
@@ -159,7 +159,7 @@ public class HdrToSdrTranscoder {
 
             let group = DispatchGroup()
 
-            // Сжатие Видео кадра за кадром
+            // Сжатие Видео
             group.enter()
             let videoQueue = DispatchQueue(label: "com.foviox.video_queue")
             videoWriterInput.requestMediaDataWhenReady(on: videoQueue) {
