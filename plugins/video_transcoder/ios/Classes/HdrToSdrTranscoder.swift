@@ -19,6 +19,10 @@ class HdrToSdrTranscoder {
     private var isCancelled = false
     private var progressTimer: Timer?
 
+    // Отслеживание прогресса
+    private var lastWrittenTime: CMTime = .zero
+    private let timeLock = NSLock()
+
     func transcode(
         inputUrl: URL,
         outputUrl: URL,
@@ -159,12 +163,17 @@ class HdrToSdrTranscoder {
             group.enter()
             group.enter()
 
+            // Прогресс через lastWrittenTime
             let totalDuration = CMTimeGetSeconds(asset.duration)
             if totalDuration > 0 {
                 DispatchQueue.main.async {
                     self.progressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
                         guard let self = self else { return }
-                        let current = CMTimeGetSeconds(writer.currentTime)
+
+                        self.timeLock.lock()
+                        let current = CMTimeGetSeconds(self.lastWrittenTime)
+                        self.timeLock.unlock()
+
                         let progress = min(max(current / totalDuration, 0.0), 1.0)
                         self.progressHandler?(progress)
                     }
@@ -182,6 +191,12 @@ class HdrToSdrTranscoder {
                     autoreleasepool {
                         if let pixelBuffer = self.convertSample(sample: sample, width: outWidth, height: outHeight, ciContext: ciContext) {
                             let time = CMSampleBufferGetPresentationTimeStamp(sample)
+
+                            // Обновляем lastWrittenTime для прогресса
+                            self.timeLock.lock()
+                            self.lastWrittenTime = time
+                            self.timeLock.unlock()
+
                             pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: time)
                         }
                     }
