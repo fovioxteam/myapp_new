@@ -25,6 +25,7 @@ class VideoTranscoder {
   static const MethodChannel _method = MethodChannel('com.foviox.app/transcoder');
   static const EventChannel _progress = EventChannel('com.foviox.app/transcoder/progress');
 
+  /// Транскодер HDR → SDR H.264.
   static Future<TranscodeResult> transcodeForUpload(
     File rawFile, {
     int maxOriginalSizeBytes = 15 * 1024 * 1024,
@@ -86,6 +87,55 @@ class VideoTranscoder {
       rethrow;
     } finally {
       await progressSub?.cancel();
+    }
+  }
+
+  /// Быстрая генерация обложки из оригинала через AVAssetImageGenerator.
+  ///
+  /// Работает с HDR / Dolby Vision (iOS сам tone-map-ит).
+  /// Занимает ~0.2–0.5 сек.
+  static Future<File?> generateThumbnail(
+    File rawFile, {
+    int timeMs = 500,
+  }) async {
+    if (!await rawFile.exists()) {
+      return null;
+    }
+
+    final tempDir = await getTemporaryDirectory();
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final outputPath = '${tempDir.path}/thumb_$timestamp.jpg';
+
+    try {
+      final String? resultPath = await _method.invokeMethod(
+        'getVideoThumbnail',
+        {
+          'inputPath': rawFile.path,
+          'outputPath': outputPath,
+          'timeMs': timeMs,
+        },
+      );
+
+      if (resultPath == null || resultPath.isEmpty) {
+        return null;
+      }
+
+      final outputFile = File(resultPath);
+      if (!await outputFile.exists()) {
+        return null;
+      }
+
+      if (await outputFile.length() == 0) {
+        return null;
+      }
+
+      return outputFile;
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 }

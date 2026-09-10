@@ -1,8 +1,8 @@
 // lib/screens/post_caption_screen.dart
 
 import 'dart:io';
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -57,19 +57,69 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
 
+  // Превью видео (обложка)
+  File? _videoThumbnail;
+  bool _thumbnailLoading = false;
+
   bool get _isVideo => widget.mediaType == MediaUploadType.video;
 
   @override
   void initState() {
     super.initState();
     _captionController.addListener(_updateRemainingChars);
+
+    if (_isVideo) {
+      _preloadThumbnail();
+    }
   }
 
   @override
   void dispose() {
     _captionController.removeListener(_updateRemainingChars);
     _captionController.dispose();
+
+    // Чистим thumbnail
+    if (_videoThumbnail != null && _videoThumbnail!.existsSync()) {
+      try {
+        _videoThumbnail!.delete();
+      } catch (_) {}
+    }
+
     super.dispose();
+  }
+
+  // ============================================================
+  // ПРЕДЗАГРУЗКА ОБЛОЖКИ ВИДЕО
+  // ============================================================
+  Future<void> _preloadThumbnail() async {
+    if (_videoThumbnail != null || _thumbnailLoading) return;
+
+    setState(() {
+      _thumbnailLoading = true;
+    });
+
+    try {
+      final videoFile = widget.selectedFiles.first;
+
+      // Быстрая генерация через native (iOS AVAssetImageGenerator)
+      final thumb = await VideoTranscoder.generateThumbnail(
+        videoFile,
+        timeMs: 500,
+      );
+
+      if (mounted) {
+        setState(() {
+          _videoThumbnail = thumb;
+          _thumbnailLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _thumbnailLoading = false;
+        });
+      }
+    }
   }
 
   void _updateRemainingChars() {
@@ -125,16 +175,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
   // ============================================================
   // PROCESS VIDEO
-  //
-  // Порядок:
-  //   1. Native транскодер HDR -> SDR (AVFoundation на iOS)
-  //   2. Fallback на FFmpeg, если плагин недоступен
-  //   3. Thumbnail генерируется из уже сконвертированного SDR файла
-  //   4. Параллельная загрузка видео и thumbnail в R2
   // ============================================================
   Future<Map<String, String?>> _processVideo(String userId) async {
-    final stopwatch = Stopwatch()..start();
-
     final videoFile = widget.selectedFiles.first;
 
     if (mounted) {
@@ -144,9 +186,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
-    // ----------------------------------------------------------
-    // 1. Native transcode HDR -> SDR
-    // ----------------------------------------------------------
     File? compressedVideo;
 
     try {
@@ -161,12 +200,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         },
       );
       compressedVideo = File(result.path);
-      print('✅ [PROCESS] Native transcode done. wasTranscoded=${result.wasTranscoded}');
     } on MissingPluginException {
-      print('⚠️ [PROCESS] Native plugin unavailable, using FFmpeg fallback');
       compressedVideo = await VideoCompressor.compressVideo(videoFile);
     } catch (e) {
-      print('⚠️ [PROCESS] Native transcode failed: $e');
       compressedVideo = await VideoCompressor.compressVideo(videoFile);
     }
 
@@ -176,12 +212,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       );
     }
 
-    stopwatch.stop();
-    print('⏱️ [PROCESS] Transcode took: ${stopwatch.elapsed.inSeconds} sec');
-
-    // ----------------------------------------------------------
-    // 2. Thumbnail из SDR файла
-    // ----------------------------------------------------------
+    // Thumbnail для публикации
     if (mounted) {
       setState(() {
         _uploadStatus = 'Creating thumbnail...';
@@ -189,11 +220,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
-    final thumbnail = await VideoCompressor.generateThumbnail(compressedVideo);
+    // Используем уже загруженную обложку, если есть
+    File? thumbnail = _videoThumbnail;
+    if (thumbnail == null || !thumbnail.existsSync()) {
+      thumbnail = await VideoCompressor.generateThumbnail(compressedVideo);
+    }
 
-    // ----------------------------------------------------------
-    // 3. Upload video + thumbnail
-    // ----------------------------------------------------------
+    // Upload
     if (mounted) {
       setState(() {
         _uploadStatus = 'Uploading video...';
@@ -201,14 +234,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
-    final uploadStopwatch = Stopwatch()..start();
-
     String? videoUrl;
     String? thumbnailUrl;
 
     try {
       videoUrl = await _r2Service.uploadVideo(compressedVideo, userId);
-      print('✅ [PROCESS] Video uploaded: $videoUrl');
     } catch (e) {
       print('❌ [PROCESS] Video upload failed: $e');
     }
@@ -216,28 +246,17 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     if (thumbnail != null && await thumbnail.exists()) {
       try {
         thumbnailUrl = await _uploadThumbnailToStorage(thumbnail, userId);
-        print('✅ [PROCESS] Thumbnail uploaded: $thumbnailUrl');
       } catch (e) {
         print('❌ [PROCESS] Thumbnail upload failed: $e');
       }
     }
 
-    uploadStopwatch.stop();
-    print('⏱️ [PROCESS] Upload took: ${uploadStopwatch.elapsed.inSeconds} sec');
-
-    // ----------------------------------------------------------
-    // 4. Cleanup temp files
-    // ----------------------------------------------------------
+    // Чистим временные файлы транскода
     try {
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
       }
-      if (thumbnail != null && await thumbnail.exists()) {
-        await thumbnail.delete();
-      }
-    } catch (e) {
-      print('⚠️ [PROCESS] Could not delete temp files: $e');
-    }
+    } catch (_) {}
 
     return {
       'videoUrl': videoUrl,
@@ -256,7 +275,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       await storageRef.putFile(thumbnail);
       return await storageRef.getDownloadURL();
     } catch (e) {
-      print('❌ [UPLOAD] Thumbnail upload failed: $e');
       return null;
     }
   }
@@ -296,7 +314,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
           return url;
         } catch (e) {
-          print('❌ [UPLOAD] Photo $index failed: $e');
           return null;
         }
       }());
@@ -307,7 +324,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // PUBLISH POST
+  // PUBLISH
   // ============================================================
   Future<void> _uploadPost() async {
     if (!mounted) return;
@@ -333,8 +350,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       _uploadProgress = 0.0;
       _uploadStatus = 'Preparing...';
     });
-
-    final totalStopwatch = Stopwatch()..start();
 
     try {
       final userDoc =
@@ -363,9 +378,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         thumbnailUrl = result['thumbnailUrl'];
 
         if (videoUrl == null || videoUrl.isEmpty) {
-          throw Exception(
-            'Video upload failed. The video could not be converted to a compatible format.',
-          );
+          throw Exception('Video upload failed.');
         }
 
         if (mounted) {
@@ -485,8 +498,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
       }
 
-      totalStopwatch.stop();
-
       if (!mounted) return;
 
       setState(() {
@@ -502,9 +513,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         Navigator.popUntil(context, (route) => route.isFirst);
         if (mounted) {
           _showSnackBar(
-            _isVideo
-                ? 'Video shared successfully!'
-                : 'Post shared successfully!',
+            _isVideo ? 'Video shared!' : 'Post shared!',
             Colors.green,
           );
         }
@@ -523,6 +532,59 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         });
       }
     }
+  }
+
+  // ============================================================
+  // VIDEO PREVIEW WIDGET
+  // ============================================================
+  Widget _buildVideoPreview() {
+    // Обложка готова — показываем
+    if (_videoThumbnail != null && _videoThumbnail!.existsSync()) {
+      return Image.file(
+        _videoThumbnail!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildVideoFallback(),
+      );
+    }
+
+    // Идёт генерация
+    if (_thumbnailLoading) {
+      return Container(
+        color: Colors.grey[900],
+        child: const Center(
+          child: SizedBox(
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Fallback
+    return _buildVideoFallback();
+  }
+
+  Widget _buildVideoFallback() {
+    return Container(
+      color: Colors.grey[900],
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.videocam, color: Colors.white54, size: 60),
+            SizedBox(height: 12),
+            Text(
+              'Video selected',
+              style: TextStyle(color: Colors.white54, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ============================================================
@@ -651,7 +713,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 child: widget.selectedFiles.isNotEmpty
                                     ? _isVideo
-                                        ? _buildVideoPlaceholder()
+                                        ? _buildVideoPreview()
                                         : Image.file(
                                             widget.selectedFiles.first,
                                             fit: BoxFit.cover,
@@ -895,32 +957,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                   ),
                 ),
               ),
-      ),
-    );
-  }
-
-  Widget _buildVideoPlaceholder() {
-    return Container(
-      color: Colors.grey[900],
-      child: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.videocam,
-              color: Colors.white54,
-              size: 60,
-            ),
-            SizedBox(height: 12),
-            Text(
-              'Video selected',
-              style: TextStyle(
-                color: Colors.white54,
-                fontSize: 14,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }

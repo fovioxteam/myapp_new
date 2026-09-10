@@ -19,7 +19,6 @@ class HdrToSdrTranscoder {
     private var isCancelled = false
     private var progressTimer: Timer?
 
-    // Отслеживание прогресса
     private var lastWrittenTime: CMTime = .zero
     private let timeLock = NSLock()
 
@@ -36,6 +35,7 @@ class HdrToSdrTranscoder {
         let isHdr = HdrDetector.isHdr(asset: asset)
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: inputUrl.path)[.size] as? Int64) ?? 0
 
+        // SDR + маленький → не транскодируем
         if !isHdr && fileSize <= maxOriginalSizeBytes {
             DispatchQueue.main.async {
                 self.progressHandler?(1.0)
@@ -45,7 +45,12 @@ class HdrToSdrTranscoder {
         }
 
         DispatchQueue.global(qos: .userInitiated).async {
-            self.performTranscode(asset: asset, inputUrl: inputUrl, outputUrl: outputUrl, completion: completion)
+            self.performTranscode(
+                asset: asset,
+                inputUrl: inputUrl,
+                outputUrl: outputUrl,
+                completion: completion
+            )
         }
     }
 
@@ -62,6 +67,7 @@ class HdrToSdrTranscoder {
 
             let audioTrack = asset.tracks(withMediaType: .audio).first
 
+            // Целевое разрешение
             let (outWidth, outHeight) = TargetSize.calculate(
                 naturalSize: videoTrack.naturalSize,
                 preferredTransform: videoTrack.preferredTransform
@@ -72,16 +78,65 @@ class HdrToSdrTranscoder {
 
             let videoBitrate = Bitrate.calculate(width: outWidth, height: outHeight)
 
+            // ============================================================
+            // 🔥 КЛЮЧЕВОЕ: AVVideoComposition делает tone mapping
+            // ============================================================
+
+            // 1. Создаём video composition с автоматическим tone mapping
+            let videoComposition = AVMutableVideoComposition(asset: asset) { request in
+                // iOS сам tone-map-ит HDR → SDR на этом шаге.
+                // Мы просто передаём source image дальше — AVFoundation
+                // применит цветовую конверсию через colorPrimaries / transferFunction.
+                let source = request.sourceImage.clampedToExtent()
+                request.finish(with: source, context: nil)
+            }
+
+            // 2. Размер кадра
+            videoComposition.renderSize = CGSize(width: outWidth, height: outHeight)
+
+            // 3. FPS
+            videoComposition.frameDuration = CMTime(
+                value: 1,
+                timescale: CMTimeScale(Int32(targetFps))
+            )
+
+            // 4. 🔥 ЯВНО указываем SDR BT709 на выходе
+            videoComposition.colorPrimaries = AVVideoColorPrimaries_ITU_R_709_2
+            videoComposition.colorTransferFunction = AVVideoTransferFunction_ITU_R_709_2
+            videoComposition.colorYCbCrMatrix = AVVideoYCbCrMatrix_ITU_R_709_2
+
+            // 5. Применяем transform (поворот)
+            let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
+            transformer.setTransform(videoTrack.preferredTransform, at: .zero)
+
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(
+                start: .zero,
+                duration: asset.duration
+            )
+            instruction.layerInstructions = [transformer]
+
+            videoComposition.instructions = [instruction]
+
+            // ============================================================
+            // READER
+            // ============================================================
+
             let reader = try AVAssetReader(asset: asset)
 
-            let videoOutputSettings: [String: Any] = [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-            ]
-            let videoReaderOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: videoOutputSettings)
+            // Видео — через video composition output
+            let videoReaderOutput = AVAssetReaderVideoCompositionOutput(
+                videoTracks: [videoTrack],
+                videoSettings: [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                    kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+                ]
+            )
+            videoReaderOutput.videoComposition = videoComposition
             videoReaderOutput.alwaysCopiesSampleData = false
             reader.add(videoReaderOutput)
 
+            // Аудио
             var audioReaderOutput: AVAssetReaderTrackOutput?
             if let audioTrack = audioTrack {
                 let audioSettings: [String: Any] = [
@@ -93,10 +148,17 @@ class HdrToSdrTranscoder {
                     AVSampleRateKey: 44100,
                     AVNumberOfChannelsKey: 2,
                 ]
-                let out = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: audioSettings)
+                let out = AVAssetReaderTrackOutput(
+                    track: audioTrack,
+                    outputSettings: audioSettings
+                )
                 reader.add(out)
                 audioReaderOutput = out
             }
+
+            // ============================================================
+            // WRITER
+            // ============================================================
 
             try? FileManager.default.removeItem(at: outputUrl)
             let writer = try AVAssetWriter(outputURL: outputUrl, fileType: .mp4)
@@ -105,6 +167,11 @@ class HdrToSdrTranscoder {
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: outWidth,
                 AVVideoHeightKey: outHeight,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2,
+                ],
                 AVVideoCompressionPropertiesKey: [
                     AVVideoAverageBitRateKey: videoBitrate,
                     AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
@@ -113,7 +180,11 @@ class HdrToSdrTranscoder {
                     AVVideoAllowFrameReorderingKey: true,
                 ],
             ]
-            let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+
+            let videoWriterInput = AVAssetWriterInput(
+                mediaType: .video,
+                outputSettings: videoSettings
+            )
             videoWriterInput.expectsMediaDataInRealTime = false
 
             let pixelBufferAttributes: [String: Any] = [
@@ -122,6 +193,7 @@ class HdrToSdrTranscoder {
                 kCVPixelBufferHeightKey as String: outHeight,
                 kCVPixelBufferIOSurfacePropertiesKey as String: [:],
             ]
+
             let pixelBufferAdaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: videoWriterInput,
                 sourcePixelBufferAttributes: pixelBufferAttributes
@@ -143,18 +215,25 @@ class HdrToSdrTranscoder {
                 audioWriterInput = input
             }
 
+            // ============================================================
+            // СТАРТ
+            // ============================================================
+
             guard reader.startReading() else {
-                throw reader.error ?? NSError(domain: "HdrToSdrTranscoder", code: 2, userInfo: [NSLocalizedDescriptionKey: "Reader failed"])
+                throw reader.error ?? NSError(
+                    domain: "HdrToSdrTranscoder",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "Reader failed"]
+                )
             }
             guard writer.startWriting() else {
-                throw writer.error ?? NSError(domain: "HdrToSdrTranscoder", code: 3, userInfo: [NSLocalizedDescriptionKey: "Writer failed"])
+                throw writer.error ?? NSError(
+                    domain: "HdrToSdrTranscoder",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "Writer failed"]
+                )
             }
             writer.startSession(atSourceTime: .zero)
-
-            let ciContext = CIContext(options: [
-                .workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-                .outputColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!,
-            ])
 
             let videoQueue = DispatchQueue(label: "video.transcode.queue")
             let audioQueue = DispatchQueue(label: "audio.transcode.queue")
@@ -163,22 +242,28 @@ class HdrToSdrTranscoder {
             group.enter()
             group.enter()
 
-            // Прогресс через lastWrittenTime
+            // Прогресс
             let totalDuration = CMTimeGetSeconds(asset.duration)
             if totalDuration > 0 {
                 DispatchQueue.main.async {
-                    self.progressTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+                    self.progressTimer = Timer.scheduledTimer(
+                        withTimeInterval: 0.2,
+                        repeats: true
+                    ) { [weak self] _ in
                         guard let self = self else { return }
-
                         self.timeLock.lock()
                         let current = CMTimeGetSeconds(self.lastWrittenTime)
                         self.timeLock.unlock()
-
                         let progress = min(max(current / totalDuration, 0.0), 1.0)
                         self.progressHandler?(progress)
                     }
                 }
             }
+
+            // ============================================================
+            // 🔥 ВИДЕО: прямое копирование pixel buffer (без CIContext!)
+            // AVVideoComposition уже сделал tone mapping.
+            // ============================================================
 
             videoWriterInput.requestMediaDataWhenReady(on: videoQueue) {
                 while videoWriterInput.isReadyForMoreMediaData {
@@ -188,20 +273,22 @@ class HdrToSdrTranscoder {
                         return
                     }
 
-                    autoreleasepool {
-                        if let pixelBuffer = self.convertSample(sample: sample, width: outWidth, height: outHeight, ciContext: ciContext) {
-                            let time = CMSampleBufferGetPresentationTimeStamp(sample)
+                    // Получаем pixel buffer напрямую — уже tone-mapped
+                    if let pixelBuffer = CMSampleBufferGetImageBuffer(sample) {
+                        let time = CMSampleBufferGetPresentationTimeStamp(sample)
 
-                            // Обновляем lastWrittenTime для прогресса
-                            self.timeLock.lock()
-                            self.lastWrittenTime = time
-                            self.timeLock.unlock()
+                        self.timeLock.lock()
+                        self.lastWrittenTime = time
+                        self.timeLock.unlock()
 
-                            pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: time)
-                        }
+                        pixelBufferAdaptor.append(pixelBuffer, withPresentationTime: time)
                     }
                 }
             }
+
+            // ============================================================
+            // АУДИО
+            // ============================================================
 
             if let audioInput = audioWriterInput, let audioOut = audioReaderOutput {
                 audioInput.requestMediaDataWhenReady(on: audioQueue) {
@@ -218,18 +305,28 @@ class HdrToSdrTranscoder {
                 group.leave()
             }
 
+            // ============================================================
+            // ЗАВЕРШЕНИЕ
+            // ============================================================
+
             group.notify(queue: .global(qos: .userInitiated)) {
                 self.stopTimer()
 
                 if self.isCancelled {
                     writer.cancelWriting()
-                    completion(.failure(TranscodeError(code: "CANCELLED", message: "Cancelled")))
+                    completion(.failure(TranscodeError(
+                        code: "CANCELLED",
+                        message: "Cancelled"
+                    )))
                     return
                 }
 
                 if reader.status == .failed {
                     writer.cancelWriting()
-                    completion(.failure(TranscodeError(code: "READER_FAILED", message: reader.error?.localizedDescription ?? "Reader failed")))
+                    completion(.failure(TranscodeError(
+                        code: "READER_FAILED",
+                        message: reader.error?.localizedDescription ?? "Reader failed"
+                    )))
                     return
                 }
 
@@ -237,48 +334,25 @@ class HdrToSdrTranscoder {
                     if writer.status == .completed {
                         DispatchQueue.main.async {
                             self.progressHandler?(1.0)
-                            completion(.success(path: outputUrl.path, wasTranscoded: true))
+                            completion(.success(
+                                path: outputUrl.path,
+                                wasTranscoded: true
+                            ))
                         }
                     } else {
-                        completion(.failure(TranscodeError(code: "WRITER_FAILED", message: writer.error?.localizedDescription ?? "Writer failed")))
+                        completion(.failure(TranscodeError(
+                            code: "WRITER_FAILED",
+                            message: writer.error?.localizedDescription ?? "Writer failed"
+                        )))
                     }
                 }
             }
         } catch {
-            completion(.failure(TranscodeError(code: "TRANSCODE_FAILED", message: error.localizedDescription)))
+            completion(.failure(TranscodeError(
+                code: "TRANSCODE_FAILED",
+                message: error.localizedDescription
+            )))
         }
-    }
-
-    private func convertSample(sample: CMSampleBuffer, width: Int, height: Int, ciContext: CIContext) -> CVPixelBuffer? {
-        guard let imageBuffer = CMSampleBufferGetImageBuffer(sample) else { return nil }
-
-        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-
-        let toneMapped = ciImage.applyingFilter("CIToneCurve", parameters: [
-            "inputPoint0": CIVector(x: 0.0, y: 0.0),
-            "inputPoint1": CIVector(x: 0.25, y: 0.25),
-            "inputPoint2": CIVector(x: 0.5, y: 0.55),
-            "inputPoint3": CIVector(x: 0.75, y: 0.85),
-            "inputPoint4": CIVector(x: 1.0, y: 1.0),
-        ])
-
-        let scale = min(CGFloat(width) / ciImage.extent.width, CGFloat(height) / ciImage.extent.height)
-        let scaled = toneMapped.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-
-        var pixelBuffer: CVPixelBuffer?
-        let attrs: [String: Any] = [
-            kCVPixelBufferCGImageCompatibilityKey as String: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true,
-            kCVPixelBufferIOSurfacePropertiesKey as String: [:],
-        ]
-
-        CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, attrs as CFDictionary, &pixelBuffer)
-
-        guard let outputBuffer = pixelBuffer else { return nil }
-
-        ciContext.render(scaled, to: outputBuffer, bounds: CGRect(x: 0, y: 0, width: width, height: height), colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
-
-        return outputBuffer
     }
 
     private func stopTimer() {
@@ -287,20 +361,33 @@ class HdrToSdrTranscoder {
     }
 }
 
+// ============================================================
+// HDR DETECTION
+// ============================================================
+
 enum HdrDetector {
     static func isHdr(asset: AVAsset) -> Bool {
-        guard let videoTrack = asset.tracks(withMediaType: .video).first else { return false }
+        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+            return false
+        }
 
         for formatDescription in videoTrack.formatDescriptions {
             let desc = formatDescription as! CMFormatDescription
 
-            if let transferFunction = CMFormatDescriptionGetExtension(desc, extensionKey: kCMFormatDescriptionExtension_TransferFunction) as? String {
-                if transferFunction == "ITU_R_2100_HLG" || transferFunction == "SMPTE_ST_2084_PQ" {
+            if let transferFunction = CMFormatDescriptionGetExtension(
+                desc,
+                extensionKey: kCMFormatDescriptionExtension_TransferFunction
+            ) as? String {
+                if transferFunction == "ITU_R_2100_HLG" ||
+                   transferFunction == "SMPTE_ST_2084_PQ" {
                     return true
                 }
             }
 
-            if let primaries = CMFormatDescriptionGetExtension(desc, extensionKey: kCMFormatDescriptionExtension_ColorPrimaries) as? String {
+            if let primaries = CMFormatDescriptionGetExtension(
+                desc,
+                extensionKey: kCMFormatDescriptionExtension_ColorPrimaries
+            ) as? String {
                 if primaries == "ITU_R_2020" {
                     return true
                 }
@@ -322,8 +409,15 @@ enum HdrDetector {
     }
 }
 
+// ============================================================
+// TARGET SIZE
+// ============================================================
+
 enum TargetSize {
-    static func calculate(naturalSize: CGSize, preferredTransform: CGAffineTransform) -> (width: Int, height: Int) {
+    static func calculate(
+        naturalSize: CGSize,
+        preferredTransform: CGAffineTransform
+    ) -> (width: Int, height: Int) {
         let transformed = naturalSize.applying(preferredTransform)
         let absWidth = abs(transformed.width)
         let absHeight = abs(transformed.height)
@@ -332,7 +426,10 @@ enum TargetSize {
         let maxShortSide: CGFloat = 1080
 
         if shortSide <= maxShortSide {
-            return (width: Int(absWidth.rounded()), height: Int(absHeight.rounded()))
+            return (
+                width: Int(absWidth.rounded()),
+                height: Int(absHeight.rounded())
+            )
         }
 
         let scale = maxShortSide / shortSide
@@ -345,6 +442,10 @@ enum TargetSize {
         return (width: evenWidth, height: evenHeight)
     }
 }
+
+// ============================================================
+// BITRATE
+// ============================================================
 
 enum Bitrate {
     static func calculate(width: Int, height: Int) -> Int {
