@@ -1,21 +1,18 @@
 // lib/screens/post_caption_screen.dart
 
 import 'dart:io';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
+import 'package:video_transcoder/video_transcoder.dart';
 
-import '../controllers/profile_controller.dart';
 import '../controllers/post_controller.dart';
-import '../extensions/safe_extensions.dart';
 import '../models/post_tag.dart';
 import '../models/media_types.dart';
-import '../services/recommendation_service.dart';
 import '../services/r2_service.dart';
 import '../utils/image_compressor.dart';
 import '../utils/video_compressor.dart';
@@ -44,13 +41,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   final FirebaseStorage _storage = FirebaseStorage.instance;
   final PostController _postController = Get.find<PostController>();
   final R2Service _r2Service = R2Service();
-  
+
   final TextEditingController _captionController = TextEditingController();
   final int _maxCaptionLength = 2200;
-  
+
   final List<String> _selectedHashtags = [];
   final List<String> _suggestedHashtags = [
-    'art', 'photography', 'nature', 'travel', 'food', 
+    'art', 'photography', 'nature', 'travel', 'food',
     'fashion', 'fitness', 'music', 'love', 'happy',
     'instagood', 'beautiful', 'style', 'life', 'fun',
     'design', 'creative', 'inspiration', 'artwork', 'digitalart'
@@ -60,72 +57,19 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   double _uploadProgress = 0.0;
   String _uploadStatus = '';
 
-  // ✅ Только один thumbnail для всего экрана
-  File? _cachedThumbnail;
-  bool _thumbnailLoading = false;
-
   bool get _isVideo => widget.mediaType == MediaUploadType.video;
 
   @override
   void initState() {
     super.initState();
     _captionController.addListener(_updateRemainingChars);
-    print('🔥 [CAPTION] INITIALIZED');
-    print('🔥 [CAPTION] Media type: ${widget.mediaType}');
-    print('🔥 [CAPTION] Total files: ${widget.selectedFiles.length}');
-    print('🔥 [CAPTION] Tags count: ${widget.tags.length}');
-    
-    // ✅ Генерируем thumbnail только один раз при инициализации
-    if (_isVideo) {
-      _preloadThumbnail();
-    }
   }
 
   @override
   void dispose() {
     _captionController.removeListener(_updateRemainingChars);
     _captionController.dispose();
-    
-    if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
-      _cachedThumbnail!.delete().catchError((e) => print('Thumbnail cleanup error: $e'));
-    }
-    _cachedThumbnail = null;
-    
     super.dispose();
-  }
-
-  // ✅ Генерация thumbnail ТОЛЬКО здесь (один раз)
-  void _preloadThumbnail() async {
-    if (_cachedThumbnail != null || _thumbnailLoading) return;
-    
-    _thumbnailLoading = true;
-    try {
-      final videoFile = widget.selectedFiles.first;
-      print('🎬 [THUMBNAIL] Generating thumbnail...');
-      
-      // ✅ Используем VideoCompressor.generateThumbnail (с H.264 копией)
-      final thumbnail = await VideoCompressor.generateThumbnail(videoFile);
-      
-      if (mounted) {
-        setState(() {
-          _cachedThumbnail = thumbnail;
-          _thumbnailLoading = false;
-        });
-        
-        if (thumbnail != null) {
-          print('✅ [THUMBNAIL] Generated successfully');
-        } else {
-          print('⚠️ [THUMBNAIL] Could not generate thumbnail');
-        }
-      }
-    } catch (e) {
-      print('❌ [THUMBNAIL] Preload error: $e');
-      if (mounted) {
-        setState(() {
-          _thumbnailLoading = false;
-        });
-      }
-    }
   }
 
   void _updateRemainingChars() {
@@ -136,14 +80,14 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
   String get _fullCaptionWithHashtags {
     String caption = _captionController.text.trim();
-    
+
     if (_selectedHashtags.isNotEmpty) {
       if (caption.isNotEmpty && !caption.endsWith(' ')) {
         caption += ' ';
       }
       caption += _selectedHashtags.map((tag) => '#$tag').join(' ');
     }
-    
+
     return caption;
   }
 
@@ -153,23 +97,14 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.grey[900],
-        title: const Text(
-          'Error',
-          style: TextStyle(color: Colors.white),
-        ),
-        content: Text(
-          message,
-          style: const TextStyle(color: Colors.white70),
-        ),
+        title: const Text('Error', style: TextStyle(color: Colors.white)),
+        content: Text(message, style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () {
               if (mounted) Navigator.pop(context);
             },
-            child: const Text(
-              'OK',
-              style: TextStyle(color: Colors.blue),
-            ),
+            child: const Text('OK', style: TextStyle(color: Colors.blue)),
           ),
         ],
       ),
@@ -189,51 +124,88 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ВИДЕО В R2 (БЕЗ повторной генерации thumbnail)
+  // PROCESS VIDEO
+  //
+  // Порядок:
+  //   1. Native транскодер HDR -> SDR (AVFoundation на iOS)
+  //   2. Fallback на FFmpeg, если плагин недоступен
+  //   3. Thumbnail генерируется из уже сконвертированного SDR файла
+  //   4. Параллельная загрузка видео и thumbnail в R2
   // ============================================================
   Future<Map<String, String?>> _processVideo(String userId) async {
-    print('🎬 [PROCESS] Starting video processing...');
     final stopwatch = Stopwatch()..start();
-    
+
     final videoFile = widget.selectedFiles.first;
-    
+
     if (mounted) {
       setState(() {
-        _uploadStatus = 'Compressing video...';
+        _uploadStatus = 'Converting video...';
         _uploadProgress = 0.05;
       });
     }
 
-    // ✅ compressVideo возвращает File? - может быть null при ошибке
-    print('🎬 [PROCESS] Compressing video...');
-    final File? compressedVideo = await VideoCompressor.compressVideo(videoFile);
-    
-    stopwatch.stop();
-    print('⏱️ [PROCESS] Compression took: ${stopwatch.elapsed.inSeconds} sec');
+    // ----------------------------------------------------------
+    // 1. Native transcode HDR -> SDR
+    // ----------------------------------------------------------
+    File? compressedVideo;
 
-    // ✅ Если сжатие не удалось (HDR конвертация провалилась) - ошибка
-    if (compressedVideo == null) {
-      print('❌ [PROCESS] Compression returned null - cannot proceed');
-      return {
-        'videoUrl': null,
-        'thumbnailUrl': null,
-      };
+    try {
+      final result = await VideoTranscoder.transcodeForUpload(
+        videoFile,
+        onProgress: (progress) {
+          if (mounted) {
+            setState(() {
+              _uploadProgress = 0.05 + progress * 0.35;
+            });
+          }
+        },
+      );
+      compressedVideo = File(result.path);
+      print('✅ [PROCESS] Native transcode done. wasTranscoded=${result.wasTranscoded}');
+    } on MissingPluginException {
+      print('⚠️ [PROCESS] Native plugin unavailable, using FFmpeg fallback');
+      compressedVideo = await VideoCompressor.compressVideo(videoFile);
+    } catch (e) {
+      print('⚠️ [PROCESS] Native transcode failed: $e');
+      compressedVideo = await VideoCompressor.compressVideo(videoFile);
     }
 
+    if (compressedVideo == null) {
+      throw Exception(
+        'Video conversion failed. This video format is not supported.',
+      );
+    }
+
+    stopwatch.stop();
+    print('⏱️ [PROCESS] Transcode took: ${stopwatch.elapsed.inSeconds} sec');
+
+    // ----------------------------------------------------------
+    // 2. Thumbnail из SDR файла
+    // ----------------------------------------------------------
     if (mounted) {
       setState(() {
-        _uploadStatus = 'Uploading video...';
-        _uploadProgress = 0.3;
+        _uploadStatus = 'Creating thumbnail...';
+        _uploadProgress = 0.4;
       });
     }
 
-    // 🔥 ПАРАЛЛЕЛЬНО: загрузка видео и обложки
+    final thumbnail = await VideoCompressor.generateThumbnail(compressedVideo);
+
+    // ----------------------------------------------------------
+    // 3. Upload video + thumbnail
+    // ----------------------------------------------------------
+    if (mounted) {
+      setState(() {
+        _uploadStatus = 'Uploading video...';
+        _uploadProgress = 0.5;
+      });
+    }
+
     final uploadStopwatch = Stopwatch()..start();
-    
+
     String? videoUrl;
     String? thumbnailUrl;
 
-    // Загрузка видео
     try {
       videoUrl = await _r2Service.uploadVideo(compressedVideo, userId);
       print('✅ [PROCESS] Video uploaded: $videoUrl');
@@ -241,31 +213,28 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       print('❌ [PROCESS] Video upload failed: $e');
     }
 
-    // ✅ Загрузка существующего thumbnail (НЕ генерируем новый)
-    if (_cachedThumbnail != null && await _cachedThumbnail!.exists()) {
+    if (thumbnail != null && await thumbnail.exists()) {
       try {
-        print('🎬 [PROCESS] Uploading cached thumbnail...');
-        thumbnailUrl = await _uploadThumbnailToStorage(_cachedThumbnail!, userId);
+        thumbnailUrl = await _uploadThumbnailToStorage(thumbnail, userId);
         print('✅ [PROCESS] Thumbnail uploaded: $thumbnailUrl');
       } catch (e) {
         print('❌ [PROCESS] Thumbnail upload failed: $e');
       }
-    } else {
-      print('⚠️ [PROCESS] No cached thumbnail available');
     }
 
     uploadStopwatch.stop();
-    
     print('⏱️ [PROCESS] Upload took: ${uploadStopwatch.elapsed.inSeconds} sec');
-    print('⏱️ [PROCESS] TOTAL time: ${stopwatch.elapsed.inSeconds + uploadStopwatch.elapsed.inSeconds} sec');
 
-    // Чистим временные файлы
+    // ----------------------------------------------------------
+    // 4. Cleanup temp files
+    // ----------------------------------------------------------
     try {
-      // ✅ compressedVideo гарантированно не null здесь
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
       }
-      // ✅ НЕ удаляем _cachedThumbnail, он ещё нужен для отображения
+      if (thumbnail != null && await thumbnail.exists()) {
+        await thumbnail.delete();
+      }
     } catch (e) {
       print('⚠️ [PROCESS] Could not delete temp files: $e');
     }
@@ -276,9 +245,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     };
   }
 
-  Future<String?> _uploadThumbnailToStorage(File thumbnail, String userId) async {
+  Future<String?> _uploadThumbnailToStorage(
+    File thumbnail,
+    String userId,
+  ) async {
     try {
-      final fileName = 'thumbnails/${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final fileName =
+          'thumbnails/${userId}_${DateTime.now().millisecondsSinceEpoch}.jpg';
       final storageRef = _storage.ref().child(fileName);
       await storageRef.putFile(thumbnail);
       return await storageRef.getDownloadURL();
@@ -289,7 +262,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ФОТО (параллельно) — БЕЗОПАСНЫЙ setState
+  // UPLOAD PHOTOS
   // ============================================================
   Future<List<String>> _uploadPhotos(String userId) async {
     final int total = widget.selectedFiles.length;
@@ -302,24 +275,25 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       uploadFutures.add(() async {
         try {
           final compressed = await ImageCompressor.compressImage(file);
-          
-          final fileName = '${userId}_${DateTime.now().millisecondsSinceEpoch}_$index${path.extension(file.path)}';
+
+          final fileName =
+              '${userId}_${DateTime.now().millisecondsSinceEpoch}_$index${path.extension(file.path)}';
           final storageRef = _storage.ref().child('posts').child(fileName);
-          
+
           await storageRef.putFile(compressed);
           final url = await storageRef.getDownloadURL();
-          
+
           if (compressed.path != file.path) {
             await compressed.delete();
           }
-          
+
           if (mounted) {
             setState(() {
               _uploadStatus = 'Uploading photo ${index + 1}/$total...';
               _uploadProgress = 0.1 + ((index + 1) / total) * 0.7;
             });
           }
-          
+
           return url;
         } catch (e) {
           print('❌ [UPLOAD] Photo $index failed: $e');
@@ -332,51 +306,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     return results.whereType<String>().toList();
   }
 
-  Widget _buildVideoThumbnail() {
-    // ✅ Используем кэшированный thumbnail
-    if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
-      return Image.file(
-        _cachedThumbnail!,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          print('⚠️ [UI] Thumbnail display error: $error');
-          return Container(
-            color: Colors.grey[900],
-            child: const Center(
-              child: Icon(
-                Icons.play_circle_outline,
-                color: Colors.white54,
-                size: 50,
-              ),
-            ),
-          );
-        },
-      );
-    }
-    
-    // ✅ Показываем индикатор загрузки
-    return Container(
-      color: Colors.grey[900],
-      child: const Center(
-        child: SizedBox(
-          width: 30,
-          height: 30,
-          child: CircularProgressIndicator(
-            color: Colors.white,
-            strokeWidth: 2,
-          ),
-        ),
-      ),
-    );
-  }
-
   // ============================================================
-  // 🔥 ПУБЛИКАЦИЯ ПОСТА
+  // PUBLISH POST
   // ============================================================
   Future<void> _uploadPost() async {
     if (!mounted) return;
     if (_isUploading) return;
-    
+
     final user = _auth.currentUser;
     if (user == null) {
       _showErrorDialog('You need to be logged in to post');
@@ -384,9 +320,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
 
     final fullCaption = _fullCaptionWithHashtags;
-    
+
     if (fullCaption.length > _maxCaptionLength) {
-      _showErrorDialog('Caption with hashtags is too long (max $_maxCaptionLength characters)');
+      _showErrorDialog(
+        'Caption with hashtags is too long (max $_maxCaptionLength characters)',
+      );
       return;
     }
 
@@ -399,17 +337,20 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     final totalStopwatch = Stopwatch()..start();
 
     try {
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
+      final userDoc =
+          await _firestore.collection('users').doc(user.uid).get();
       if (!mounted) return;
-      
+
       final userData = userDoc.data() ?? {};
-      
-      final String userName = userData['username'] ?? user.displayName ?? 'User';
-      final String userAvatar = userData['avatarUrl'] ?? user.photoURL ?? '';
+
+      final String userName =
+          userData['username'] ?? user.displayName ?? 'User';
+      final String userAvatar =
+          userData['avatarUrl'] ?? user.photoURL ?? '';
 
       final tagsJson = widget.tags.map((e) => e.toJson()).toList();
 
-      final fitModesToSave = widget.fitModes ?? 
+      final fitModesToSave = widget.fitModes ??
           List.filled(widget.selectedFiles.length, 'contain');
 
       String? videoUrl;
@@ -417,20 +358,13 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       List<String> imageUrls = [];
 
       if (_isVideo) {
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('🎬 [CAPTION] ========== CREATING VIDEO POST ==========');
-        print('🎬 [CAPTION] Username: $userName');
-        print('🎬 [CAPTION] Has thumbnail: ${_cachedThumbnail != null}');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-        // ✅ Загружаем видео (без повторной генерации thumbnail)
         final result = await _processVideo(user.uid);
         videoUrl = result['videoUrl'];
         thumbnailUrl = result['thumbnailUrl'];
 
-        if (videoUrl == null) {
+        if (videoUrl == null || videoUrl.isEmpty) {
           throw Exception(
-            'Video upload failed. The video could not be converted to a compatible format.'
+            'Video upload failed. The video could not be converted to a compatible format.',
           );
         }
 
@@ -443,8 +377,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
         final docRef = _firestore.collection('posts').doc();
         final docId = docRef.id;
-        
-        // ✅ Для видео: imageUrls = [thumbnailUrl] (совместимость со старым форматом)
+
         final Map<String, dynamic> postData = {
           'id': docId,
           'userId': user.uid,
@@ -453,9 +386,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'mediaType': 'video',
           'videoUrl': videoUrl,
           'thumbnailUrl': thumbnailUrl ?? '',
-          'imageUrls': [thumbnailUrl ?? ''], // ✅ Для совместимости
+          'imageUrls': [],
           'fitModes': fitModesToSave,
-          'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
+          'singleFitMode':
+              fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
           'caption': fullCaption,
           'hashtags': _selectedHashtags,
           'likes': 0,
@@ -489,20 +423,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'createdAt': DateTime.now().toIso8601String(),
         };
         _postController.addPostsToStorage([newPost], markAsInFeed: true);
-
-        // ✅ Удаляем thumbnail после публикации
-        if (_cachedThumbnail != null) {
-          try {
-            await _cachedThumbnail!.delete();
-          } catch (_) {}
-        }
-
       } else {
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-        print('📸 [CAPTION] ========== CREATING PHOTO POST ==========');
-        print('📸 [CAPTION] Total images: ${widget.selectedFiles.length}');
-        print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
         imageUrls = await _uploadPhotos(user.uid);
 
         if (imageUrls.isEmpty) {
@@ -527,7 +448,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           'mediaType': 'image',
           'imageUrls': imageUrls,
           'fitModes': fitModesToSave,
-          'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
+          'singleFitMode':
+              fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
           'caption': fullCaption,
           'hashtags': _selectedHashtags,
           'likes': 0,
@@ -564,10 +486,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       }
 
       totalStopwatch.stop();
-      print('⏱️ [CAPTION] TOTAL PUBLISH TIME: ${totalStopwatch.elapsed.inSeconds} sec');
 
       if (!mounted) return;
-      
+
       setState(() {
         _uploadStatus = 'Success!';
         _uploadProgress = 1.0;
@@ -576,24 +497,23 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (!mounted) return;
-      
+
       try {
         Navigator.popUntil(context, (route) => route.isFirst);
         if (mounted) {
           _showSnackBar(
-            _isVideo ? 'Video shared successfully!' : 'Post shared successfully!',
+            _isVideo
+                ? 'Video shared successfully!'
+                : 'Post shared successfully!',
             Colors.green,
           );
         }
       } catch (e) {
-        print('⚠️ [CAPTION] Navigation error: $e');
         if (mounted && context.mounted) {
           Navigator.pop(context);
         }
       }
-
     } catch (e) {
-      print('❌ Error uploading post: $e');
       if (!mounted) return;
       _showErrorDialog('Failed to upload post: $e');
     } finally {
@@ -605,6 +525,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
   }
 
+  // ============================================================
+  // BUILD
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -615,9 +538,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
           backgroundColor: Colors.black,
           elevation: 0,
           leading: IconButton(
-            onPressed: _isUploading ? null : () {
-              if (mounted) Navigator.pop(context);
-            },
+            onPressed: _isUploading
+                ? null
+                : () {
+                    if (mounted) Navigator.pop(context);
+                  },
             icon: Icon(
               Icons.arrow_back,
               color: _isUploading ? Colors.grey[600] : Colors.white,
@@ -726,7 +651,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                                 borderRadius: BorderRadius.circular(12),
                                 child: widget.selectedFiles.isNotEmpty
                                     ? _isVideo
-                                        ? _buildVideoThumbnail()
+                                        ? _buildVideoPlaceholder()
                                         : Image.file(
                                             widget.selectedFiles.first,
                                             fit: BoxFit.cover,
@@ -734,7 +659,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                                     : Container(
                                         color: Colors.grey[800],
                                         child: Icon(
-                                          _isVideo ? Icons.videocam : Icons.broken_image,
+                                          _isVideo
+                                              ? Icons.videocam
+                                              : Icons.broken_image,
                                           color: Colors.grey,
                                           size: 50,
                                         ),
@@ -744,13 +671,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
                       ),
-                      
+
                       const SizedBox(height: 16),
 
                       if (widget.selectedFiles.length > 1 && !_isVideo)
                         Center(
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.grey[900],
                               borderRadius: BorderRadius.circular(20),
@@ -770,7 +700,10 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           padding: const EdgeInsets.only(top: 8),
                           child: Center(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.grey[900],
                                 borderRadius: BorderRadius.circular(12),
@@ -778,7 +711,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.link, color: Colors.grey, size: 14),
+                                  const Icon(
+                                    Icons.link,
+                                    color: Colors.grey,
+                                    size: 14,
+                                  ),
                                   const SizedBox(width: 4),
                                   Text(
                                     '${widget.tags.length} tags added',
@@ -792,16 +729,22 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                             ),
                           ),
                         ),
-                      
+
                       const SizedBox(height: 24),
 
                       TextField(
                         controller: _captionController,
                         maxLines: null,
-                        style: const TextStyle(color: Colors.white, fontSize: 16),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Write a caption...',
-                          hintStyle: TextStyle(color: Colors.grey[600], fontSize: 16),
+                          hintStyle: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                          ),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -812,12 +755,16 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                       ),
 
                       Padding(
-                        padding: const EdgeInsets.only(top: 8, bottom: 16),
+                        padding:
+                            const EdgeInsets.only(top: 8, bottom: 16),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 4,
+                              ),
                               decoration: BoxDecoration(
                                 color: Colors.grey[900],
                                 borderRadius: BorderRadius.circular(12),
@@ -825,10 +772,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                               child: Text(
                                 '$_currentLength/$_maxCaptionLength',
                                 style: TextStyle(
-                                  color: _currentLength > _maxCaptionLength 
-                                      ? Colors.red 
-                                      : _currentLength > _maxCaptionLength - 100 
-                                          ? Colors.orange 
+                                  color: _currentLength > _maxCaptionLength
+                                      ? Colors.red
+                                      : _currentLength >
+                                              _maxCaptionLength - 100
+                                          ? Colors.orange
                                           : Colors.grey[400],
                                   fontSize: 12,
                                   fontWeight: FontWeight.w500,
@@ -849,7 +797,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                      
+
                       const SizedBox(height: 12),
 
                       if (_selectedHashtags.isNotEmpty)
@@ -905,10 +853,11 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                         spacing: 8,
                         runSpacing: 8,
                         children: _suggestedHashtags.map((tag) {
-                          final isSelected = _selectedHashtags.contains(tag);
-                          
+                          final isSelected =
+                              _selectedHashtags.contains(tag);
+
                           if (isSelected) return const SizedBox.shrink();
-                          
+
                           return GestureDetector(
                             onTap: () {
                               if (mounted) {
@@ -940,12 +889,38 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           );
                         }).toList(),
                       ),
-                      
+
                       const SizedBox(height: 30),
                     ],
                   ),
                 ),
               ),
+      ),
+    );
+  }
+
+  Widget _buildVideoPlaceholder() {
+    return Container(
+      color: Colors.grey[900],
+      child: const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.videocam,
+              color: Colors.white54,
+              size: 60,
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Video selected',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

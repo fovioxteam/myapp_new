@@ -1,4 +1,4 @@
-name: myapp_new
+﻿name: myapp_new
 description: A new Flutter project
 publish_to: 'none'
 
@@ -96,6 +96,8 @@ dependencies:
   flutter_native_splash: ^2.4.7
   video_compress: ^3.1.4
   ffmpeg_kit_flutter_new_https_gpl: 2.6.2
+  video_transcoder:
+    path: plugins/video_transcoder
 
 dependency_overrides:
   http: ^1.0.0
@@ -117,7 +119,7 @@ flutter:
     - assets/splash/
     - assets/logo/
 
-# ========== ИКОНКА ПРИЛОЖЕНИЯ ==========
+# ========== РРљРћРќРљРђ РџР РР›РћР–Р•РќРРЇ ==========
 flutter_launcher_icons:
   android: true
   ios: true

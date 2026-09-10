@@ -1,0 +1,19 @@
+﻿name: video_transcoder
+description: Native HDR to SDR video transcoder for Flutter (AVFoundation on iOS)
+version: 1.0.0
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.6
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: VideoTranscoderPlugin

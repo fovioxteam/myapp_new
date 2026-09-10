@@ -2021,6 +2021,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.5.6"
+  video_transcoder:
+    dependency: "direct main"
+    description:
+      path: "plugins/video_transcoder"
+      relative: true
+    source: path
+    version: "1.0.0"
   visibility_detector:
     dependency: "direct main"
     description:
