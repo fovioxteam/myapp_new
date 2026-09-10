@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:crypto/crypto.dart';
 
@@ -26,16 +27,20 @@ class R2Service {
   );
 
   // ============================================================
-  // 🔥 ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА ВИДЕО (ЧЕРЕЗ STREAM)
+  // 🔥 ОПТИМИЗИРОВАННАЯ ЗАГРУЗКА ВИДЕО (ЧЕРЕЗ STREAM С ПРОГРЕССОМ)
   // ============================================================
-  Future<String> uploadVideo(File videoFile, String userId) async {
+  Future<String> uploadVideo(
+    File videoFile, 
+    String userId, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     try {
       final fileName = _generateFileName(userId, videoFile);
       final fileSize = await videoFile.length();
 
-      print('📤 [R2] ========== UPLOAD START ==========');
-      print('📤 [R2] FileName: $fileName');
-      print('📤 [R2] FileSize: ${_formatSize(fileSize)}');
+      debugPrint('📤 [R2] ========== UPLOAD START ==========');
+      debugPrint('📤 [R2] FileName: $fileName');
+      debugPrint('📤 [R2] FileSize: ${_formatSize(fileSize)}');
 
       if (fileSize < 1024) {
         throw Exception('Video file is too small ($fileSize bytes). File might be corrupted.');
@@ -52,7 +57,7 @@ class R2Service {
         isUnsignedPayload: true,
       );
 
-      print('📤 [R2] Streaming video file directly to R2...');
+      debugPrint('📤 [R2] Streaming video file directly to R2...');
 
       // 🚀 Передаем Stream напрямую из файла
       final response = await _dio.put(
@@ -63,37 +68,45 @@ class R2Service {
         ),
         onSendProgress: (sent, total) {
           final percent = (sent / total * 100).toStringAsFixed(1);
-          print('📤 [R2] Progress: $percent% ($sent / $total bytes)');
+          debugPrint('📤 [R2] Progress: $percent% ($sent / $total bytes)');
+          
+          if (onProgress != null) {
+            onProgress(sent, total);
+          }
         },
       );
 
-      print('📤 [R2] Response status: ${response.statusCode}');
+      debugPrint('📤 [R2] Response status: ${response.statusCode}');
 
       if (response.statusCode != 200 && response.statusCode != 201) {
-        print('❌ [R2] Upload failed: ${response.statusCode}');
-        print('❌ [R2] Response: ${response.data}');
+        debugPrint('❌ [R2] Upload failed: ${response.statusCode}');
+        debugPrint('❌ [R2] Response: ${response.data}');
         throw Exception('Upload failed: ${response.statusCode}');
       }
 
       final publicUrl = '$_publicUrl/$fileName';
 
-      print('✅ [R2] Upload success!');
-      print('🔗 [R2] URL: $publicUrl');
-      print('📤 [R2] ========== UPLOAD END ==========');
+      debugPrint('✅ [R2] Upload success!');
+      debugPrint('🔗 [R2] URL: $publicUrl');
+      debugPrint('📤 [R2] ========== UPLOAD END ==========');
 
       return publicUrl;
     } catch (e) {
-      print('❌ [R2] Upload error: $e');
+      debugPrint('❌ [R2] Upload error: $e');
       throw Exception('Failed to upload video: $e');
     }
   }
 
   // ============================================================
-  // 🔥 ЗАГРУЗКА ВИДЕО ИЗ Uint8List (например, сжатое в памяти)
+  // 🔥 ЗАГРУЗКА ВИДЕО ИЗ Uint8List (НАПР. СЖАТОЕ В ПАМЯТИ)
   // ============================================================
-  Future<String> uploadVideoBytes(List<int> bytes, String userId) async {
+  Future<String> uploadVideoBytes(
+    List<int> bytes, 
+    String userId, {
+    void Function(int sent, int total)? onProgress,
+  }) async {
     try {
-      final fileName = '${userId}/${DateTime.now().millisecondsSinceEpoch}.mp4';
+      final fileName = '$userId/${DateTime.now().millisecondsSinceEpoch}.mp4';
       final fileSize = bytes.length;
 
       final url = '$_endpoint/$_bucketName/$fileName';
@@ -112,7 +125,11 @@ class R2Service {
         options: Options(headers: headers),
         onSendProgress: (sent, total) {
           final percent = (sent / total * 100).toStringAsFixed(1);
-          print('📤 [R2] Progress: $percent%');
+          debugPrint('📤 [R2] Progress: $percent%');
+          
+          if (onProgress != null) {
+            onProgress(sent, total);
+          }
         },
       );
 
@@ -122,7 +139,7 @@ class R2Service {
 
       return '$_publicUrl/$fileName';
     } catch (e) {
-      print('❌ [R2] Upload bytes error: $e');
+      debugPrint('❌ [R2] Upload bytes error: $e');
       rethrow;
     }
   }
@@ -147,9 +164,9 @@ class R2Service {
         deleteUrl,
         options: Options(headers: headers),
       );
-      print('✅ [R2] File deleted successfully');
+      debugPrint('✅ [R2] File deleted successfully');
     } catch (e) {
-      print('❌ [R2] Delete error: $e');
+      debugPrint('❌ [R2] Delete error: $e');
     }
   }
 

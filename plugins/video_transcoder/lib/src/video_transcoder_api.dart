@@ -22,10 +22,10 @@ class TranscodeResult {
 }
 
 class VideoTranscoder {
-  static const MethodChannel _method = MethodChannel('com.foviox.app/transcoder');
-  static const EventChannel _progress = EventChannel('com.foviox.app/transcoder/progress');
+  static const MethodChannel _method = MethodChannel('video_transcoder/methods');
+  static const EventChannel _progress = EventChannel('video_transcoder/events');
 
-  /// Транскодер HDR → SDR H.264.
+  /// Транскодер HDR → SDR H.264 (720p).
   static Future<TranscodeResult> transcodeForUpload(
     File rawFile, {
     int maxOriginalSizeBytes = 15 * 1024 * 1024,
@@ -51,8 +51,8 @@ class VideoTranscoder {
     }
 
     try {
-      final Map<dynamic, dynamic>? result = await _method.invokeMethod(
-        'transcodeVideoPro',
+      final Map<dynamic, dynamic>? result = await _method.invokeMapMethod(
+        'transcode',
         {
           'inputPath': rawFile.path,
           'outputPath': outputPath,
@@ -90,10 +90,16 @@ class VideoTranscoder {
     }
   }
 
+  /// Отмена текущего процесса транскодирования.
+  static Future<void> cancel() async {
+    try {
+      await _method.invokeMethod('cancel');
+    } on PlatformException catch (e) {
+      throw VideoTranscoderException(e.code, e.message ?? 'Failed to cancel transcoding');
+    }
+  }
+
   /// Быстрая генерация обложки из оригинала через AVAssetImageGenerator.
-  ///
-  /// Работает с HDR / Dolby Vision (iOS сам tone-map-ит).
-  /// Занимает ~0.2–0.5 сек.
   static Future<File?> generateThumbnail(
     File rawFile, {
     int timeMs = 500,
@@ -121,11 +127,7 @@ class VideoTranscoder {
       }
 
       final outputFile = File(resultPath);
-      if (!await outputFile.exists()) {
-        return null;
-      }
-
-      if (await outputFile.length() == 0) {
+      if (!await outputFile.exists() || await outputFile.length() == 0) {
         return null;
       }
 

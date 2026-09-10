@@ -1,35 +1,44 @@
 ﻿import AVFoundation
 import UIKit
 
-struct TranscodeError {
-    let code: String
-    let message: String
+public struct TranscodeError: Error {
+    public let code: String
+    public let message: String
+
+    public init(code: String, message: String) {
+        self.code = code
+        self.message = message
+    }
 }
 
-enum TranscodeOutcome {
+public enum TranscodeOutcome {
     case success(path: String, wasTranscoded: Bool)
     case failure(TranscodeError)
 }
 
-class HdrToSdrTranscoder {
-    var progressHandler: ((Double) -> Void)?
+public class HdrToSdrTranscoder {
+    public var progressHandler: ((Double) -> Void)?
     private var progressTimer: Timer?
     private var exportSession: AVAssetExportSession?
 
-    func transcode(
+    public init() {}
+
+    public func transcode(
         inputUrl: URL,
         outputUrl: URL,
         maxOriginalSizeBytes: Int64,
         completion: @escaping (TranscodeOutcome) -> Void
     ) {
+        stopTimer()
+
         let asset = AVURLAsset(url: inputUrl, options: [
-            AVURLAssetPreferPreciseDurationAndTimingKey: true,
+            AVURLAssetPreferPreciseDurationAndTimingKey: true
         ])
 
         let isHdr = HdrDetector.isHdr(asset: asset)
         let fileSize = (try? FileManager.default.attributesOfItem(atPath: inputUrl.path)[.size] as? Int64) ?? 0
 
-        // SDR + уже маленький → не транскодируем
+        // Если файл SDR и меньше порога — пропускаем транскодинг
         if !isHdr && fileSize <= maxOriginalSizeBytes {
             DispatchQueue.main.async {
                 self.progressHandler?(1.0)
@@ -38,16 +47,14 @@ class HdrToSdrTranscoder {
             return
         }
 
-        // Удаляем output, если остался
         try? FileManager.default.removeItem(at: outputUrl)
 
         // ============================================================
-        // ✅ AVAssetExportSession — системный tone mapping
-        // AVAssetExportPreset1920x1080 сам делает HDR → SDR BT709
+        // ✅ Сжатие до 720p (1280x720 / 720x1280) + Tone Mapping HDR->SDR
         // ============================================================
         guard let session = AVAssetExportSession(
             asset: asset,
-            presetName: AVAssetExportPreset1920x1080
+            presetName: AVAssetExportPreset1280x720
         ) else {
             completion(.failure(TranscodeError(
                 code: "EXPORT_INIT_FAILED",
@@ -57,15 +64,14 @@ class HdrToSdrTranscoder {
         }
 
         self.exportSession = session
-
         session.outputURL = outputUrl
         session.outputFileType = .mp4
         session.shouldOptimizeForNetworkUse = true
 
-        // Прогресс через polling
-        DispatchQueue.main.async {
-            self.progressTimer = Timer.scheduledTimer(
-                withTimeInterval: 0.2,
+        // Опрос прогресса через таймер
+        DispatchQueue.main.async { [weak self] in
+            self?.progressTimer = Timer.scheduledTimer(
+                withTimeInterval: 0.15,
                 repeats: true
             ) { [weak self] _ in
                 guard let self = self, let s = self.exportSession else { return }
@@ -74,19 +80,16 @@ class HdrToSdrTranscoder {
             }
         }
 
-        session.exportAsynchronously {
+        session.exportAsynchronously { [weak self] in
             DispatchQueue.main.async {
-                self.progressTimer?.invalidate()
-                self.progressTimer = nil
+                guard let self = self else { return }
+                self.stopTimer()
                 self.exportSession = nil
 
                 switch session.status {
                 case .completed:
                     self.progressHandler?(1.0)
-                    completion(.success(
-                        path: outputUrl.path,
-                        wasTranscoded: true
-                    ))
+                    completion(.success(path: outputUrl.path, wasTranscoded: true))
 
                 case .failed:
                     completion(.failure(TranscodeError(
@@ -109,47 +112,54 @@ class HdrToSdrTranscoder {
             }
         }
     }
+
+    public func cancel() {
+        exportSession?.cancelExport()
+        stopTimer()
+    }
+
+    private func stopTimer() {
+        progressTimer?.invalidate()
+        progressTimer = nil
+    }
 }
 
 // ============================================================
 // HDR DETECTION
 // ============================================================
 
-enum HdrDetector {
-    static func isHdr(asset: AVAsset) -> Bool {
+public enum HdrDetector {
+    public static func isHdr(asset: AVAsset) -> Bool {
         guard let videoTrack = asset.tracks(withMediaType: .video).first else {
             return false
         }
 
-        for formatDescription in videoTrack.formatDescriptions {
-            let desc = formatDescription as! CMFormatDescription
+        for item in videoTrack.formatDescriptions {
+            let desc = item as! CMFormatDescription
 
-            // Transfer function: HLG или PQ
             if let transferFunction = CMFormatDescriptionGetExtension(
                 desc,
                 extensionKey: kCMFormatDescriptionExtension_TransferFunction
             ) as? String {
-                if transferFunction == "ITU_R_2100_HLG" ||
-                   transferFunction == "SMPTE_ST_2084_PQ" {
+                if transferFunction == (kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String) ||
+                   transferFunction == (kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String) {
                     return true
                 }
             }
 
-            // BT2020 primaries
             if let primaries = CMFormatDescriptionGetExtension(
                 desc,
                 extensionKey: kCMFormatDescriptionExtension_ColorPrimaries
             ) as? String {
-                if primaries == "ITU_R_2020" {
+                if primaries == (kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String) {
                     return true
                 }
             }
         }
 
-        // Dolby Vision
         for track in asset.tracks {
-            for formatDescription in track.formatDescriptions {
-                let desc = formatDescription as! CMFormatDescription
+            for item in track.formatDescriptions {
+                let desc = item as! CMFormatDescription
                 if let extensions = CMFormatDescriptionGetExtensions(desc) as? [String: Any] {
                     if extensions["DolbyVisionConfiguration"] != nil {
                         return true
