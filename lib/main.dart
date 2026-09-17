@@ -44,6 +44,7 @@ import 'controllers/connectivity_controller.dart';
 import 'controllers/deep_link_controller.dart';
 import 'controllers/post_controller.dart';
 import 'controllers/upload_controller.dart';
+import 'controllers/nav_bar_controller.dart'; // 🔥 НОВОЕ
 
 // Services
 import 'services/follow_service.dart';
@@ -70,7 +71,6 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // 🔥 ГЛОБАЛЬНО - ЧЕРНЫЕ ИКОНКИ (для всех экранов)
   StatusBarService().setDarkStatusBar();
   
   await GoogleFonts.pendingFonts([GoogleFonts.pacifico()]);
@@ -165,6 +165,7 @@ Future<void> _initializeServices() async {
   Get.put(MetricsService(), permanent: true);
   Get.put(UnreadService(), permanent: true);
   Get.put(AuthService(), permanent: true);
+  Get.put(NavBarController(), permanent: true); // 🔥 НОВОЕ
   
   await PushNotificationsService().init();
   
@@ -174,7 +175,6 @@ Future<void> _initializeServices() async {
 class MyApp extends StatelessWidget {
   MyApp({super.key});
   
-  // 🔥 ГЛОБАЛЬНЫЙ ОБСЕРВЕР ДЛЯ ОТСЛЕЖИВАНИЯ МАРШРУТОВ
   static final RouteObserver<PageRoute> routeObserver = RouteObserver<PageRoute>();
 
   @override
@@ -465,7 +465,6 @@ class _ConnectivityWrapper extends StatelessWidget {
   }
 }
 
-// ========== AUTH WRAPPER ==========
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
 
@@ -495,9 +494,6 @@ class AuthWrapper extends StatelessWidget {
   }
 }
 
-// ============================================================
-// 🔥 MAINAPP - РАЗМЫТИЕ С УМЕНЬШЕННОЙ ВЫСОТОЙ (40px)
-// ============================================================
 class MainApp extends StatefulWidget {
   const MainApp({super.key});
 
@@ -607,6 +603,9 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
   Color get _backgroundColor => Colors.black;
   
   void _onItemTapped(int index) {
+    // 🔥 СБРОС МЕНЮ ПРИ СМЕНЕ ТАБА
+    Get.find<NavBarController>().reset();
+
     if (index == 2) {
       final authService = AuthService.instance;
       if (!authService.isLoggedIn) {
@@ -664,9 +663,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     if (mounted) setState(() => _isRefreshingProfile = false);
   }
 
-  // ============================================================
-  // 🔥 BUILD - РАЗМЫТИЕ С УМЕНЬШЕННОЙ ВЫСОТОЙ
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
@@ -682,10 +678,8 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       extendBody: true,
       body: Stack(
         children: [
-          // 🔥 ОСНОВНОЙ КОНТЕНТ
           IndexedStack(index: _selectedIndex, children: _screens),
           
-          // 🔥 РАЗМЫТИЕ СНИЗУ - УМЕНЬШЕННАЯ ВЫСОТА (40px)
           Positioned(
             bottom: 0,
             left: 0,
@@ -694,7 +688,7 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               child: BackdropFilter(
                 filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
                 child: Container(
-                  height: 40, // 🔥 БЫЛО 80, СТАЛО 40
+                  height: 40,
                   color: Colors.transparent,
                 ),
               ),
@@ -702,137 +696,149 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           ),
         ],
       ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        child: Stack(
-          clipBehavior: Clip.none,
-          alignment: Alignment.center,
-          children: [
-            // Бэкграунд панели с размытием
-            ClipRRect(
-              borderRadius: BorderRadius.circular(30),
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  height: 64,
-                  decoration: BoxDecoration(
-                    color: isDark 
-                        ? Colors.black.withOpacity(0.7)
-                        : Colors.white.withOpacity(0.85),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(
-                      color: isDark 
-                          ? Colors.white.withOpacity(0.1)
-                          : Colors.black.withOpacity(0.05),
-                      width: 0.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.15),
-                        blurRadius: 20,
-                        spreadRadius: 0,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: const SizedBox.expand(),
-                ),
-              ),
-            ),
-            
-            // Анимированный индикатор
-            AnimatedPositioned(
-              duration: const Duration(milliseconds: 500),
-              curve: Curves.easeOutCubic,
-              left: circleLeft,
-              child: Align(
-                alignment: Alignment.center,
-                child: AnimatedBuilder(
-                  animation: _scaleAnimation,
-                  builder: (context, child) {
-                    final double animatedHeight = baseCircleHeight * _scaleAnimation.value;
-                    return Container(
-                      width: baseCircleWidth,
-                      height: animatedHeight,
+      // ============================================================
+      // 🔥 ПЛАВНОЕ УМЕНЬШЕНИЕ МЕНЮ (AnimatedScale)
+      // ============================================================
+      bottomNavigationBar: Obx(() {
+        final navController = Get.find<NavBarController>();
+        final v = navController.visibility.value; // 1.0 → 0.0
+
+        // Меню чуть уменьшается, но НЕ пропадает
+        final double scale = 0.90 + (0.10 * v); // от 1.0 до 0.90
+
+        return AnimatedScale(
+          scale: scale,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(30),
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      height: 64,
                       decoration: BoxDecoration(
-                        shape: BoxShape.rectangle,
-                        borderRadius: BorderRadius.circular(animatedHeight / 2),
                         color: isDark 
-                            ? Colors.white.withOpacity(0.12)
-                            : Colors.black.withOpacity(0.06),
+                            ? Colors.black.withOpacity(0.7)
+                            : Colors.white.withOpacity(0.85),
+                        borderRadius: BorderRadius.circular(30),
                         border: Border.all(
                           color: isDark 
                               ? Colors.white.withOpacity(0.1)
                               : Colors.black.withOpacity(0.05),
-                          width: 1,
+                          width: 0.5,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            spreadRadius: 0,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
-                    );
-                  },
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            
-            // Иконки
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _NavItem(
-                  index: 0,
-                  currentIndex: _selectedIndex,
-                  onTap: _onItemTapped,
-                  icon: Icons.home_outlined,
-                  activeIcon: Icons.home,
-                  isDark: isDark,
-                  isRefreshing: _isRefreshingFeed,
-                  isCustomHome: true,
+                
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 500),
+                  curve: Curves.easeOutCubic,
+                  left: circleLeft,
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: AnimatedBuilder(
+                      animation: _scaleAnimation,
+                      builder: (context, child) {
+                        final double animatedHeight = baseCircleHeight * _scaleAnimation.value;
+                        return Container(
+                          width: baseCircleWidth,
+                          height: animatedHeight,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.rectangle,
+                            borderRadius: BorderRadius.circular(animatedHeight / 2),
+                            color: isDark 
+                                ? Colors.white.withOpacity(0.12)
+                                : Colors.black.withOpacity(0.06),
+                            border: Border.all(
+                              color: isDark 
+                                  ? Colors.white.withOpacity(0.1)
+                                  : Colors.black.withOpacity(0.05),
+                              width: 1,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ),
-                _NavItem(
-                  index: 1,
-                  currentIndex: _selectedIndex,
-                  onTap: _onItemTapped,
-                  icon: CupertinoIcons.search,
-                  activeIcon: CupertinoIcons.search,
-                  isDark: isDark,
-                  isRefreshing: false,
-                ),
-                _CenterButton(
-                  index: 2,
-                  currentIndex: _selectedIndex,
-                  onTap: _onItemTapped,
-                  icon: CupertinoIcons.add,
-                  isDark: isDark,
-                ),
-                _NavItem(
-                  index: 3,
-                  currentIndex: _selectedIndex,
-                  onTap: _onItemTapped,
-                  icon: CupertinoIcons.chat_bubble_2,
-                  activeIcon: CupertinoIcons.chat_bubble_2_fill,
-                  isDark: isDark,
-                  isRefreshing: false,
-                ),
-                _NavItem(
-                  index: 4,
-                  currentIndex: _selectedIndex,
-                  onTap: _onItemTapped,
-                  icon: CupertinoIcons.person,
-                  activeIcon: CupertinoIcons.person_fill,
-                  isDark: isDark,
-                  isRefreshing: _isRefreshingProfile,
+                
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _NavItem(
+                      index: 0,
+                      currentIndex: _selectedIndex,
+                      onTap: _onItemTapped,
+                      icon: Icons.home_outlined,
+                      activeIcon: Icons.home,
+                      isDark: isDark,
+                      isRefreshing: _isRefreshingFeed,
+                      isCustomHome: true,
+                    ),
+                    _NavItem(
+                      index: 1,
+                      currentIndex: _selectedIndex,
+                      onTap: _onItemTapped,
+                      icon: CupertinoIcons.search,
+                      activeIcon: CupertinoIcons.search,
+                      isDark: isDark,
+                      isRefreshing: false,
+                    ),
+                    _CenterButton(
+                      index: 2,
+                      currentIndex: _selectedIndex,
+                      onTap: _onItemTapped,
+                      icon: CupertinoIcons.add,
+                      isDark: isDark,
+                    ),
+                    _NavItem(
+                      index: 3,
+                      currentIndex: _selectedIndex,
+                      onTap: _onItemTapped,
+                      icon: CupertinoIcons.chat_bubble_2,
+                      activeIcon: CupertinoIcons.chat_bubble_2_fill,
+                      isDark: isDark,
+                      isRefreshing: false,
+                    ),
+                    _NavItem(
+                      index: 4,
+                      currentIndex: _selectedIndex,
+                      onTap: _onItemTapped,
+                      icon: CupertinoIcons.person,
+                      activeIcon: CupertinoIcons.person_fill,
+                      isDark: isDark,
+                      isRefreshing: _isRefreshingProfile,
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      }),
     );
   }
 }
-
-// ========== ВИДЖЕТЫ ТАББАРА ==========
 
 class _NavItem extends StatelessWidget {
   final int index;
@@ -935,8 +941,6 @@ class _CenterButton extends StatelessWidget {
     );
   }
 }
-
-// ========== КАСТОМНАЯ ИКОНКА ДОМА ==========
 
 class HomeIcon extends StatelessWidget {
   final bool isActive;

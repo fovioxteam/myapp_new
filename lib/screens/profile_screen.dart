@@ -1029,6 +1029,9 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // ============================================================
+  // 🔥 АВАТАРКА УВЕЛИЧЕНА (было 80 → стало 96)
+  // ============================================================
   Widget _buildHeader() {
     final postsCount = _postController.userPosts[_currentUserId]?.length ?? 0;
     final String currentAvatar = controller.avatarUrl.value;
@@ -1069,20 +1072,23 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ClipOval(
                   child: CachedNetworkImage(
                     imageUrl: currentAvatar,
-                    width: 80,
-                    height: 80,
+                    // 🔥 БЫЛО 80 → СТАЛО 96
+                    width: 96,
+                    height: 96,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      width: 80, 
-                      height: 80, 
+                      // 🔥 БЫЛО 80 → СТАЛО 96
+                      width: 96, 
+                      height: 96, 
                       color: Colors.grey[200],
-                      child: const Icon(Icons.person, size: 40, color: Colors.grey),
+                      child: const Icon(Icons.person, size: 48, color: Colors.grey),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      width: 80,
-                      height: 80,
+                      // 🔥 БЫЛО 80 → СТАЛО 96
+                      width: 96,
+                      height: 96,
                       color: Colors.grey[200],
-                      child: const Icon(Icons.person, size: 40, color: Colors.grey),
+                      child: const Icon(Icons.person, size: 48, color: Colors.grey),
                     ),
                   ),
                 ),
@@ -1096,7 +1102,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    child: const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                    // 🔥 Иконка камеры чуть крупнее (было 16 → стало 18)
+                    child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
                   ),
                 ),
               ],

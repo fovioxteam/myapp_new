@@ -18,10 +18,10 @@ import '../services/follow_service.dart';
 import '../services/metrics_service.dart';
 import '../services/status_bar_service.dart';
 import '../controllers/post_controller.dart';
+import '../controllers/nav_bar_controller.dart'; // 🔥 НОВОЕ
 import 'search_screen.dart';
 import 'upload_screen.dart';
 
-// 🔥 ИМПОРТ ДЛЯ ROUTE OBSERVER
 import '../main.dart';
 
 class FeedScreen extends StatefulWidget {
@@ -31,7 +31,7 @@ class FeedScreen extends StatefulWidget {
   State<FeedScreen> createState() => _FeedScreenState();
 }
 
-class _FeedScreenState extends State<FeedScreen> 
+class _FeedScreenState extends State<FeedScreen>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, WidgetsBindingObserver, RouteAware {
   
   @override
@@ -89,7 +89,6 @@ class _FeedScreenState extends State<FeedScreen>
   
   Set<String> _currentIds = {};
 
-  // 🔥 ФЛАГИ ДЛЯ ВИДИМОСТИ ВКЛАДОК
   bool _isForYouVisible = true;
   bool _isFollowingVisible = false;
 
@@ -101,23 +100,16 @@ class _FeedScreenState extends State<FeedScreen>
     return true;
   }
 
-  // ============================================================
-  // 🔥 ЖИЗНЕННЫЙ ЦИКЛ СТАТУС БАРА
-  // ============================================================
-  
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     
-    // 🔥 УСТАНАВЛИВАЕМ БЕЛЫЕ ИКОНКИ
     StatusBarService().setWhiteStatusBar();
     
     _tabController = TabController(length: 2, vsync: this);
     
-    // 🔥 СЛУШАЕМ СМЕНУ ВКЛАДКИ — ИСПРАВЛЕНО!
     _tabController.addListener(() {
-      // Используем !indexIsChanging, чтобы флаги менялись после завершения анимации
       if (!_tabController.indexIsChanging) {
         final isForYou = _tabController.index == 0;
         setState(() {
@@ -126,7 +118,6 @@ class _FeedScreenState extends State<FeedScreen>
         });
         print('🔄 [TAB] Switched to: ${isForYou ? "For You" : "Following"}');
         
-        // 🔥 ОЧИЩАЕМ КЭШ ПРЕДЗАГРУЗКИ ПРИ СМЕНЕ ВКЛАДКИ
         if (!isForYou) {
           _postController.clearVideoPreloadCache();
         }
@@ -193,7 +184,6 @@ class _FeedScreenState extends State<FeedScreen>
   @override
   void didPopNext() {
     StatusBarService().setWhiteStatusBar();
-    // 🔥 ПРИ ВОЗВРАТЕ НА ЭКРАН
     setState(() {
       _isForYouVisible = _tabController.index == 0;
       _isFollowingVisible = _tabController.index == 1;
@@ -239,10 +229,6 @@ class _FeedScreenState extends State<FeedScreen>
     super.dispose();
   }
 
-  // ============================================================
-  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
-  // ============================================================
-
   Future<void> _checkPermissions() async {
     try {
       if (Platform.isAndroid) {
@@ -278,7 +264,6 @@ class _FeedScreenState extends State<FeedScreen>
         setState(() => _isLoading = false);
       }
 
-      // 🔥 УМЕНЬШАЕМ ПРЕДЗАГРУЗКУ ДО 1 ВИДЕО (было 5)
       _preloadFeedVideos();
 
       unawaited(_loadFollowingUsers());
@@ -294,7 +279,6 @@ class _FeedScreenState extends State<FeedScreen>
   void _preloadFeedVideos() {
     final posts = _postController.feedPosts;
     if (posts.isNotEmpty) {
-      // 🔥 МАКСИМУМ 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ (было 5)
       _postController.preloadFeedVideos(posts, maxPreload: 1);
       print('📹 [FEED] Preloading 1 video (max) for ${posts.length} posts');
     }
@@ -478,7 +462,6 @@ class _FeedScreenState extends State<FeedScreen>
           _loadingFollowing = false;
         });
         
-        // 🔥 МАКСИМУМ 1 ВИДЕО ДЛЯ ПРЕДЗАГРУЗКИ (было 3)
         _postController.preloadFeedVideos(newPosts, maxPreload: 1);
         
         print('Processed ${_followingPostIds.length} following posts');
@@ -548,7 +531,6 @@ class _FeedScreenState extends State<FeedScreen>
         
         _postController.addPostsToStorage(newPosts);
         
-        // 🔥 МАКСИМУМ 1 ВИДЕО
         _postController.preloadFeedVideos(newPosts, maxPreload: 1);
         
         final newIds = newPosts.map((p) => p['id'] as String).toList();
@@ -620,18 +602,13 @@ class _FeedScreenState extends State<FeedScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ПРЕДЗАГРУЗКА — ТОЛЬКО СЛЕДУЮЩЕЕ 1 ВИДЕО (было 3)
-  // ============================================================
   void _preloadNextPosts(int currentIndex) {
-    // 🔥 Предзагружаем ТОЛЬКО следующее 1 видео (было 3)
     final nextIndex = currentIndex + 1;
     if (nextIndex < _forYouPostIds.length) {
       final nextPostId = _forYouPostIds[nextIndex];
       final post = _postController.getPostFromStorage(nextPostId);
       
       if (post != null) {
-        // 1. Картинки предзагружаем штатно
         final imageUrls = (post['imageUrls'] as List<dynamic>? ?? [post['url']]).cast<String>();
         for (var url in imageUrls.take(1)) {
           if (url.isNotEmpty && !_preloadedUrls.contains(url)) {
@@ -640,7 +617,6 @@ class _FeedScreenState extends State<FeedScreen>
           }
         }
         
-        // 2. Предзагрузку видео — ТОЛЬКО 1
         final mediaType = post['mediaType']?.toString() ?? '';
         if (mediaType == 'video') {
           final videoUrl = post['videoUrl']?.toString();
@@ -712,10 +688,6 @@ class _FeedScreenState extends State<FeedScreen>
     Get.to(() => const UploadScreen());
   }
 
-  // ============================================================
-  // 🔥 ВСПОМОГАТЕЛЬНЫЙ МЕТОД ДЛЯ ПОСТРОЕНИЯ КАРТОЧКИ
-  // ============================================================
-
   Widget _buildPostItem({
     required String postId,
     required bool isVisible,
@@ -747,9 +719,8 @@ class _FeedScreenState extends State<FeedScreen>
   }
 
   // ============================================================
-  // 🔥 _buildForYouContent
+  // 🔥 FOR YOU — с NotificationListener для скрытия меню
   // ============================================================
-
   Widget _buildForYouContent() {
     if (_forYouPostIds.isEmpty) {
       return const Center(
@@ -760,28 +731,33 @@ class _FeedScreenState extends State<FeedScreen>
       );
     }
     
-    return PageView.builder(
-      controller: _forYouPageController,
-      scrollDirection: Axis.vertical,
-      itemCount: _forYouPostIds.length,
-      onPageChanged: _handleForYouPageChanged,
-      itemBuilder: (context, index) {
-        final postId = _forYouPostIds[index];
-        return RepaintBoundary(
-          key: ValueKey('for_you_$postId'),
-          child: _buildPostItem(
-            postId: postId,
-            isVisible: _isForYouVisible,
-          ),
-        );
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        Get.find<NavBarController>().handleScroll(notification);
+        return false;
       },
+      child: PageView.builder(
+        controller: _forYouPageController,
+        scrollDirection: Axis.vertical,
+        itemCount: _forYouPostIds.length,
+        onPageChanged: _handleForYouPageChanged,
+        itemBuilder: (context, index) {
+          final postId = _forYouPostIds[index];
+          return RepaintBoundary(
+            key: ValueKey('for_you_$postId'),
+            child: _buildPostItem(
+              postId: postId,
+              isVisible: _isForYouVisible,
+            ),
+          );
+        },
+      ),
     );
   }
 
   // ============================================================
-  // 🔥 _buildFollowingContent
+  // 🔥 FOLLOWING — с NotificationListener
   // ============================================================
-
   Widget _buildFollowingContent() {
     if (_loadingFollowing) {
       return const Center(
@@ -814,37 +790,43 @@ class _FeedScreenState extends State<FeedScreen>
       );
     }
     
-    return PageView.builder(
-      controller: _followingPageController,
-      scrollDirection: Axis.vertical,
-      itemCount: _followingPostIds.length + (_hasMoreFollowing ? 1 : 0),
-      onPageChanged: _handleFollowingPageChanged,
-      itemBuilder: (context, index) {
-        if (index == _followingPostIds.length && _hasMoreFollowing) {
-          return const Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SpinKitThreeBounce(
-                  color: Colors.white70,
-                  size: 26.0,
-                ),
-                SizedBox(height: 16),
-                Text('Loading more...', style: TextStyle(color: Colors.grey)),
-              ],
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        Get.find<NavBarController>().handleScroll(notification);
+        return false;
+      },
+      child: PageView.builder(
+        controller: _followingPageController,
+        scrollDirection: Axis.vertical,
+        itemCount: _followingPostIds.length + (_hasMoreFollowing ? 1 : 0),
+        onPageChanged: _handleFollowingPageChanged,
+        itemBuilder: (context, index) {
+          if (index == _followingPostIds.length && _hasMoreFollowing) {
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SpinKitThreeBounce(
+                    color: Colors.white70,
+                    size: 26.0,
+                  ),
+                  SizedBox(height: 16),
+                  Text('Loading more...', style: TextStyle(color: Colors.grey)),
+                ],
+              ),
+            );
+          }
+          
+          final postId = _followingPostIds[index];
+          return RepaintBoundary(
+            key: ValueKey('following_$postId'),
+            child: _buildPostItem(
+              postId: postId,
+              isVisible: _isFollowingVisible,
             ),
           );
-        }
-        
-        final postId = _followingPostIds[index];
-        return RepaintBoundary(
-          key: ValueKey('following_$postId'),
-          child: _buildPostItem(
-            postId: postId,
-            isVisible: _isFollowingVisible,
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 

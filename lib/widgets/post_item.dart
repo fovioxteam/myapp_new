@@ -73,7 +73,7 @@ class PostItem extends StatefulWidget {
   final VoidCallback? onLinkClick;
   final bool isVisible;
   final int priority;
-  final double? customBottomPadding; // 🔥 НОВЫЙ ПАРАМЕТР - ТОЛЬКО ДЛЯ ПРАВОЙ КОЛОНКИ
+  final double? customBottomPadding;
 
   const PostItem({
     super.key,
@@ -94,7 +94,7 @@ class PostItem extends StatefulWidget {
     this.onLinkClick,
     this.isVisible = true,
     this.priority = 2,
-    this.customBottomPadding, // 🔥 НОВЫЙ ПАРАМЕТР
+    this.customBottomPadding,
   });
 
   @override
@@ -142,6 +142,10 @@ class _PostItemState extends State<PostItem>
   final bool _isSaveAnimating = false;
   bool _isFollowing = false;
   bool _followButtonAnimating = false;
+
+  // 🔥 ЗАЩИТА ОТ ГОНКИ СО СТРИМОМ FOLLOW
+  bool _isToggling = false;
+
   Offset? _tapPosition;
   bool _hasImageError = false;
   int _currentCarouselIndex = 0;
@@ -235,6 +239,15 @@ class _PostItemState extends State<PostItem>
     print('🔄 [VIDEO] didUpdateWidget for $_postId');
     print('🔄 [VIDEO] new post: ${widget.post.keys}');
     print('🔄 [VIDEO] mediaType: ${widget.post['mediaType']}, videoUrl: ${widget.post['videoUrl']}');
+
+    // 🔥 Если пост сменился — перезагружаем статус подписки
+    if (oldWidget.post['id'] != widget.post['id'] ||
+        oldWidget.post['userId'] != widget.post['userId']) {
+      _followSubscription?.cancel();
+      _followSubscription = null;
+      _loadFollowStatus();
+    }
+
     if (oldWidget.post['videoUrl'] != widget.post['videoUrl'] ||
         oldWidget.post['mediaType'] != widget.post['mediaType']) {
       print('🔄 [VIDEO] Video data changed, rebuilding');
@@ -265,6 +278,7 @@ class _PostItemState extends State<PostItem>
     }
     disposeActions();
     _followSubscription?.cancel();
+    _followSubscription = null;
     _heartAnimationController.dispose();
     _likeIconController.dispose();
     _saveIconController.dispose();
@@ -396,15 +410,11 @@ class _PostItemState extends State<PostItem>
   // 🔥 ПЛАВНАЯ АНИМАЦИЯ ЛАЙКА (РОЗОВОЕ СЕРДЦЕ, БЕЗ СВЕЧЕНИЯ)
   // ============================================================
   void _initAnimations() {
-    // Контроллер анимации сердца - 700ms для плавности
     _heartAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
 
-    // ============================================================
-    // 🔥 ПЛАВНАЯ АНИМАЦИЯ МАСШТАБА
-    // ============================================================
     _heartScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 0.0, end: 1.5),
@@ -423,9 +433,6 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeOut,
     ));
 
-    // ============================================================
-    // 🔥 ПЛАВНАЯ ПРОЗРАЧНОСТЬ
-    // ============================================================
     _heartOpacityAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.9), weight: 50),
@@ -435,9 +442,6 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeInOut,
     ));
 
-    // ============================================================
-    // 🔥 ПЛАВНЫЙ ПОДЪЕМ
-    // ============================================================
     _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -445,9 +449,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // ============================================================
-    // 🔥 ПЛАВНОЕ ВРАЩЕНИЕ
-    // ============================================================
     _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -455,16 +456,12 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // Сброс контроллера после завершения
     _heartAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _heartAnimationController.reset();
       }
     });
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ ИКОНКИ ЛАЙКА (при нажатии)
-    // ============================================================
     _likeIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -476,9 +473,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ СОХРАНЕНИЯ
-    // ============================================================
     _saveIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -490,9 +484,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ КНОПКИ FOLLOW
-    // ============================================================
     _followAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -605,9 +596,6 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  // ============================================================
-  // 🔥 ТОГГЛ ТЕГОВ - БЕЗ addPostFrameCallback ДЛЯ iOS
-  // ============================================================
   void _toggleTagsForCarouselIndex(int index) {
     setState(() {
       final current = _showTagsForCarouselIndex[index] ?? false;
@@ -615,6 +603,9 @@ class _PostItemState extends State<PostItem>
     });
   }
 
+  // ============================================================
+  // 🔥 FOLLOW (ИСПРАВЛЕНО: убрана гонка со стримом)
+  // ============================================================
   Future<void> _loadFollowStatus() async {
     final userId = widget.post['userId']?.toString();
     if (userId == null || userId.isEmpty) return;
@@ -627,10 +618,15 @@ class _PostItemState extends State<PostItem>
 
     try {
       final status = await _followService.checkFollowStatus(userId);
+      if (!mounted) return;
       _safeSetState(() => _isFollowing = status);
 
       _followSubscription?.cancel();
       _followSubscription = _followService.getFollowStatusStream(userId).listen((newStatus) {
+        // 🔥 Игнорируем стрим, пока идёт локальное переключение —
+        // это разрывает цикл 11 → 12 → 11
+        if (_isToggling) return;
+        if (!mounted) return;
         _safeSetState(() => _isFollowing = newStatus);
       }, onError: (error) {});
     } catch (e) {}
@@ -638,6 +634,7 @@ class _PostItemState extends State<PostItem>
 
   Future<void> _toggleFollow() async {
     if (!mounted || !_canExecuteAction('follow')) return;
+    if (_isToggling) return; // 🔥 защита от повторного тапа во время запроса
 
     if (!AuthService.instance.isLoggedIn) {
       await AuthService.instance.requireAuth();
@@ -662,6 +659,8 @@ class _PostItemState extends State<PostItem>
     _animateFollowButton();
 
     final previousStatus = _isFollowing;
+
+    _isToggling = true; // 🔥 блокируем стрим
     _safeSetState(() => _isFollowing = !_isFollowing);
 
     try {
@@ -669,9 +668,10 @@ class _PostItemState extends State<PostItem>
     } catch (e) {
       _safeSetState(() => _isFollowing = previousStatus);
       _showSnackBar('Failed to ${previousStatus ? 'unfollow' : 'follow'}', Colors.red);
+    } finally {
+      _isToggling = false; // 🔥 разблокируем стрим
+      _actionCompleted('follow');
     }
-
-    _actionCompleted('follow');
   }
 
   void _animateFollowButton() {
@@ -873,9 +873,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 ОБРАБОТЧИК ДВОЙНОГО ТАПА
-  // ============================================================
   void _handleDoubleTap() {
     if (!mounted) return;
     final postId = widget.post['id']?.toString() ?? '';
@@ -887,9 +884,6 @@ class _PostItemState extends State<PostItem>
     _toggleLike();
   }
 
-  // ============================================================
-  // 🔥 ЗАПУСК АНИМАЦИИ ЛАЙКА
-  // ============================================================
   void _startLikeAnimation() {
     if (!mounted) return;
     _safeSetState(() => _showHeartAnimation = true);
@@ -1072,7 +1066,6 @@ class _PostItemState extends State<PostItem>
                     right: 60,
                     child: _buildUserInfoAndCaption(),
                   ),
-                  // 🔥 ПРАВАЯ КОЛОНКА - ДОБАВЛЯЕМ customBottomPadding
                   Positioned(
                     bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
                     right: 0,
@@ -1081,9 +1074,6 @@ class _PostItemState extends State<PostItem>
                 ],
               ),
             ),
-            // ============================================================
-            // 🔥 АНИМАЦИЯ СЕРДЦА ДЛЯ ВИДЕО (РОЗОВОЕ, БЕЗ СВЕЧЕНИЯ)
-            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1216,9 +1206,6 @@ class _PostItemState extends State<PostItem>
                   child: _buildTikTokIndicators(),
                 ),
               ),
-            // ============================================================
-            // 🔥 АНИМАЦИЯ СЕРДЦА ДЛЯ ФОТО (РОЗОВОЕ, БЕЗ СВЕЧЕНИЯ)
-            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1263,7 +1250,6 @@ class _PostItemState extends State<PostItem>
                     right: 60,
                     child: _buildUserInfoAndCaption(),
                   ),
-                  // 🔥 ПРАВАЯ КОЛОНКА - ДОБАВЛЯЕМ customBottomPadding
                   Positioned(
                     bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
                     right: 0,
@@ -1567,7 +1553,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 USER INFO & CAPTION
+  // 🔥 USER INFO & CAPTION (С КОМПАКТНОЙ КНОПКОЙ FOLLOW)
   // ============================================================
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
@@ -1643,11 +1629,13 @@ class _PostItemState extends State<PostItem>
                         child: Container(
                           key: ValueKey<bool>(_isFollowing),
                           margin: const EdgeInsets.only(left: 8),
-                          width: 90, // 🔥 УВЕЛИЧЕНО С 80 ДО 90 (чтобы влезало "Following")
+                          // 🔥 КОМПАКТНАЯ КНОПКА: 72x26
+                          width: 72,
+                          height: 26,
                           child: GestureDetector(
                             onTap: _toggleFollow,
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
                               decoration: BoxDecoration(
                                 color: _isFollowing ? Colors.white.withOpacity(0.2) : Colors.transparent,
                                 borderRadius: BorderRadius.circular(20),
@@ -1659,6 +1647,7 @@ class _PostItemState extends State<PostItem>
                               child: Center(
                                 child: Text(
                                   _isFollowing ? "Following" : "Follow",
+                                  // 🔥 ТЕКСТ НЕ УМЕНЬШАЕМ — остаётся 12
                                   style: TextStyle(
                                     color: _isFollowing ? Colors.white : Colors.white.withOpacity(0.9),
                                     fontSize: 12,
@@ -1666,6 +1655,7 @@ class _PostItemState extends State<PostItem>
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.clip,
+                                  textAlign: TextAlign.center,
                                 ),
                               ),
                             ),
@@ -1750,7 +1740,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ACTION BUTTONS - УВЕЛИЧЕННЫЕ РАЗМЕРЫ
+  // 🔥 ACTION BUTTONS
   // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
@@ -1858,9 +1848,6 @@ class _PostItemState extends State<PostItem>
               iconSize: 32,
             ),
             
-            // ============================================================
-            // 🔥 БЛОК ТЕГОВ - ПОЛНОСТЬЮ БЕЛАЯ ИКОНКА
-            // ============================================================
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 18),
               RepaintBoundary(

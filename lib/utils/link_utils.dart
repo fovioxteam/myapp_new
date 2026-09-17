@@ -2,13 +2,326 @@
 
 // ============================================================
 // link_utils.dart
-// ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ ВСЕХ ДОМЕНОВ
-// ВКЛЮЧАЯ НОВЫЕ НИШИ: МОДА, КОСМЕТИКА, УКРАШЕНИЯ, ЖЕНСКИЕ СЕРВИСЫ
+// ПОЛНАЯ ВЕРСИЯ С ПОДДЕРЖКОЙ ВСЕХ ДОМЕНОВ + GOOGLE MAPS + РУ-БРЕНДЫ
 // ============================================================
 
+import 'package:http/http.dart' as http;
+
 class LinkUtils {
-  // 🔥 ОСНОВНЫЕ ДОМЕНЫ (ПОЛНЫЙ СПИСОК)
+  // ============================================================
+  // 🔥 КЭШ РАЗВЁРНУТЫХ ССЫЛОК
+  // ============================================================
+  static final Map<String, String?> _resolvedCache = {};
+
+  // 🔥 ОСНОВНЫЕ ДОМЕНЫ
   static const List<String> coreDomains = [
+    // ===== КАРТЫ =====
+    'goo.gl',
+    'maps.app.goo.gl',
+    'maps.google.com',
+    'google.com/maps',
+
+    // ===== РУ-МАРКЕТПЛЕЙСЫ (🔥 НОВОЕ) =====
+    'lamoda.ru',
+    'lamoda.by',
+    'lamoda.kz',
+    'kufar.by',
+    'deal.by',
+    'onliner.by',
+    'domovita.by',
+    'ay.by',
+    'bamper.by',
+    'relax.by',
+    'flagma.by',
+    'satom.ru',
+    'tiu.ru',
+    'pulscen.by',
+    'satu.kz',
+    'prom.ua',
+    'rozetka.com.ua',
+    'rozetka.ua',
+    'olx.ua',
+    'olx.by',
+    'olx.kz',
+    'olx.ru',
+    'joom.com',
+    'joom.ru',
+    'joom.by',
+    'shafa.ua',
+    'kidstaff.com.ua',
+    'modnaKasta.ua',
+    'modnokasta.com',
+    'goodini.ua',
+    'kasta.ua',
+    'auchan.ru',
+    'auchan.ua',
+    'lenta.com',
+    'okeydostavka.ru',
+    'magnit.ru',
+    'dixy.ru',
+    'perekrestok.ru',
+    'vkusvill.ru',
+    'metro-cc.ru',
+    'ashan.ru',
+
+    // ===== РУ-ОДЕЖДА / ОБУВЬ / АКСЕССУАРЫ (🔥 НОВОЕ) =====
+    'befree.ru',
+    'befree.com',
+    'tvoe.ru',
+    'tvoy.ru',
+    'zolla.com',
+    'zolla.ru',
+    'incity.ru',
+    'incity.com',
+    'odji.ru',
+    'odji.com',
+    'loverepublic.ru',
+    'loverepublic.com',
+    'lime-shop.ru',
+    'lime-shop.com',
+    'lime-shop.by',
+    'dub.ru',
+    'dub.by',
+    'dub.com',
+    '12storeez.com',
+    '12storeez.ru',
+    'ushatava.com',
+    'ushatava.ru',
+    'choux.com',
+    'choux.by',
+    'befree.by',
+    'markformelle.by',
+    'markformelle.ru',
+    'svitanak.by',
+    'milavitsa.com',
+    'milavitsa.by',
+    'serge.by',
+    'conte.by',
+    'conte.com',
+    'gulliver.by',
+    'gulliver.ru',
+    'flo.ua',
+    'flo.com.ua',
+    'intertop.ua',
+    'intertop.com',
+    'intertop.kz',
+    'arber.ua',
+    'arber.com',
+    'ecco.com',
+    'ecco.ru',
+    'ecco.by',
+    'respect-shoes.ru',
+    'respect-shoes.by',
+    'respect.com',
+    'monro.com',
+    'monro.ru',
+    'sneakerhead.ru',
+    'sneakerhead.com',
+    'street-beat.ru',
+    'street-beat.com',
+    'lamoda-brends.ru',
+    'wildberries.ru',
+    'wildberries.by',
+    'ozon.ru',
+    'ozon.by',
+    'yandex.ru/market',
+    'megamarket.ru',
+    'sbermegamarket.ru',
+    'goods.ru',
+    'kupi-vip.ru',
+    'kupivip.ru',
+    'kupivip.by',
+    'kupivip.kz',
+    'butik.ru',
+    'butik.by',
+    'modniy.ru',
+    'shop.by',
+    'shop.by',
+    'gippo.by',
+    'gippo.com',
+    'belwest.by',
+    'belwest.com',
+    'mebel.by',
+    'vitamir.by',
+    'ploshcha.by',
+
+    // ===== РУ-КОСМЕТИКА И ПАРФЮМ (🔥 НОВОЕ) =====
+    'goldapple.ru',
+    'goldapple.by',
+    'goldapple.kz',
+    'letual.ru',
+    'letual.by',
+    'letu.ru',
+    'letu.com',
+    'rivgosh.ru',
+    'rivgosh.by',
+    'iledebeaute.ru',
+    'iledebeaute.com',
+    'sephora.ru',
+    'sephora.by',
+    'beautydrugs.ru',
+    'loccitane.ru',
+    'loccitane.by',
+    'thebodyshop.ru',
+    'thebodyshop.by',
+    'yves-rocher.ru',
+    'yves-rocher.by',
+    'yves-rocher.com',
+    'flormar.ru',
+    'flormar.com',
+    'art-visage.ru',
+    'art-visage.by',
+    'artvisage.com',
+    'relouis.by',
+    'relouis.com',
+    'mixit.by',
+    'mixit.com',
+    'belita.by',
+    'belita.com',
+    'vitex.by',
+    'vitex.com',
+    'livdelano.ru',
+    'livdelano.com',
+    'nature-siberica.ru',
+    'naturesiberica.com',
+    'natursiberica.ru',
+    'levrana.ru',
+    'levrana.com',
+    'mivitt.ru',
+    'miracle.by',
+    'floresan.ua',
+    'floresan.com',
+
+    // ===== РУ-УКРАШЕНИЯ (🔥 НОВОЕ) =====
+    'sunlight.net',
+    'sunlight.by',
+    'sunlight.kz',
+    'sokolov.ru',
+    'sokolov.by',
+    'sokolov.com',
+    'adamas.ru',
+    'adamas.by',
+    '585zolotoy.ru',
+    '585zolotoy.by',
+    'zolotoy585.ru',
+    'zoloto585.ru',
+    'brilliant.ru',
+    'brilliant.by',
+    'alrosa.ru',
+    'alrosa.by',
+    'korloff.ru',
+    'korloff.by',
+    'yashma.ru',
+    'yashma.by',
+    'moscowjewelry.ru',
+    'mj.ru',
+    'kaboshon.ru',
+    'kaboshon.com',
+    'pandora.net',
+    'pandora.by',
+    'pandora.ru',
+    'swarovski.com',
+    'swarovski.ru',
+    'swarovski.by',
+    'tiffany.com',
+    'tiffany.ru',
+    'cartier.com',
+    'cartier.ru',
+
+    // ===== РУ-БРЕНДЫ ОДЕЖДЫ (🔥 НОВОЕ) =====
+    'zarina.ru',
+    'zarina.com',
+    'zarina.by',
+    'be-you.ru',
+    'be-you.by',
+    'be-you.com',
+    'sonya.ru',
+    'sonya.by',
+    'sonya.com',
+    'love-republic.ru',
+    'loverepublic.ru',
+    'loverepublic.by',
+    'incity.ru',
+    'incity.by',
+    'incity.com',
+    'tvoe.ru',
+    'tvoe.by',
+    'tvoe.com',
+    'modis.ru',
+    'modis.by',
+    'modis.com',
+    'charuel.ru',
+    'charuel.by',
+    'charuel.com',
+    'tom Farr',
+    'tomfarr.ru',
+    'tomfarr.by',
+    'savagemode.ru',
+    'savagemode.by',
+    'savage.com',
+    'funday.ru',
+    'funday.by',
+    'funday.com',
+    'boomkek.ru',
+    'boomkek.by',
+    'boomkek.com',
+    'kari.com',
+    'kari.ru',
+    'kari.by',
+    'centro.ru',
+    'centro.by',
+    'centro.com',
+    'matroskin.ru',
+    'matroskin.by',
+    'sneakerhead.ru',
+    'sneakerhead.by',
+    'street-beat.ru',
+    'street-beat.by',
+    'lamoda.by',
+    'lamoda.kz',
+    'meleon.ru',
+    'meleon.by',
+    'meleon.com',
+    'fabrikaokon.ru',
+    'fabrikaokon.by',
+    'alicelook.ru',
+    'alicelook.by',
+    'alicelook.com',
+
+    // ===== БЕЛОРУССКИЕ БРЕНДЫ (🔥 НОВОЕ) =====
+    'markformelle.by',
+    'markformelle.com',
+    'svitanak.by',
+    'svitanak.com',
+    'mila-vitsa.by',
+    'milavitsa.by',
+    'milavitsa.com',
+    'serge.by',
+    'serge.com',
+    'conte.by',
+    'conte.com',
+    'gulliver.by',
+    'gulliver.com',
+    'belwest.by',
+    'belwest.com',
+    'gippo.by',
+    'gippo.com',
+    'leon.by',
+    'leon.com',
+    'dilis.by',
+    'dilis.com',
+    'deal.by',
+    'kufar.by',
+    'onliner.by',
+    'shop.by',
+    '21vek.by',
+    '5element.by',
+    '5element.ua',
+    '5element.kz',
+    '5element.ru',
+    'elektro.by',
+    'elektrosila.by',
+
     // ===== МУЗЫКА =====
     'spotify.com',
     'soundcloud.com',
@@ -83,20 +396,7 @@ class LinkUtils {
     'habr.com',
     'pikabu.ru',
     'be.real',
-    'irrelevant.com',
-    'distro.media',
     'weverse.io',
-    'vspc.com',
-    'foto.com',
-    'cyberpin.com',
-    'spoutible.com',
-    'verification.io',
-    'gab.com',
-    'meetme.com',
-    'ask.fm',
-    'spring.me',
-    'curiouscat.me',
-    'tellonym.me',
     'sarafan.ru',
     'livejournal.com',
 
@@ -104,10 +404,8 @@ class LinkUtils {
     'patreon.com',
     'boosty.to',
     'donationalerts.com',
-    'donatello.com',
     'buymeacoffee.com',
     'ko-fi.com',
-    'tipjar.com',
     'gumroad.com',
     'sellfy.com',
     'payhip.com',
@@ -211,7 +509,6 @@ class LinkUtils {
     'spreadshirt.com',
 
     // ===== БРЕНДЫ (ОДЕЖДА) =====
-    // Спортивные
     'nike.com',
     'adidas.com',
     'puma.com',
@@ -225,8 +522,6 @@ class LinkUtils {
     'brooksrunning.com',
     'hoka.com',
     'salomon.com',
-
-    // Горные / активный отдых
     'thenorthface.com',
     'patagonia.com',
     'columbia.com',
@@ -235,8 +530,6 @@ class LinkUtils {
     'montbell.com',
     'millet.com',
     'eider.com',
-
-    // Масс-маркет
     'zara.com',
     'hm.com',
     'uniqlo.com',
@@ -268,8 +561,6 @@ class LinkUtils {
     'ba&sh.com',
     'zadig-et-voltaire.com',
     'moncler.com',
-
-    // Джинсовая одежда
     'levi.com',
     'wrangler.com',
     'lee.com',
@@ -284,8 +575,6 @@ class LinkUtils {
     'agolde.com',
     'citizensofhumanity.com',
     'madewell.com',
-
-    // Белье
     'victoriassecret.com',
     'agentprovocateur.com',
     'laperla.com',
@@ -295,8 +584,6 @@ class LinkUtils {
     'triumph.com',
     'wacaolingerie.com',
     'caresse.fr',
-
-    // Премиум
     'tommy.com',
     'calvinklein.com',
     'lacoste.com',
@@ -320,8 +607,6 @@ class LinkUtils {
     'celine.com',
     'hermes.com',
     'louisvuitton.com',
-
-    // Обувь
     'converse.com',
     'vans.com',
     'timberland.com',
@@ -337,18 +622,11 @@ class LinkUtils {
     'sergio-rossi.com',
     'renzocaovilla.com',
     'giuseppezanotti.com',
-    'prives.com',
-
-    // Сумки и аксессуары
     'mulberry.com',
     'strathberry.com',
     'polene-paris.com',
     'mansurgavriel.com',
     'demellier.com',
-    'staud.co',
-    'byfar.com',
-    'jwpei.com',
-    'auper.com',
     'cuyana.com',
     'everlane.com',
 
@@ -1096,7 +1374,9 @@ class LinkUtils {
     'spotify.com/podcast',
   ];
 
-  // ========== ДИНАМИЧЕСКАЯ ПРОВЕРКА ==========
+  // ============================================================
+  // 🔥 ДИНАМИЧЕСКАЯ ПРОВЕРКА
+  // ============================================================
   static bool isAllowedDomain(String url) {
     try {
       final uri = Uri.parse(url);
@@ -1111,6 +1391,128 @@ class LinkUtils {
       }
 
       const patterns = [
+        // 🔥 НОВОЕ: карты и goo.gl
+        'goo.gl',
+        'maps.google.',
+        'google.com/maps',
+
+        // 🔥 НОВОЕ: РУ-маркетплейсы
+        'lamoda.',
+        'kufar.',
+        'deal.by',
+        'onliner.by',
+        'domovita.',
+        'ay.by',
+        'bamper.by',
+        'relax.by',
+        'flagma.',
+        'satom.ru',
+        'tiu.ru',
+        'pulscen.',
+        'satu.kz',
+        'prom.ua',
+        'rozetka.',
+        'olx.',
+        'joom.',
+        'shafa.ua',
+        'kidstaff.',
+        'modnokasta.',
+        'goodini.',
+        'kasta.ua',
+
+        // 🔥 НОВОЕ: РУ-одежда/обувь/аксессуары
+        'befree.',
+        'tvoe.',
+        'zolla.',
+        'incity.',
+        'odji.',
+        'loverepublic.',
+        'lime-shop.',
+        'dub.',
+        '12storeez.',
+        'ushatava.',
+        'choux.',
+        'markformelle.',
+        'svitanak.',
+        'milavitsa.',
+        'serge.by',
+        'conte.',
+        'gulliver.',
+        'flo.ua',
+        'intertop.',
+        'arber.',
+        'ecco.',
+        'respect-shoes.',
+        'monro.',
+        'sneakerhead.',
+        'street-beat.',
+        'kupivip.',
+        'butik.',
+        'shop.by',
+        'gippo.',
+        'belwest.',
+        'vitamir.',
+
+        // 🔥 НОВОЕ: РУ-косметика
+        'goldapple.',
+        'letual.',
+        'letu.',
+        'rivgosh.',
+        'iledebeaute.',
+        'sephora.',
+        'beautydrugs.',
+        'yves-rocher.',
+        'flormar.',
+        'art-visage.',
+        'relouis.',
+        'mixit.',
+        'belita.',
+        'vitex.',
+        'livdelano.',
+        'nature-siberica.',
+        'naturesiberica.',
+        'levrana.',
+        'mivitt.',
+
+        // 🔥 НОВОЕ: РУ-украшения
+        'sunlight.',
+        'sokolov.',
+        'adamas.',
+        '585zolotoy.',
+        'zolotoy585.',
+        'brilliant.',
+        'alrosa.',
+        'korloff.',
+        'yashma.',
+        'moscowjewelry.',
+        'kaboshon.',
+
+        // 🔥 НОВОЕ: РУ-бренды одежды
+        'zarina.',
+        'be-you.',
+        'sonya.',
+        'love-republic.',
+        'modis.',
+        'charuel.',
+        'tomfarr.',
+        'savagemode.',
+        'funday.',
+        'boomkek.',
+        'kari.',
+        'centro.',
+        'matroskin.',
+        'meleon.',
+        'fabrikaokon.',
+        'alicelook.',
+
+        // 🔥 НОВОЕ: белорусские
+        '5element.',
+        'elektrosila.',
+        'dilis.',
+        'leon.by',
+        'mila-vitsa.',
+
+        // ===== ДАЛЬШЕ — СТАРЫЕ ПАТТЕРНЫ =====
         'amazon.',
         'apple.com',
         'google.',
@@ -1487,9 +1889,225 @@ class LinkUtils {
     }
   }
 
-  // ========== ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ ==========
+  // ============================================================
+  // 🔥 РАЗВОРАЧИВАНИЕ GOOGLE MAPS (goo.gl)
+  // ============================================================
+  static Future<String?> resolveGoogleMapsUrl(String inputUrl) async {
+    // Кэш
+    if (_resolvedCache.containsKey(inputUrl)) {
+      return _resolvedCache[inputUrl];
+    }
+
+    try {
+      final uri = Uri.tryParse(inputUrl.trim());
+      if (uri == null) {
+        _resolvedCache[inputUrl] = null;
+        return null;
+      }
+
+      final allowedHosts = [
+        'maps.app.goo.gl',
+        'goo.gl',
+        'google.com',
+        'maps.google.com',
+        'www.google.com',
+      ];
+      if (!allowedHosts.any((h) => uri.host == h || uri.host.endsWith('.$h'))) {
+        _resolvedCache[inputUrl] = null;
+        return null;
+      }
+
+      final client = http.Client();
+      try {
+        var currentUrl = uri;
+        const maxRedirects = 10;
+        var redirectCount = 0;
+
+        while (redirectCount < maxRedirects) {
+          final request = http.Request('GET', currentUrl)
+            ..followRedirects = false
+            ..headers['User-Agent'] =
+                'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36';
+
+          final streamedResponse = await client.send(request);
+          final response = await http.Response.fromStream(streamedResponse);
+
+          if (response.statusCode >= 300 && response.statusCode < 400) {
+            final location = response.headers['location'];
+            if (location == null || location.isEmpty) break;
+            currentUrl = Uri.parse(currentUrl.resolve(location).toString());
+            redirectCount++;
+            continue;
+          }
+
+          if (response.statusCode == 200) {
+            final body = response.body;
+            final jsRedirect = _extractJsRedirect(body);
+            if (jsRedirect != null) {
+              currentUrl = Uri.parse(currentUrl.resolve(jsRedirect).toString());
+              redirectCount++;
+              continue;
+            }
+          }
+
+          break;
+        }
+
+        final finalUrl = currentUrl.toString();
+        final isGoogleMaps = currentUrl.host.contains('google.') &&
+            currentUrl.path.contains('/maps');
+
+        final result = isGoogleMaps ? finalUrl : null;
+        _resolvedCache[inputUrl] = result;
+        return result;
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      print('❌ Ошибка при разворачивании ссылки: $e');
+      _resolvedCache[inputUrl] = null;
+      return null;
+    }
+  }
+
+  static String? _extractJsRedirect(String html) {
+    final metaMatch = RegExp(
+      r'''<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"'\s]+)''',
+      caseSensitive: false,
+    ).firstMatch(html);
+    if (metaMatch != null) return metaMatch.group(1);
+
+    final jsMatch = RegExp(
+      r'''window\.location(?:\.replace|\.href)?\s*[=(]\s*["']([^"']+)["']''',
+    ).firstMatch(html);
+    if (jsMatch != null) return jsMatch.group(1);
+
+    return null;
+  }
+
+  /// Быстрая синхронная проверка — это Google Maps (для UI).
+  static bool looksLikeGoogleMaps(String url) {
+    final lower = url.toLowerCase();
+    return lower.contains('maps.app.goo.gl') ||
+        lower.contains('goo.gl/maps') ||
+        (lower.contains('google.') && lower.contains('/maps'));
+  }
+
+  // ============================================================
+  // 🔥 ОПРЕДЕЛЕНИЕ ПЛАТФОРМЫ
+  // ============================================================
   static String detectPlatform(String url) {
     final lower = url.toLowerCase();
+
+    // ---- КАРТЫ (🔥 НОВОЕ) ----
+    if (lower.contains('maps.app.goo.gl') ||
+        lower.contains('goo.gl/maps') ||
+        (lower.contains('google.') && lower.contains('/maps'))) {
+      return 'google_maps';
+    }
+
+    // ---- 🔥 РУ-МАРКЕТПЛЕЙСЫ ----
+    if (lower.contains('lamoda.')) return 'lamoda';
+    if (lower.contains('kufar.')) return 'kufar';
+    if (lower.contains('deal.by')) return 'deal';
+    if (lower.contains('onliner.by')) return 'onliner';
+    if (lower.contains('domovita.')) return 'domovita';
+    if (lower.contains('ay.by')) return 'ay';
+    if (lower.contains('bamper.by')) return 'bamper';
+    if (lower.contains('relax.by')) return 'relax';
+    if (lower.contains('olx.')) return 'olx';
+    if (lower.contains('joom.')) return 'joom';
+    if (lower.contains('rozetka.')) return 'rozetka';
+    if (lower.contains('prom.ua')) return 'prom';
+    if (lower.contains('shafa.ua')) return 'shafa';
+    if (lower.contains('kasta.ua')) return 'kasta';
+
+    // ---- 🔥 РУ-ОДЕЖДА ----
+    if (lower.contains('befree.')) return 'befree';
+    if (lower.contains('tvoe.')) return 'tvoe';
+    if (lower.contains('zolla.')) return 'zolla';
+    if (lower.contains('incity.')) return 'incity';
+    if (lower.contains('odji.')) return 'odji';
+    if (lower.contains('loverepublic.')) return 'loverepublic';
+    if (lower.contains('lime-shop.')) return 'limeshop';
+    if (lower.contains('dub.')) return 'dub';
+    if (lower.contains('12storeez.')) return '12storeez';
+    if (lower.contains('ushatava.')) return 'ushatava';
+    if (lower.contains('choux.')) return 'choux';
+    if (lower.contains('markformelle.')) return 'markformelle';
+    if (lower.contains('svitanak.')) return 'svitanak';
+    if (lower.contains('milavitsa.')) return 'milavitsa';
+    if (lower.contains('serge.by')) return 'serge';
+    if (lower.contains('conte.')) return 'conte';
+    if (lower.contains('gulliver.')) return 'gulliver';
+    if (lower.contains('intertop.')) return 'intertop';
+    if (lower.contains('arber.')) return 'arber';
+    if (lower.contains('ecco.')) return 'ecco';
+    if (lower.contains('respect-shoes.')) return 'respectshoes';
+    if (lower.contains('monro.')) return 'monro';
+    if (lower.contains('sneakerhead.')) return 'sneakerhead';
+    if (lower.contains('street-beat.')) return 'streetbeat';
+    if (lower.contains('kupivip.')) return 'kupivip';
+    if (lower.contains('butik.')) return 'butik';
+    if (lower.contains('gippo.')) return 'gippo';
+    if (lower.contains('belwest.')) return 'belwest';
+    if (lower.contains('zarina.')) return 'zarina';
+    if (lower.contains('be-you.')) return 'beyou';
+    if (lower.contains('sonya.')) return 'sonya';
+    if (lower.contains('love-republic.')) return 'loverepublic';
+    if (lower.contains('modis.')) return 'modis';
+    if (lower.contains('charuel.')) return 'charuel';
+    if (lower.contains('tomfarr.')) return 'tomfarr';
+    if (lower.contains('savagemode.')) return 'savagemode';
+    if (lower.contains('funday.')) return 'funday';
+    if (lower.contains('boomkek.')) return 'boomkek';
+    if (lower.contains('kari.')) return 'kari';
+    if (lower.contains('centro.')) return 'centro';
+    if (lower.contains('matroskin.')) return 'matroskin';
+    if (lower.contains('meleon.')) return 'meleon';
+    if (lower.contains('fabrikaokon.')) return 'fabrikaokon';
+    if (lower.contains('alicelook.')) return 'alicelook';
+
+    // ---- 🔥 РУ-КОСМЕТИКА ----
+    if (lower.contains('goldapple.')) return 'goldapple';
+    if (lower.contains('letual.')) return 'letual';
+    if (lower.contains('letu.')) return 'letu';
+    if (lower.contains('rivgosh.')) return 'rivgosh';
+    if (lower.contains('iledebeaute.')) return 'iledebeaute';
+    if (lower.contains('sephora.')) return 'sephora';
+    if (lower.contains('beautydrugs.')) return 'beautydrugs';
+    if (lower.contains('yves-rocher.')) return 'yvesrocher';
+    if (lower.contains('flormar.')) return 'flormar';
+    if (lower.contains('art-visage.')) return 'artvisage';
+    if (lower.contains('relouis.')) return 'relouis';
+    if (lower.contains('mixit.')) return 'mixit';
+    if (lower.contains('belita.')) return 'belita';
+    if (lower.contains('vitex.')) return 'vitex';
+    if (lower.contains('livdelano.')) return 'livdelano';
+    if (lower.contains('nature-siberica.')) return 'naturesiberica';
+    if (lower.contains('naturesiberica.')) return 'naturesiberica';
+    if (lower.contains('levrana.')) return 'levrana';
+    if (lower.contains('mivitt.')) return 'mivitt';
+
+    // ---- 🔥 РУ-УКРАШЕНИЯ ----
+    if (lower.contains('sunlight.')) return 'sunlight';
+    if (lower.contains('sokolov.')) return 'sokolov';
+    if (lower.contains('adamas.')) return 'adamas';
+    if (lower.contains('585zolotoy.')) return 'zolotoy585';
+    if (lower.contains('zolotoy585.')) return 'zolotoy585';
+    if (lower.contains('brilliant.')) return 'brilliant';
+    if (lower.contains('alrosa.')) return 'alrosa';
+    if (lower.contains('korloff.')) return 'korloff';
+    if (lower.contains('yashma.')) return 'yashma';
+    if (lower.contains('moscowjewelry.')) return 'moscowjewelry';
+    if (lower.contains('kaboshon.')) return 'kaboshon';
+
+    // ---- 🔥 БЕЛОРУССКИЕ ----
+    if (lower.contains('5element.')) return '5element';
+    if (lower.contains('elektrosila.')) return 'elektrosila';
+    if (lower.contains('dilis.')) return 'dilis';
+    if (lower.contains('leon.by')) return 'leon';
+    if (lower.contains('mila-vitsa.')) return 'milavitsa';
 
     // ---- МУЗЫКА ----
     if (lower.contains('spotify.com')) return 'spotify';
@@ -1573,7 +2191,6 @@ class LinkUtils {
     if (lower.contains('etsy.com')) return 'etsy';
     if (lower.contains('shopify.com') || lower.contains('myshopify.com')) return 'shopify';
     if (lower.contains('21vek.by')) return '21vek';
-    if (lower.contains('lamoda.ru')) return 'lamoda';
     if (lower.contains('kaspi.kz')) return 'kaspi';
     if (lower.contains('flipkart.com')) return 'flipkart';
     if (lower.contains('shopee.')) return 'shopee';
@@ -1737,18 +2354,12 @@ class LinkUtils {
     if (lower.contains('cosrx.com')) return 'cosrx';
     if (lower.contains('sokoglam.com')) return 'sokoglam';
     if (lower.contains('yesstyle.com')) return 'yesstyle';
-    if (lower.contains('letual.ru')) return 'letual';
-    if (lower.contains('rivgosh.ru')) return 'rivgosh';
-    if (lower.contains('goldapple.ru')) return 'goldapple';
 
     // ---- УКРАШЕНИЯ ----
     if (lower.contains('pandora.net')) return 'pandora';
     if (lower.contains('swarovski.com')) return 'swarovski';
     if (lower.contains('tiffany.com')) return 'tiffany';
     if (lower.contains('cartier.com')) return 'cartier';
-    if (lower.contains('sunlight.net')) return 'sunlight';
-    if (lower.contains('585zolotoy.ru')) return 'zolotoy585';
-    if (lower.contains('yashma.ru')) return 'yashma';
     if (lower.contains('chopard.com')) return 'chopard';
     if (lower.contains('bulgari.com')) return 'bulgari';
     if (lower.contains('van-cleef-arpels.com')) return 'vancleef';
@@ -2165,6 +2776,108 @@ class LinkUtils {
     final p = platform ?? detectPlatform(url);
 
     switch (p) {
+      // ---- КАРТЫ ----
+      case 'google_maps': return 'Google Maps';
+
+      // ---- 🔥 РУ-МАРКЕТПЛЕЙСЫ ----
+      case 'lamoda': return 'Lamoda';
+      case 'kufar': return 'Kufar';
+      case 'deal': return 'Deal.by';
+      case 'onliner': return 'Onliner';
+      case 'domovita': return 'Domovita';
+      case 'ay': return 'Ay.by';
+      case 'bamper': return 'Bamper.by';
+      case 'relax': return 'Relax.by';
+      case 'olx': return 'OLX';
+      case 'joom': return 'Joom';
+      case 'rozetka': return 'Rozetka';
+      case 'prom': return 'Prom.ua';
+      case 'shafa': return 'Shafa';
+      case 'kasta': return 'Kasta';
+
+      // ---- 🔥 РУ-ОДЕЖДА ----
+      case 'befree': return 'befree';
+      case 'tvoe': return 'ТВОЕ';
+      case 'zolla': return 'Zolla';
+      case 'incity': return 'INCITY';
+      case 'odji': return 'ODJI';
+      case 'loverepublic': return 'Love Republic';
+      case 'limeshop': return 'LIME';
+      case 'dub': return 'DUB';
+      case '12storeez': return '12 STOREEZ';
+      case 'ushatava': return 'Ushatava';
+      case 'choux': return 'CHOUX';
+      case 'markformelle': return 'Mark Formelle';
+      case 'svitanak': return 'Свитанак';
+      case 'milavitsa': return 'Milavitsa';
+      case 'serge': return 'Serge';
+      case 'conte': return 'Conte';
+      case 'gulliver': return 'Gulliver';
+      case 'intertop': return 'Intertop';
+      case 'arber': return 'Arber';
+      case 'ecco': return 'ECCO';
+      case 'respectshoes': return 'Respect';
+      case 'monro': return 'Monro';
+      case 'sneakerhead': return 'Sneakerhead';
+      case 'streetbeat': return 'Street Beat';
+      case 'kupivip': return 'KupiVIP';
+      case 'butik': return 'Butik';
+      case 'gippo': return 'Gippo';
+      case 'belwest': return 'Belwest';
+      case 'zarina': return 'Zarina';
+      case 'beyou': return 'be you';
+      case 'sonya': return 'Sonya';
+      case 'modis': return 'Modis';
+      case 'charuel': return 'Charuel';
+      case 'tomfarr': return 'Tom Farr';
+      case 'savagemode': return 'Savage';
+      case 'funday': return 'Funday';
+      case 'boomkek': return 'Boomkek';
+      case 'kari': return 'Kari';
+      case 'centro': return 'Centro';
+      case 'matroskin': return 'Matroskin';
+      case 'meleon': return 'Meleon';
+      case 'fabrikaokon': return 'Фабрика Окон';
+      case 'alicelook': return 'Alice Look';
+
+      // ---- 🔥 РУ-КОСМЕТИКА ----
+      case 'goldapple': return 'Золотое Яблоко';
+      case 'letual': return 'Л\'Этуаль';
+      case 'letu': return 'Лэтуаль';
+      case 'rivgosh': return 'Рив Гош';
+      case 'iledebeaute': return 'Иль де Ботэ';
+      case 'beautydrugs': return 'Beauty Drugs';
+      case 'yvesrocher': return 'Yves Rocher';
+      case 'flormar': return 'Flormar';
+      case 'artvisage': return 'Art&Fact';
+      case 'relouis': return 'Relouis';
+      case 'mixit': return 'Mixit';
+      case 'belita': return 'Белита';
+      case 'vitex': return 'Витэкс';
+      case 'livdelano': return 'Liv Delano';
+      case 'naturesiberica': return 'Natura Siberica';
+      case 'levrana': return 'Levrana';
+      case 'mivitt': return 'Mi&Vitt';
+
+      // ---- 🔥 РУ-УКРАШЕНИЯ ----
+      case 'sunlight': return 'Sunlight';
+      case 'sokolov': return 'SOKOLOV';
+      case 'adamas': return 'Адамас';
+      case 'zolotoy585': return '585 Золотой';
+      case 'brilliant': return 'Бриллиант';
+      case 'alrosa': return 'АЛРОСА';
+      case 'korloff': return 'Korloff';
+      case 'yashma': return 'Яшма';
+      case 'moscowjewelry': return 'Moscow Jewelry';
+      case 'kaboshon': return 'Kaboshon';
+
+      // ---- 🔥 БЕЛОРУССКИЕ ----
+      case '5element': return '5 Элемент';
+      case 'elektrosila': return 'Электросила';
+      case 'dilis': return 'Dilis';
+      case 'leon': return 'Leon';
+      case 'mila-vitsa': return 'Milavitsa';
+
       // ---- МУЗЫКА ----
       case 'spotify': return 'Spotify';
       case 'soundcloud': return 'SoundCloud';
@@ -2247,7 +2960,6 @@ class LinkUtils {
       case 'etsy': return 'Etsy';
       case 'shopify': return 'Shopify';
       case '21vek': return '21vek.by';
-      case 'lamoda': return 'Lamoda';
       case 'kaspi': return 'Kaspi';
       case 'flipkart': return 'Flipkart';
       case 'shopee': return 'Shopee';
@@ -2411,23 +3123,15 @@ class LinkUtils {
       case 'cosrx': return 'COSRX';
       case 'sokoglam': return 'Soko Glam';
       case 'yesstyle': return 'YesStyle';
-      case 'letual': return 'Л\'Этуаль';
-      case 'rivgosh': return 'Рив Гош';
-      case 'goldapple': return 'Золотое Яблоко';
 
       // ---- УКРАШЕНИЯ ----
       case 'pandora': return 'Pandora';
       case 'swarovski': return 'Swarovski';
       case 'tiffany': return 'Tiffany & Co.';
       case 'cartier': return 'Cartier';
-      case 'sunlight': return 'Sunlight';
-      case 'zolotoy585': return '585 Золотой';
-      case 'yashma': return 'Яшма Золото';
       case 'chopard': return 'Chopard';
       case 'bulgari': return 'Bvlgari';
       case 'vancleef': return 'Van Cleef & Arpels';
-      case 'adamas': return 'Адамас';
-      case 'sokolov': return 'Соколов';
 
       // ---- ССЫЛКИ ДЛЯ ТВОРЦОВ ----
       case 'linktree': return 'Linktree';
@@ -2438,7 +3142,6 @@ class LinkUtils {
 
       // ---- ЕДА ----
       case 'yandex_lavka': return 'Яндекс Лавка';
-      case 'sbermarket': return 'СберМаркет';
       case 'ozon_fresh': return 'Ozon Fresh';
       case 'vkusvill': return 'ВкусВилл';
       case 'dodopizza': return 'Додо Пицца';
