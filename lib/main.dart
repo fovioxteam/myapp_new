@@ -44,7 +44,7 @@ import 'controllers/connectivity_controller.dart';
 import 'controllers/deep_link_controller.dart';
 import 'controllers/post_controller.dart';
 import 'controllers/upload_controller.dart';
-import 'controllers/nav_bar_controller.dart'; // 🔥 НОВОЕ
+import 'controllers/nav_bar_controller.dart';
 
 // Services
 import 'services/follow_service.dart';
@@ -165,7 +165,7 @@ Future<void> _initializeServices() async {
   Get.put(MetricsService(), permanent: true);
   Get.put(UnreadService(), permanent: true);
   Get.put(AuthService(), permanent: true);
-  Get.put(NavBarController(), permanent: true); // 🔥 НОВОЕ
+  Get.put(NavBarController(), permanent: true);
   
   await PushNotificationsService().init();
   
@@ -603,7 +603,6 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
   Color get _backgroundColor => Colors.black;
   
   void _onItemTapped(int index) {
-    // 🔥 СБРОС МЕНЮ ПРИ СМЕНЕ ТАБА
     Get.find<NavBarController>().reset();
 
     if (index == 2) {
@@ -663,10 +662,16 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
     if (mounted) setState(() => _isRefreshingProfile = false);
   }
 
+  bool _onGlobalScroll(ScrollNotification notification) {
+    if (notification.metrics.axis == Axis.horizontal) return false;
+    Get.find<NavBarController>().handleScroll(notification);
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isDark = _selectedIndex == 0 || _selectedIndex == 2;
-    final double screenWidth = MediaQuery.of(context).size.width - 32;
+    final double screenWidth = MediaQuery.of(context).size.width - 48;
     final double itemWidth = screenWidth / 5;
     const double baseCircleWidth = 56;
     const double baseCircleHeight = 50;
@@ -678,8 +683,15 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       extendBody: true,
       body: Stack(
         children: [
-          IndexedStack(index: _selectedIndex, children: _screens),
+          // Глобальный NotificationListener
+          NotificationListener<ScrollNotification>(
+            onNotification: _onGlobalScroll,
+            child: IndexedStack(index: _selectedIndex, children: _screens),
+          ),
           
+          // ============================================================
+          // 🔥 БЛЮР СНИЗУ — КАК БЫЛ ИЗНАЧАЛЬНО
+          // ============================================================
           Positioned(
             bottom: 0,
             left: 0,
@@ -696,15 +708,11 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           ),
         ],
       ),
-      // ============================================================
-      // 🔥 ПЛАВНОЕ УМЕНЬШЕНИЕ МЕНЮ (AnimatedScale)
-      // ============================================================
       bottomNavigationBar: Obx(() {
         final navController = Get.find<NavBarController>();
-        final v = navController.visibility.value; // 1.0 → 0.0
+        final v = navController.visibility.value;
 
-        // Меню чуть уменьшается, но НЕ пропадает
-        final double scale = 0.90 + (0.10 * v); // от 1.0 до 0.90
+        final double scale = 0.85 + (0.15 * v);
 
         return AnimatedScale(
           scale: scale,
@@ -712,26 +720,28 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
           curve: Curves.easeOutCubic,
           alignment: Alignment.bottomCenter,
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
             child: Stack(
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
+                // ============================================================
+                // 🔥 ПЛАШКА МЕНЮ СО СТЕКЛЯННЫМ РАЗМЫТИЕМ
+                // sigma увеличено с 20 до 40 — размытие в 2 раза сильнее
+                // ============================================================
                 ClipRRect(
                   borderRadius: BorderRadius.circular(30),
                   child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
+                    filter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40), // 🔥 УСИЛЕНО
+                    child: Container(
                       height: 64,
                       decoration: BoxDecoration(
-                        color: isDark 
-                            ? Colors.black.withOpacity(0.7)
+                        color: isDark
+                            ? Colors.black.withOpacity(0.65)
                             : Colors.white.withOpacity(0.85),
                         borderRadius: BorderRadius.circular(30),
                         border: Border.all(
-                          color: isDark 
+                          color: isDark
                               ? Colors.white.withOpacity(0.1)
                               : Colors.black.withOpacity(0.05),
                           width: 0.5,
@@ -882,11 +892,11 @@ class _NavItem extends StatelessWidget {
                     color: isActive
                         ? (isDark ? Colors.white : Colors.black)
                         : (isDark ? Colors.white : Colors.black),
-                    size: 26,
+                    size: 28,
                   )
                 : Icon(
                     isActive ? activeIcon : icon,
-                    size: 26,
+                    size: 28,
                     weight: 900.0,
                     color: isActive
                         ? (isDark ? Colors.white : Colors.black)
@@ -931,7 +941,7 @@ class _CenterButton extends StatelessWidget {
         ),
         child: Icon(
           icon,
-          size: 26,
+          size: 28,
           weight: 900.0,
           color: isActive
               ? (isDark ? Colors.black : Colors.white)

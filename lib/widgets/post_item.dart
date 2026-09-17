@@ -240,7 +240,6 @@ class _PostItemState extends State<PostItem>
     print('🔄 [VIDEO] new post: ${widget.post.keys}');
     print('🔄 [VIDEO] mediaType: ${widget.post['mediaType']}, videoUrl: ${widget.post['videoUrl']}');
 
-    // 🔥 Если пост сменился — перезагружаем статус подписки
     if (oldWidget.post['id'] != widget.post['id'] ||
         oldWidget.post['userId'] != widget.post['userId']) {
       _followSubscription?.cancel();
@@ -407,14 +406,16 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 ПЛАВНАЯ АНИМАЦИЯ ЛАЙКА (РОЗОВОЕ СЕРДЦЕ, БЕЗ СВЕЧЕНИЯ)
+  // 🔥 ПЛАВНАЯ АНИМАЦИЯ ЛАЙКА (РОЗОВОЕ СЕРДЦЕ, БЕЗ СВЕЧЕНИЯ) — ИСХОДНАЯ ВЕРСИЯ
   // ============================================================
   void _initAnimations() {
+    // Контроллер анимации сердца — 700ms для плавности
     _heartAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
 
+    // Плавная анимация масштаба
     _heartScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 0.0, end: 1.5),
@@ -433,6 +434,7 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeOut,
     ));
 
+    // Плавная прозрачность
     _heartOpacityAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.9), weight: 50),
@@ -442,6 +444,7 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeInOut,
     ));
 
+    // Плавный подъём
     _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -449,6 +452,7 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // Плавное вращение
     _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -456,12 +460,16 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // Сброс контроллера после завершения
     _heartAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _heartAnimationController.reset();
       }
     });
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ ИКОНКИ ЛАЙКА (при нажатии)
+    // ============================================================
     _likeIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -473,6 +481,9 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ СОХРАНЕНИЯ
+    // ============================================================
     _saveIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -484,6 +495,9 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
+    // ============================================================
+    // 🔥 АНИМАЦИЯ ДЛЯ КНОПКИ FOLLOW
+    // ============================================================
     _followAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -623,8 +637,6 @@ class _PostItemState extends State<PostItem>
 
       _followSubscription?.cancel();
       _followSubscription = _followService.getFollowStatusStream(userId).listen((newStatus) {
-        // 🔥 Игнорируем стрим, пока идёт локальное переключение —
-        // это разрывает цикл 11 → 12 → 11
         if (_isToggling) return;
         if (!mounted) return;
         _safeSetState(() => _isFollowing = newStatus);
@@ -634,7 +646,7 @@ class _PostItemState extends State<PostItem>
 
   Future<void> _toggleFollow() async {
     if (!mounted || !_canExecuteAction('follow')) return;
-    if (_isToggling) return; // 🔥 защита от повторного тапа во время запроса
+    if (_isToggling) return;
 
     if (!AuthService.instance.isLoggedIn) {
       await AuthService.instance.requireAuth();
@@ -659,17 +671,24 @@ class _PostItemState extends State<PostItem>
     _animateFollowButton();
 
     final previousStatus = _isFollowing;
+    final newStatus = !previousStatus;
 
-    _isToggling = true; // 🔥 блокируем стрим
-    _safeSetState(() => _isFollowing = !_isFollowing);
+    _isToggling = true;
+
+    if (mounted) {
+      setState(() => _isFollowing = newStatus);
+    }
 
     try {
       await _followService.toggleFollow(userId);
+      await Future.delayed(const Duration(milliseconds: 800));
     } catch (e) {
-      _safeSetState(() => _isFollowing = previousStatus);
+      if (mounted) {
+        setState(() => _isFollowing = previousStatus);
+      }
       _showSnackBar('Failed to ${previousStatus ? 'unfollow' : 'follow'}', Colors.red);
     } finally {
-      _isToggling = false; // 🔥 разблокируем стрим
+      _isToggling = false;
       _actionCompleted('follow');
     }
   }
@@ -1074,6 +1093,9 @@ class _PostItemState extends State<PostItem>
                 ],
               ),
             ),
+            // ============================================================
+            // 🔥 АНИМАЦИЯ СЕРДЦА — ИСХОДНАЯ ВЕРСИЯ
+            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1206,6 +1228,9 @@ class _PostItemState extends State<PostItem>
                   child: _buildTikTokIndicators(),
                 ),
               ),
+            // ============================================================
+            // 🔥 АНИМАЦИЯ СЕРДЦА — ИСХОДНАЯ ВЕРСИЯ
+            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1553,7 +1578,7 @@ class _PostItemState extends State<PostItem>
   }
 
   // ============================================================
-  // 🔥 USER INFO & CAPTION (С КОМПАКТНОЙ КНОПКОЙ FOLLOW)
+  // 🔥 USER INFO & CAPTION
   // ============================================================
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
@@ -1621,33 +1646,29 @@ class _PostItemState extends State<PostItem>
                       ),
                     ),
                     if (userId != null && userId != _auth.currentUser?.uid)
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 200),
-                        transitionBuilder: (Widget child, Animation<double> animation) {
-                          return FadeTransition(opacity: animation, child: child);
-                        },
-                        child: Container(
-                          key: ValueKey<bool>(_isFollowing),
-                          margin: const EdgeInsets.only(left: 8),
-                          // 🔥 КОМПАКТНАЯ КНОПКА: 72x26
-                          width: 72,
-                          height: 26,
-                          child: GestureDetector(
-                            onTap: _toggleFollow,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                              decoration: BoxDecoration(
-                                color: _isFollowing ? Colors.white.withOpacity(0.2) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: _isFollowing ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.5),
-                                  width: 1,
-                                ),
+                      Container(
+                        margin: const EdgeInsets.only(left: 8),
+                        width: 76,
+                        height: 26,
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleFollow,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+                            decoration: BoxDecoration(
+                              color: _isFollowing ? Colors.white.withOpacity(0.2) : Colors.transparent,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: _isFollowing ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.5),
+                                width: 1,
                               ),
-                              child: Center(
+                            ),
+                            child: Center(
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
                                 child: Text(
                                   _isFollowing ? "Following" : "Follow",
-                                  // 🔥 ТЕКСТ НЕ УМЕНЬШАЕМ — остаётся 12
                                   style: TextStyle(
                                     color: _isFollowing ? Colors.white : Colors.white.withOpacity(0.9),
                                     fontSize: 12,
