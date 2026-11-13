@@ -1,3 +1,5 @@
+// lib/controllers/other_profile_controller.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -13,6 +15,9 @@ class OtherProfileController extends ProfileBaseController {
   
   final RxBool _isFollowing = false.obs;
   final RxBool _showUnfollow = false.obs;
+
+  // ✅ НОВОЕ ПОЛЕ: badgeType
+  final RxString badgeType = ''.obs;
   
   String? _currentUserId;
   String? _profileUserId;
@@ -59,6 +64,8 @@ class OtherProfileController extends ProfileBaseController {
       
       username.value = data['username']?.toString() ?? 'User';
       bio.value = data['bio']?.toString() ?? '';
+      // ✅ ЧИТАЕМ badgeType
+      badgeType.value = data['badgeType']?.toString() ?? '';
       
       final avatar = data['avatarUrl']?.toString();
       if (avatar != null && avatar.trim().isNotEmpty) {
@@ -250,6 +257,8 @@ class OtherProfileController extends ProfileBaseController {
   void _setDefaultValues(String userId) {
     username.value = 'User';
     bio.value = '';
+    // ✅ СБРАСЫВАЕМ badgeType
+    badgeType.value = '';
     avatarUrl.value = 'https://via.placeholder.com/150/CCCCCC/FFFFFF?text=User';
     followersCount.value = 0;
     followingCount.value = 0;

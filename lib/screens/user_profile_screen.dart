@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'follow_list_screen.dart';
 import '../widgets/post_item.dart';
 import '../widgets/profile_posts_grid.dart';
+import '../widgets/user_name_with_badge.dart'; // ← ДОБАВЛЕНО
 import '../controllers/other_profile_controller.dart';
 import '../controllers/post_controller.dart';
 import '../services/follow_service.dart';
@@ -266,9 +267,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 FOLLOW BUTTON — РАДИУС 20 (как в PostItem)
-  // ============================================================
   Widget _buildFollowButton() {
     final isFollowing = _localIsFollowing;
     final showUnfollow = controller.showUnfollow;
@@ -293,7 +291,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         height: 40,
         decoration: BoxDecoration(
           color: isFollowing ? Colors.grey[100]! : Colors.black,
-          // 🔥 ИЗМЕНЕНО: радиус 8 → 20 (как в PostItem)
           borderRadius: BorderRadius.circular(20),
           border: isFollowing
               ? Border.all(color: Colors.grey[300]!, width: 1.5)
@@ -342,9 +339,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 UNFOLLOW CONFIRMATION — РАДИУС 20 (как в PostItem)
-  // ============================================================
   Widget _buildUnfollowConfirmation() {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -352,7 +346,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
       height: 40,
       decoration: BoxDecoration(
         color: Colors.white,
-        // 🔥 ИЗМЕНЕНО: радиус 8 → 20
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.grey[300]!, width: 1.5),
       ),
@@ -427,6 +420,9 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
+  // ============================================================
+  // 🔥 BUILD — с галочкой в AppBar
+  // ============================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -440,13 +436,31 @@ class _UserProfileScreenState extends State<UserProfileScreen>
           statusBarIconBrightness: Brightness.dark,
           statusBarBrightness: Brightness.light,
         ),
-        title: Obx(() => Text(
-          controller.username.value,
-          style: const TextStyle(
-            color: Colors.black, 
-            fontWeight: FontWeight.w600,
-            fontSize: 20,
-          ),
+        // ✅ ПАТЧ: галочка + fontSize 22 + letterSpacing -0.3
+        title: Obx(() => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                controller.username.value,
+                style: const TextStyle(
+                  color: Colors.black, 
+                  fontWeight: FontWeight.w600,
+                  fontSize: 22, // ← было 20, стало 22
+                  letterSpacing: -0.3,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (controller.badgeType.value.isNotEmpty) ...[
+              const SizedBox(width: 5),
+              UserNameWithBadge(
+                name: '',
+                badgeType: controller.badgeType.value,
+                iconSize: 18, // ← 18
+              ),
+            ],
+          ],
         )),
         centerTitle: true,
         leading: Theme(
@@ -527,19 +541,20 @@ class _UserProfileScreenState extends State<UserProfileScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem(userPosts.length, "Posts", onTap: () {}),
+                // ✅ ПАТЧ: маленькие буквы
+                _buildStatItem(userPosts.length, "posts", onTap: () {}),
                 StreamBuilder<int>(
                   stream: _followService.getFollowersCountStream(widget.userId),
                   builder: (context, snapshot) {
                     final count = snapshot.data ?? 0;
-                    return _buildStatItem(count, "Followers", onTap: _navigateToFollowers);
+                    return _buildStatItem(count, "followers", onTap: _navigateToFollowers);
                   },
                 ),
                 StreamBuilder<int>(
                   stream: _followService.getFollowingCountStream(widget.userId),
                   builder: (context, snapshot) {
                     final count = snapshot.data ?? 0;
-                    return _buildStatItem(count, "Following", onTap: _navigateToFollowing);
+                    return _buildStatItem(count, "following", onTap: _navigateToFollowing);
                   },
                 ),
               ],
@@ -573,11 +588,13 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     ));
   }
 
+  // ✅ ПАТЧ: тот же стиль, что в своём профиле
   Widget _buildStatItem(int number, String label, {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 150),
@@ -587,17 +604,21 @@ class _UserProfileScreenState extends State<UserProfileScreen>
               style: const TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Colors.black
+                color: Colors.black,
+                letterSpacing: -0.3,
+                height: 0.9, // ← компактно
               ),
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3), // ← 3px отступ
           Text(
             label,
             style: const TextStyle(
               fontSize: 12,
-              color: Colors.black54,
               fontWeight: FontWeight.w400,
+              color: Colors.black87, // ← темнее
+              letterSpacing: -0.3,
+              height: 0.95, // ← компактно
             ),
           ),
         ],
@@ -648,7 +669,11 @@ class _UserProfileScreenState extends State<UserProfileScreen>
                 const SizedBox(height: 4),
                 Obx(() => Text(
                   controller.bio.value,
-                  style: const TextStyle(fontSize: 14, color: Colors.black)
+                  style: const TextStyle(
+                    fontSize: 14, 
+                    color: Colors.black,
+                    letterSpacing: -0.2,
+                  )
                 )),
                 const SizedBox(height: 6),
               ],
@@ -679,9 +704,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
     );
   }
 
-  // ============================================================
-  // 🔥 MESSAGE BUTTON — РАДИУС 20 (как в PostItem)
-  // ============================================================
   Widget _buildMessageButton() {
     final currentUser = _auth.currentUser;
     final isOwnProfile = currentUser?.uid == widget.userId;
@@ -696,7 +718,6 @@ class _UserProfileScreenState extends State<UserProfileScreen>
         height: 40,
         decoration: BoxDecoration(
           border: Border.all(color: Colors.grey.shade300, width: 1.5),
-          // 🔥 ИЗМЕНЕНО: радиус 8 → 20 (как в PostItem)
           borderRadius: BorderRadius.circular(20),
           color: _isOpeningChat ? Colors.grey.shade200 : Colors.transparent,
         ),

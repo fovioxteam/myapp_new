@@ -193,6 +193,7 @@ class MyApp extends StatelessWidget {
         page: () => const Scaffold(body: Center(child: Text('404'))),
       ),
       navigatorObservers: [routeObserver],
+      // 🔥 ГЛОБАЛЬНЫЙ letterSpacing ЧЕРЕЗ DefaultTextStyle
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
@@ -201,9 +202,14 @@ class MyApp extends StatelessWidget {
             boldText: false,
             highContrast: false,
           ),
-          child: ScrollConfiguration(
-            behavior: _NoGlowScrollBehavior(),
-            child: _ConnectivityWrapper(child: child!),
+          child: DefaultTextStyle(
+            style: const TextStyle(
+              letterSpacing: -0.3,
+            ),
+            child: ScrollConfiguration(
+              behavior: _NoGlowScrollBehavior(),
+              child: _ConnectivityWrapper(child: child!),
+            ),
           ),
         );
       },
@@ -683,15 +689,11 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
       extendBody: true,
       body: Stack(
         children: [
-          // Глобальный NotificationListener
           NotificationListener<ScrollNotification>(
             onNotification: _onGlobalScroll,
             child: IndexedStack(index: _selectedIndex, children: _screens),
           ),
           
-          // ============================================================
-          // 🔥 БЛЮР СНИЗУ — КАК БЫЛ ИЗНАЧАЛЬНО
-          // ============================================================
           Positioned(
             bottom: 0,
             left: 0,
@@ -725,14 +727,10 @@ class _MainAppState extends State<MainApp> with WidgetsBindingObserver, SingleTi
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // ============================================================
-                // 🔥 ПЛАШКА МЕНЮ СО СТЕКЛЯННЫМ РАЗМЫТИЕМ
-                // sigma увеличено с 20 до 40 — размытие в 2 раза сильнее
-                // ============================================================
                 ClipRRect(
                   borderRadius: BorderRadius.circular(30),
                   child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40), // 🔥 УСИЛЕНО
+                    filter: ui.ImageFilter.blur(sigmaX: 40, sigmaY: 40),
                     child: Container(
                       height: 64,
                       decoration: BoxDecoration(

@@ -30,6 +30,7 @@ import 'security_settings_screen.dart';
 import '../widgets/post_item.dart';
 import '../widgets/shimmer_loading.dart';
 import '../widgets/profile_posts_grid.dart';
+import '../widgets/user_name_with_badge.dart';
 import 'user_profile_screen.dart';
 import 'post_detail_screen.dart';
 import 'guest_profile_screen.dart';
@@ -223,8 +224,6 @@ class _ProfileScreenState extends State<ProfileScreen>
   Worker? _likedDatesWorker;
   Worker? _savedDatesWorker;
 
-  // ========== МЕТОДЫ ОБНОВЛЕНИЯ ИЗ ГЛОБАЛЬНОГО КОНТРОЛЛЕРА ==========
-  
   void _refreshLikedPostsFromController() {
     if (_currentUserId.isEmpty) return;
     
@@ -307,7 +306,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     print('✅ [ProfileScreen] Saved posts updated: ${_savedPosts.length} posts');
   }
 
-  // ========== ЗАГРУЗКА ИЗ FIRESTORE ==========
   Future<void> _loadSavedPostsFromFirestore() async {
     if (_currentUserId.isEmpty) return;
     
@@ -444,8 +442,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ========== ИНИЦИАЛИЗАЦИЯ ==========
-
   @override
   void initState() {
     super.initState();
@@ -544,9 +540,6 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   bool get _isOnline => !_isOffline;
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _initializeData - С ПРЕДЗАГРУЗКОЙ ВИДЕО
-  // ============================================================
   Future<void> _initializeData() async {
     if (_currentUserId.isEmpty) return;
     
@@ -573,7 +566,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       await _loadUserData(refresh: true);
     }
     
-    // 🔥 ЗАГРУЖАЕМ ЛАЙКНУТЫЕ И СОХРАНЕННЫЕ
     try {
       await Future.wait([
         _loadLikedPostsFromFirestore(),
@@ -583,13 +575,9 @@ class _ProfileScreenState extends State<ProfileScreen>
       print('❌ Error loading liked/saved posts: $e');
     }
     
-    // 🔥 ОБНОВЛЯЕМ СПИСКИ
     _refreshLikedPostsFromController();
     _refreshSavedPostsFromController();
     
-    // ============================================================
-    // 🔥 ПРЕДЗАГРУЗКА ВИДЕО В ПРОФИЛЕ
-    // ============================================================
     final posts = _postController.userPosts[_currentUserId] ?? [];
     if (posts.isNotEmpty) {
       _postController.preloadProfileVideos(posts, maxPreload: 5);
@@ -627,7 +615,6 @@ class _ProfileScreenState extends State<ProfileScreen>
         print('📦 Posts already cached, skipping load');
       }
       
-      // 🔥 ПРЕДЗАГРУЗКА ВИДЕО ПОСЛЕ ЗАГРУЗКИ ПОСТОВ
       final posts = _postController.userPosts[_currentUserId] ?? [];
       if (posts.isNotEmpty) {
         _postController.preloadProfileVideos(posts, maxPreload: 5);
@@ -705,9 +692,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ МЕТОД ОТКРЫТИЯ ПОСТА
-  // ============================================================
   void _openPostDetail(String postId) {
     if (!mounted) return;
     
@@ -745,9 +729,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       if (initialIndex == -1) initialIndex = 0;
     }
     
-    // ============================================================
-    // 🔥 ОБНОВЛЯЕМ ПОСТЫ ИЗ ГЛОБАЛЬНОГО ХРАНИЛИЩА
-    // ============================================================
     final updatedPosts = posts.map((post) {
       final pid = post['id'] as String;
       final cachedPost = _postController.getPostFromStorage(pid);
@@ -785,24 +766,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ============================================================
-  // 🔥 ИСПРАВЛЕННЫЙ _refreshProfile
-  // ============================================================
   Future<void> _refreshProfile() async {
     if (!mounted) return;
     
     print('🔄 [ProfileScreen] ========== STARTING PROFILE REFRESH ==========');
     
-    // 🔥 1. ОЧИЩАЕМ ВЕСЬ КЭШ POST_CONTROLLER
     _postController.clearCache();
     _postController.clearUserPostsCache(_currentUserId);
     print('🗑️ [ProfileScreen] Cleared PostController cache');
     
-    // 🔥 2. ОЧИЩАЕМ КЭШ ИЗОБРАЖЕНИЙ
     await _clearImageCache();
     print('🗑️ [ProfileScreen] Cleared image cache');
     
-    // 🔥 3. СБРАСЫВАЕМ ЛОКАЛЬНЫЕ СПИСКИ
     setState(() {
       _likedPosts = [];
       _likedPostsLoaded = false;
@@ -812,27 +787,22 @@ class _ProfileScreenState extends State<ProfileScreen>
     });
     
     try {
-      // 🔥 4. ПЕРЕЗАГРУЖАЕМ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
       await _loadUserData(refresh: true);
       await _loadUserDetails();
       await _loadFollowingUsers();
       
-      // 🔥 5. ПЕРЕЗАГРУЖАЕМ ЛАЙКИ И СОХРАНЕНИЯ
       await _loadLikedPostsFromFirestore();
       await _loadSavedPostsFromFirestore();
       
-      // 🔥 6. ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СПИСКИ
       _refreshLikedPostsFromController();
       _refreshSavedPostsFromController();
       
-      // 🔥 7. ПРЕДЗАГРУЗКА ВИДЕО
       final posts = _postController.userPosts[_currentUserId] ?? [];
       if (posts.isNotEmpty) {
         _postController.preloadProfileVideos(posts, maxPreload: 5);
         print('📥 [ProfileScreen] Preloading videos after refresh');
       }
       
-      // 🔥 8. ОБНОВЛЯЕМ UI
       if (mounted) {
         setState(() {
           _isFirstLoad = false;
@@ -841,7 +811,6 @@ class _ProfileScreenState extends State<ProfileScreen>
       
       print('✅ [ProfileScreen] Profile refresh completed successfully');
       
-      // 🔥 9. ПОКАЗЫВАЕМ УВЕДОМЛЕНИЕ
       _showSnackbar('Profile refreshed');
       
     } catch (e) {
@@ -855,10 +824,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     
     print('🔄 [ProfileScreen] ========== PROFILE REFRESH COMPLETE ==========');
   }
-
-  // ============================================================
-  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ (БЕЗ ИЗМЕНЕНИЙ)
-  // ============================================================
 
   Widget _buildPostsShimmer() {
     return GridView.builder(
@@ -952,7 +917,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   currentBio.isEmpty 
                     ? "No bio yet. Tap edit to add one!" 
                     : currentBio, 
-                  style: const TextStyle(fontSize: 14, color: Colors.black)
+                  style: const TextStyle(
+                    fontSize: 14, 
+                    color: Colors.black,
+                    letterSpacing: -0.2,
+                  )
                 ),
                 const SizedBox(height: 6),
                 _buildUserLinks(),
@@ -1029,9 +998,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  // ============================================================
-  // 🔥 АВАТАРКА УВЕЛИЧЕНА (было 80 → стало 96)
-  // ============================================================
   Widget _buildHeader() {
     final postsCount = _postController.userPosts[_currentUserId]?.length ?? 0;
     final String currentAvatar = controller.avatarUrl.value;
@@ -1072,19 +1038,16 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ClipOval(
                   child: CachedNetworkImage(
                     imageUrl: currentAvatar,
-                    // 🔥 БЫЛО 80 → СТАЛО 96
                     width: 96,
                     height: 96,
                     fit: BoxFit.cover,
                     placeholder: (context, url) => Container(
-                      // 🔥 БЫЛО 80 → СТАЛО 96
                       width: 96, 
                       height: 96, 
                       color: Colors.grey[200],
                       child: const Icon(Icons.person, size: 48, color: Colors.grey),
                     ),
                     errorWidget: (context, url, error) => Container(
-                      // 🔥 БЫЛО 80 → СТАЛО 96
                       width: 96,
                       height: 96,
                       color: Colors.grey[200],
@@ -1102,7 +1065,6 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white, width: 2),
                     ),
-                    // 🔥 Иконка камеры чуть крупнее (было 16 → стало 18)
                     child: const Icon(Icons.camera_alt, size: 18, color: Colors.white),
                   ),
                 ),
@@ -1114,10 +1076,11 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                _buildStatItem(postsCount, "Posts", onTap: null),
-                _buildStatItem(followers, "Followers", 
+                // ✅ ПАТЧ 2: подписи с маленькой буквы
+                _buildStatItem(postsCount, "posts", onTap: null),
+                _buildStatItem(followers, "followers", 
                   onTap: _navigateToFollowers),
-                _buildStatItem(following, "Following", 
+                _buildStatItem(following, "following", 
                   onTap: _navigateToFollowing),
               ],
             ),
@@ -1127,27 +1090,33 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  // ✅ ПАТЧ 1: SizedBox(height: 3) — 3px отступ
   Widget _buildStatItem(int number, String label, {VoidCallback? onTap}) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             number.toString(), 
             style: const TextStyle(
-              fontSize: 18, 
+              fontSize: 18,
               fontWeight: FontWeight.w700,
-              color: Colors.black
+              color: Colors.black,
+              letterSpacing: -0.3,
+              height: 0.9,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3), // ← 3px отступ (было 2)
           Text(
             label, 
             style: const TextStyle(
-              fontSize: 12, 
-              color: Colors.black54,
+              fontSize: 12,
               fontWeight: FontWeight.w400,
+              color: Colors.black87,
+              letterSpacing: -0.3,
+              height: 0.95,
             ),
           ),
         ],
@@ -1459,7 +1428,6 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
   }
 
-  // ==================== ОСНОВНОЙ BUILD ====================
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -1484,13 +1452,30 @@ class _ProfileScreenState extends State<ProfileScreen>
           backgroundColor: Colors.white,
           elevation: 0,
           scrolledUnderElevation: 0,
-          title: Text(
-            controller.username.value,
-            style: const TextStyle(
-              color: Colors.black,
-              fontWeight: FontWeight.w600,
-              fontSize: 20,
-            )
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  controller.username.value,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 22,
+                    letterSpacing: -0.3,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if ((_userDetails['badgeType'] ?? '').toString().isNotEmpty) ...[
+                const SizedBox(width: 5),
+                UserNameWithBadge(
+                  name: '',
+                  badgeType: _userDetails['badgeType'].toString(),
+                  iconSize: 18,
+                ),
+              ],
+            ],
           ),
           centerTitle: true,
           toolbarTextStyle: const TextStyle(color: Colors.black),

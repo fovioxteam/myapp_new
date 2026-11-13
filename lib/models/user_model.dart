@@ -11,6 +11,7 @@ class UserModel {
   final String avatarUrl;
   final bool isVerified;
   final bool isPrivateAccount;
+  final String? badgeType; // 'gold', 'blue' или null
   
   // Социальные метрики
   final int postsCount;
@@ -47,6 +48,7 @@ class UserModel {
     required this.avatarUrl,
     required this.isVerified,
     required this.isPrivateAccount,
+    this.badgeType,
     required this.postsCount,
     required this.followersCount,
     required this.followingCount,
@@ -76,6 +78,7 @@ class UserModel {
       avatarUrl: data['avatarUrl'] ?? 'https://via.placeholder.com/150',
       isVerified: data['isVerified'] ?? false,
       isPrivateAccount: data['isPrivateAccount'] ?? false,
+      badgeType: data['badgeType']?.toString(),
       postsCount: data['postsCount'] ?? 0,
       followersCount: data['followersCount'] ?? 0,
       followingCount: data['followingCount'] ?? 0,
@@ -107,6 +110,7 @@ class UserModel {
       'avatarUrl': avatarUrl,
       'isVerified': isVerified,
       'isPrivateAccount': isPrivateAccount,
+      'badgeType': badgeType,
       'postsCount': postsCount,
       'followersCount': followersCount,
       'followingCount': followingCount,
@@ -136,6 +140,7 @@ class UserModel {
     String? avatarUrl,
     bool? isVerified,
     bool? isPrivateAccount,
+    String? badgeType,
     int? postsCount,
     int? followersCount,
     int? followingCount,
@@ -162,6 +167,7 @@ class UserModel {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       isVerified: isVerified ?? this.isVerified,
       isPrivateAccount: isPrivateAccount ?? this.isPrivateAccount,
+      badgeType: badgeType ?? this.badgeType,
       postsCount: postsCount ?? this.postsCount,
       followersCount: followersCount ?? this.followersCount,
       followingCount: followingCount ?? this.followingCount,
@@ -225,6 +231,7 @@ class UserModel {
       avatarUrl: 'https://via.placeholder.com/150',
       isVerified: false,
       isPrivateAccount: false,
+      badgeType: null,
       postsCount: 0,
       followersCount: 0,
       followingCount: 0,

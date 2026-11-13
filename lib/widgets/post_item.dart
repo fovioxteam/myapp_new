@@ -1,6 +1,7 @@
 // lib/widgets/post_item.dart
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'dart:ui';
@@ -30,9 +31,9 @@ import '../services/auth_service.dart';
 import 'progressive_image.dart';
 import '../models/post_tag.dart';
 import '../widgets/post_tags_overlay.dart';
+import 'user_name_with_badge.dart';
 import 'video_player_widget.dart';
 
-// 🔥 ИМПОРТ ДЛЯ ROUTE OBSERVER
 import '../main.dart';
 
 mixin SafeActionMixin {
@@ -116,25 +117,16 @@ class _PostItemState extends State<PostItem>
 
   String get _postId => widget.post['id']?.toString() ?? '';
 
-  // ============================================================
-  // 🔥 КОНТРОЛЛЕРЫ АНИМАЦИЙ
-  // ============================================================
   late AnimationController _heartAnimationController;
   late AnimationController _likeIconController;
   late AnimationController _saveIconController;
   late AnimationController _followAnimationController;
 
-  // ============================================================
-  // 🔥 АНИМАЦИИ СЕРДЦА
-  // ============================================================
   late Animation<double> _heartScaleAnimation;
   late Animation<double> _heartOpacityAnimation;
   late Animation<double> _heartVerticalAnimation;
   late Animation<double> _heartRotationAnimation;
 
-  // ============================================================
-  // 🔥 АНИМАЦИИ ИКОНОК
-  // ============================================================
   late Animation<double> _likeIconScale;
   late Animation<double> _saveIconScale;
 
@@ -143,7 +135,6 @@ class _PostItemState extends State<PostItem>
   bool _isFollowing = false;
   bool _followButtonAnimating = false;
 
-  // 🔥 ЗАЩИТА ОТ ГОНКИ СО СТРИМОМ FOLLOW
   bool _isToggling = false;
 
   Offset? _tapPosition;
@@ -166,13 +157,9 @@ class _PostItemState extends State<PostItem>
   
   static final Map<String, Widget> _previewWidgetCache = {};
 
-  // ============================================================
-  // 🔥 ФЛАГИ ВИДИМОСТИ ДЛЯ ВИДЕО
-  // ============================================================
   bool _wasVisible = false;
   bool _isRouteVisible = true;
 
-  // 🔥 БЕЗОПАСНЫЙ setState
   void _safeSetState(VoidCallback fn) {
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -254,10 +241,6 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  // ============================================================
-  // 🔥 ВИДИМОСТЬ С УЧЕТОМ НАВИГАЦИИ И ЖИЗНЕННОГО ЦИКЛА
-  // ============================================================
-  
   @override
   void deactivate() {
     _pauseVideoOnLeave();
@@ -302,10 +285,6 @@ class _PostItemState extends State<PostItem>
     }
   }
 
-  // ============================================================
-  // 🔥 VISIBILITY - ОТСЛЕЖИВАНИЕ ВИДИМОСТИ ПОСТА
-  // ============================================================
-
   void _onVisibilityChanged(VisibilityInfo info) {
     final bool visible = info.visibleFraction >= 0.6 && _isRouteVisible;
 
@@ -338,10 +317,6 @@ class _PostItemState extends State<PostItem>
     }
     print('🎬 [VIDEO] =========================================');
   }
-
-  // ============================================================
-  // 🔥 ОСТАЛЬНЫЕ МЕТОДЫ
-  // ============================================================
 
   bool _isVideoPost() {
     final mediaType = widget.post['mediaType']?.toString() ?? '';
@@ -405,17 +380,12 @@ class _PostItemState extends State<PostItem>
     return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
   }
 
-  // ============================================================
-  // 🔥 ПЛАВНАЯ АНИМАЦИЯ ЛАЙКА (РОЗОВОЕ СЕРДЦЕ, БЕЗ СВЕЧЕНИЯ) — ИСХОДНАЯ ВЕРСИЯ
-  // ============================================================
   void _initAnimations() {
-    // Контроллер анимации сердца — 700ms для плавности
     _heartAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
 
-    // Плавная анимация масштаба
     _heartScaleAnimation = TweenSequence<double>([
       TweenSequenceItem(
         tween: Tween(begin: 0.0, end: 1.5),
@@ -434,7 +404,6 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeOut,
     ));
 
-    // Плавная прозрачность
     _heartOpacityAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.9), weight: 50),
@@ -444,7 +413,6 @@ class _PostItemState extends State<PostItem>
       curve: Curves.easeInOut,
     ));
 
-    // Плавный подъём
     _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -452,7 +420,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // Плавное вращение
     _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(
       CurvedAnimation(
         parent: _heartAnimationController,
@@ -460,16 +427,12 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // Сброс контроллера после завершения
     _heartAnimationController.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
         _heartAnimationController.reset();
       }
     });
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ ИКОНКИ ЛАЙКА (при нажатии)
-    // ============================================================
     _likeIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -481,9 +444,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ СОХРАНЕНИЯ
-    // ============================================================
     _saveIconController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 80),
@@ -495,9 +455,6 @@ class _PostItemState extends State<PostItem>
       ),
     );
 
-    // ============================================================
-    // 🔥 АНИМАЦИЯ ДЛЯ КНОПКИ FOLLOW
-    // ============================================================
     _followAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -617,9 +574,6 @@ class _PostItemState extends State<PostItem>
     });
   }
 
-  // ============================================================
-  // 🔥 FOLLOW (ИСПРАВЛЕНО: убрана гонка со стримом)
-  // ============================================================
   Future<void> _loadFollowStatus() async {
     final userId = widget.post['userId']?.toString();
     if (userId == null || userId.isEmpty) return;
@@ -958,9 +912,6 @@ class _PostItemState extends State<PostItem>
         .toList();
   }
 
-  // ============================================================
-  // 🔥 BUILD VIDEO PLAYER CONTENT
-  // ============================================================
   Widget _buildVideoPlayerContent() {
     final videoUrl = _getVideoUrl();
     
@@ -1022,9 +973,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 FULL SCREEN VIDEO POST
-  // ============================================================
   Widget _buildFullScreenVideoPost() {
     return _buildFullScreenVideoPostContent();
   }
@@ -1093,9 +1041,6 @@ class _PostItemState extends State<PostItem>
                 ],
               ),
             ),
-            // ============================================================
-            // 🔥 АНИМАЦИЯ СЕРДЦА — ИСХОДНАЯ ВЕРСИЯ
-            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1132,9 +1077,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 FULL SCREEN PHOTO POST
-  // ============================================================
   Widget _buildFullScreenPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
@@ -1228,9 +1170,6 @@ class _PostItemState extends State<PostItem>
                   child: _buildTikTokIndicators(),
                 ),
               ),
-            // ============================================================
-            // 🔥 АНИМАЦИЯ СЕРДЦА — ИСХОДНАЯ ВЕРСИЯ
-            // ============================================================
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
                 left: _tapPosition!.dx - 55,
@@ -1289,9 +1228,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 IMAGE BUILDERS
-  // ============================================================
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
     final tagsForThisImage = allTags
@@ -1391,9 +1327,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 CAROUSEL
-  // ============================================================
   Widget _buildCarousel() {
     final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
     final fitModes = freshPost['fitModes'] as List? ?? [];
@@ -1577,9 +1510,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 USER INFO & CAPTION
-  // ============================================================
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
     
@@ -1627,8 +1557,9 @@ class _PostItemState extends State<PostItem>
                     Flexible(
                       child: GestureDetector(
                         onTap: () => _navigateToProfile(userId?.toString() ?? ''),
-                        child: Text(
-                          userName,
+                        child: UserNameWithBadge(
+                          name: userName,
+                          badgeType: null,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 14,
@@ -1640,8 +1571,10 @@ class _PostItemState extends State<PostItem>
                               ),
                             ],
                           ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                          iconSize: 10,
+                          customBadge: (freshPost['userBadgeType'] ?? '').toString().isNotEmpty
+                              ? const _FeedWhiteBadge()
+                              : null,
                         ),
                       ),
                     ),
@@ -1760,9 +1693,6 @@ class _PostItemState extends State<PostItem>
     });
   }
 
-  // ============================================================
-  // 🔥 ACTION BUTTONS
-  // ============================================================
   Widget _buildActionButton({
     required VoidCallback onTap,
     required IconData icon,
@@ -1894,9 +1824,6 @@ class _PostItemState extends State<PostItem>
     });
   }
 
-  // ============================================================
-  // 🔥 ERROR & PREVIEW
-  // ============================================================
   Widget _buildErrorWidget() {
     return Container(
       color: Colors.grey[900],
@@ -2049,9 +1976,6 @@ class _PostItemState extends State<PostItem>
     );
   }
 
-  // ============================================================
-  // 🔥 BUILD
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -2070,4 +1994,83 @@ class _PostItemState extends State<PostItem>
     
     return widget.isFullScreen ? _buildFullScreenPost() : _buildPreviewPost();
   }
+}
+
+// ============================================================
+// 🔥 БЕЛАЯ INSTAGRAM-ГАЛОЧКА (10px) — ЗАЛИВКА + ПРОЗРАЧНЫЙ ВЫРЕЗ
+// ============================================================
+class _FeedWhiteBadge extends StatelessWidget {
+  const _FeedWhiteBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 10,
+      height: 10,
+      child: CustomPaint(
+        painter: _FeedWhiteBadgePainter(),
+      ),
+    );
+  }
+}
+
+class _FeedWhiteBadgePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final center = Offset(w / 2, h / 2);
+
+    // ✅ saveLayer нужен для BlendMode.clear — иначе может стереть фон
+    canvas.saveLayer(Offset.zero & size, Paint());
+
+    // 1. БЕЛАЯ 8-лепестковая розетка — ЗАЛИВКА
+    final badgePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    final path = Path();
+    const int lobes = 8;
+    const int steps = 160;
+    final double baseRadius = w * 0.435;
+    final double waveAmplitude = w * 0.055;
+
+    for (int i = 0; i <= steps; i++) {
+      final double theta = (i / steps) * 2 * math.pi;
+      final double r = baseRadius + waveAmplitude * math.cos(lobes * theta);
+      final double x = center.dx + r * math.cos(theta);
+      final double y = center.dy + r * math.sin(theta);
+
+      if (i == 0) {
+        path.moveTo(x, y);
+      } else {
+        path.lineTo(x, y);
+      }
+    }
+    path.close();
+    canvas.drawPath(path, badgePaint);
+
+    // 2. ГАЛОЧКА ВНУТРИ — ПРОЗРАЧНЫЙ ВЫРЕЗ (стирает пиксели)
+    final checkPaint = Paint()
+      ..color = Colors.white // цвет игнорируется для BlendMode.clear
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = w * 0.12
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..blendMode = BlendMode.clear // ← ВЫРЕЗ
+      ..isAntiAlias = true;
+
+    final checkPath = Path()
+      ..moveTo(w * 0.31, h * 0.51)
+      ..lineTo(w * 0.44, h * 0.64)
+      ..lineTo(w * 0.70, h * 0.37);
+
+    canvas.drawPath(checkPath, checkPaint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
