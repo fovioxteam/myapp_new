@@ -2,8 +2,6 @@
 
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -13,12 +11,10 @@ import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:get/get.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:visibility_detector/visibility_detector.dart';
-import 'package:video_player/video_player.dart';
 
 import '../services/metrics_service.dart';
 import '../controllers/post_controller.dart';
@@ -28,7 +24,6 @@ import '../widgets/comments_bottom_sheet.dart';
 import '../services/follow_service.dart';
 import '../screens/post_options_screen.dart';
 import '../services/auth_service.dart';
-import 'progressive_image.dart';
 import '../models/post_tag.dart';
 import '../widgets/post_tags_overlay.dart';
 import 'user_name_with_badge.dart';
@@ -38,27 +33,19 @@ import '../main.dart';
 
 mixin SafeActionMixin {
   final Map<String, bool> _actionInProgress = {};
-
   bool _canExecuteAction(String actionName) {
-    if (_actionInProgress[actionName] == true) {
-      return false;
-    }
+    if (_actionInProgress[actionName] == true) return false;
     _actionInProgress[actionName] = true;
     return true;
   }
-
-  void _actionCompleted(String actionName) {
-    _actionInProgress[actionName] = false;
-  }
-
-  void disposeActions() {
-    _actionInProgress.clear();
-  }
+  void _actionCompleted(String actionName) => _actionInProgress[actionName] = false;
+  void disposeActions() => _actionInProgress.clear();
 }
 
 class PostItem extends StatefulWidget {
   final Map<String, dynamic> post;
   final bool isFullScreen;
+  final bool keepAlive;
   final VoidCallback? onTap;
   final bool useMockData;
   final List<String>? followingUsers;
@@ -72,7 +59,6 @@ class PostItem extends StatefulWidget {
   final Function(String, bool)? onLikeChanged;
   final Function(String, bool)? onSaveChanged;
   final VoidCallback? onLinkClick;
-  final bool isVisible;
   final int priority;
   final double? customBottomPadding;
 
@@ -80,6 +66,7 @@ class PostItem extends StatefulWidget {
     super.key,
     required this.post,
     this.isFullScreen = true,
+    this.keepAlive = false,
     this.onTap,
     this.useMockData = false,
     this.followingUsers,
@@ -93,7 +80,6 @@ class PostItem extends StatefulWidget {
     this.onLikeChanged,
     this.onSaveChanged,
     this.onLinkClick,
-    this.isVisible = true,
     this.priority = 2,
     this.customBottomPadding,
   });
@@ -106,7 +92,7 @@ class _PostItemState extends State<PostItem>
     with TickerProviderStateMixin, AutomaticKeepAliveClientMixin, SafeActionMixin, RouteAware {
   
   @override
-  bool get wantKeepAlive => true;
+  bool get wantKeepAlive => widget.keepAlive;
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -131,10 +117,8 @@ class _PostItemState extends State<PostItem>
   late Animation<double> _saveIconScale;
 
   bool _showHeartAnimation = false;
-  final bool _isSaveAnimating = false;
   bool _isFollowing = false;
   bool _followButtonAnimating = false;
-
   bool _isToggling = false;
 
   Offset? _tapPosition;
@@ -150,22 +134,21 @@ class _PostItemState extends State<PostItem>
   bool _isExpanded = false;
   bool _isLongPressInProgress = false;
   bool _didCallPostVisible = false;
-
+  
   final Map<int, bool> _showTagsForCarouselIndex = {};
 
   static const String _fallbackImageUrl = 'https://via.placeholder.com/500?text=Image+error';
-  
   static final Map<String, Widget> _previewWidgetCache = {};
 
-  bool _wasVisible = false;
+  bool _isCurrentlyVisible = false;
   bool _isRouteVisible = true;
+  
+  String _cachedUserBadgeType = '';
 
   void _safeSetState(VoidCallback fn) {
     if (mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(fn);
-        }
+        if (mounted) setState(fn);
       });
     }
   }
@@ -173,32 +156,18 @@ class _PostItemState extends State<PostItem>
   @override
   void initState() {
     super.initState();
-    print('🎬 [VIDEO] ========== INIT STATE ==========');
-    print('🎬 [VIDEO] PostId: $_postId');
-    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
-    print('🎬 [VIDEO] widget.isVisible: ${widget.isVisible}');
-    print('🎬 [VIDEO] post keys: ${widget.post.keys}');
-    print('🎬 [VIDEO] mediaType: ${widget.post['mediaType']}');
-    print('🎬 [VIDEO] videoUrl: ${widget.post['videoUrl']}');
-    print('🎬 [VIDEO] ====================================');
-    
     _initializeCarousel();
     _validateImageUrl();
     _loadFollowStatus();
     _initAnimations();
     
-    _wasVisible = widget.isVisible;
     _isRouteVisible = true;
-    
-    if (_isVideoPost()) {
-      print('🎬 [VIDEO] Video post detected');
-    } else {
-      print('🎬 [VIDEO] Not a video post');
-    }
     
     for (int i = 0; i < _imageUrls.length; i++) {
       _showTagsForCarouselIndex[i] = false;
     }
+    
+    _cachedUserBadgeType = widget.post['userBadgeType']?.toString() ?? '';
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       for (int i = 0; i < _imageUrls.length; i++) {
@@ -215,149 +184,61 @@ class _PostItemState extends State<PostItem>
     super.didChangeDependencies();
     try {
       MyApp.routeObserver.subscribe(this, ModalRoute.of(context) as PageRoute);
-    } catch (e) {
-      print('RouteObserver subscription error: $e');
-    }
-  }
-
-  @override
-  void didUpdateWidget(PostItem oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    print('🔄 [VIDEO] didUpdateWidget for $_postId');
-    print('🔄 [VIDEO] new post: ${widget.post.keys}');
-    print('🔄 [VIDEO] mediaType: ${widget.post['mediaType']}, videoUrl: ${widget.post['videoUrl']}');
-
-    if (oldWidget.post['id'] != widget.post['id'] ||
-        oldWidget.post['userId'] != widget.post['userId']) {
-      _followSubscription?.cancel();
-      _followSubscription = null;
-      _loadFollowStatus();
-    }
-
-    if (oldWidget.post['videoUrl'] != widget.post['videoUrl'] ||
-        oldWidget.post['mediaType'] != widget.post['mediaType']) {
-      print('🔄 [VIDEO] Video data changed, rebuilding');
-      _safeSetState(() {});
-    }
-  }
-
-  @override
-  void deactivate() {
-    _pauseVideoOnLeave();
-    super.deactivate();
+    } catch (e) {}
   }
 
   @override
   void dispose() {
-    try {
-      MyApp.routeObserver.unsubscribe(this);
-    } catch (e) {}
-    
-    _pauseVideoOnLeave();
+    try { MyApp.routeObserver.unsubscribe(this); } catch (e) {}
     
     if (_didCallPostVisible && widget.onPostHidden != null) {
       widget.onPostHidden!.call();
     }
     disposeActions();
     _followSubscription?.cancel();
-    _followSubscription = null;
     _heartAnimationController.dispose();
     _likeIconController.dispose();
     _saveIconController.dispose();
     _followAnimationController.dispose();
     
-    if (_isCarousel) {
-      _carouselController.dispose();
-    }
+    if (_isCarousel) _carouselController.dispose();
     _avatarCache.clear();
     super.dispose();
   }
 
-  void _pauseVideoOnLeave() {
-    if (_wasVisible) {
-      _wasVisible = false;
-      _isRouteVisible = false;
-      if (_didCallPostVisible && widget.onPostHidden != null) {
-        widget.onPostHidden!.call();
-        _didCallPostVisible = false;
-      }
-      _safeSetState(() {});
-    }
-  }
-
   void _onVisibilityChanged(VisibilityInfo info) {
-    final bool visible = info.visibleFraction >= 0.6 && _isRouteVisible;
+    final bool visible = info.visibleFraction >= 0.8 && _isRouteVisible;
 
-    print('🎬 [VIDEO] ========== VISIBILITY CHANGED ==========');
-    print('🎬 [VIDEO] PostId: $_postId');
-    print('🎬 [VIDEO] visibleFraction: ${info.visibleFraction}');
-    print('🎬 [VIDEO] visible: $visible, wasVisible: $_wasVisible');
-    print('🎬 [VIDEO] isRouteVisible: $_isRouteVisible');
-    print('🎬 [VIDEO] isVideoPost: ${_isVideoPost()}');
-    
-    if (visible != _wasVisible) {
-      _wasVisible = visible;
+    if (visible != _isCurrentlyVisible) {
+      _isCurrentlyVisible = visible;
       
       _safeSetState(() {});
-      
+
       if (visible) {
-        print('🎬 [VIDEO] Post became visible');
         if (widget.onPostVisible != null && !_didCallPostVisible) {
-          print('🎬 [VIDEO] Calling onPostVisible');
           widget.onPostVisible!.call();
           _didCallPostVisible = true;
         }
       } else {
-        print('🎬 [VIDEO] Post became invisible');
         if (_didCallPostVisible && widget.onPostHidden != null) {
           widget.onPostHidden!.call();
           _didCallPostVisible = false;
         }
       }
     }
-    print('🎬 [VIDEO] =========================================');
   }
 
   bool _isVideoPost() {
     final mediaType = widget.post['mediaType']?.toString() ?? '';
-    if (mediaType == 'video') {
-      return true;
-    }
-    
+    if (mediaType == 'video') return true;
     final videoUrl = widget.post['videoUrl']?.toString() ?? '';
-    if (videoUrl.isNotEmpty) {
-      return true;
-    }
-    
-    for (var key in widget.post.keys) {
-      final value = widget.post[key];
-      if (value != null && value.toString().isNotEmpty) {
-        final str = value.toString().toLowerCase();
-        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
-          return true;
-        }
-      }
-    }
-    
+    if (videoUrl.isNotEmpty) return true;
     return false;
   }
 
   String? _getVideoUrl() {
     final videoUrl = widget.post['videoUrl']?.toString();
-    if (videoUrl != null && videoUrl.isNotEmpty) {
-      return videoUrl;
-    }
-    
-    for (var key in widget.post.keys) {
-      final value = widget.post[key];
-      if (value != null && value.toString().isNotEmpty) {
-        final str = value.toString().toLowerCase();
-        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
-          return value.toString();
-        }
-      }
-    }
-    
+    if (videoUrl != null && videoUrl.isNotEmpty) return videoUrl;
     return null;
   }
   
@@ -366,99 +247,42 @@ class _PostItemState extends State<PostItem>
   BoxFit _getFitModeForIndex(int index) {
     final fitModes = widget.post['fitModes'] as List? ?? [];
     String mode = 'contain';
-    
-    print('🔍 [FIT] fitModes: $fitModes, index: $index');
-    
     if (index < fitModes.length) {
       mode = fitModes[index]?.toString() ?? 'contain';
     } else if (fitModes.isNotEmpty) {
       mode = fitModes.first?.toString() ?? 'contain';
     }
-    
-    print('🔍 [FIT] mode: $mode');
-    
     return mode == 'cover' ? BoxFit.cover : BoxFit.contain;
   }
 
   void _initAnimations() {
-    _heartAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-
+    _heartAnimationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
     _heartScaleAnimation = TweenSequence<double>([
-      TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: 1.5),
-        weight: 35,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 1.5, end: 0.9),
-        weight: 30,
-      ),
-      TweenSequenceItem(
-        tween: Tween(begin: 0.9, end: 1.1),
-        weight: 35,
-      ),
-    ]).animate(CurvedAnimation(
-      parent: _heartAnimationController,
-      curve: Curves.easeOut,
-    ));
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.5), weight: 35),
+      TweenSequenceItem(tween: Tween(begin: 1.5, end: 0.9), weight: 30),
+      TweenSequenceItem(tween: Tween(begin: 0.9, end: 1.1), weight: 35),
+    ]).animate(CurvedAnimation(parent: _heartAnimationController, curve: Curves.easeOut));
 
     _heartOpacityAnimation = TweenSequence<double>([
       TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 20),
       TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.9), weight: 50),
       TweenSequenceItem(tween: Tween(begin: 0.9, end: 0.0), weight: 30),
-    ]).animate(CurvedAnimation(
-      parent: _heartAnimationController,
-      curve: Curves.easeInOut,
-    ));
+    ]).animate(CurvedAnimation(parent: _heartAnimationController, curve: Curves.easeInOut));
 
-    _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(
-      CurvedAnimation(
-        parent: _heartAnimationController,
-        curve: Curves.easeOutCubic,
-      ),
-    );
-
-    _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(
-      CurvedAnimation(
-        parent: _heartAnimationController,
-        curve: Curves.easeInOut,
-      ),
-    );
+    _heartVerticalAnimation = Tween<double>(begin: 0, end: -80).animate(CurvedAnimation(parent: _heartAnimationController, curve: Curves.easeOutCubic));
+    _heartRotationAnimation = Tween<double>(begin: -0.1, end: 0.1).animate(CurvedAnimation(parent: _heartAnimationController, curve: Curves.easeInOut));
 
     _heartAnimationController.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        _heartAnimationController.reset();
-      }
+      if (status == AnimationStatus.completed) _heartAnimationController.reset();
     });
 
-    _likeIconController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-    );
-    _likeIconScale = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _likeIconController,
-        curve: Curves.easeOut,
-      ),
-    );
+    _likeIconController = AnimationController(vsync: this, duration: const Duration(milliseconds: 80));
+    _likeIconScale = Tween<double>(begin: 1.0, end: 1.2).animate(CurvedAnimation(parent: _likeIconController, curve: Curves.easeOut));
 
-    _saveIconController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 80),
-    );
-    _saveIconScale = Tween<double>(begin: 1.0, end: 1.2).animate(
-      CurvedAnimation(
-        parent: _saveIconController,
-        curve: Curves.easeOut,
-      ),
-    );
+    _saveIconController = AnimationController(vsync: this, duration: const Duration(milliseconds: 80));
+    _saveIconScale = Tween<double>(begin: 1.0, end: 1.2).animate(CurvedAnimation(parent: _saveIconController, curve: Curves.easeOut));
 
-    _followAnimationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
+    _followAnimationController = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
   }
 
   void _initializeCarousel() {
@@ -467,54 +291,40 @@ class _PostItemState extends State<PostItem>
     for (int i = 0; i < _imageUrls.length; i++) {
       _showTagsForCarouselIndex[i] = false;
     }
-    if (_isCarousel) {
-      _carouselController = PageController();
-    }
+    if (_isCarousel) _carouselController = PageController();
   }
 
   List<String> _getImageUrls() {
     final urls = <String>[];
-
     try {
       if (widget.post['imageUrls'] is List) {
-        final list = widget.post['imageUrls'] as List<dynamic>;
-        for (final item in list) {
+        for (final item in widget.post['imageUrls'] as List<dynamic>) {
           if (item != null && item.toString().isNotEmpty && _isValidUrl(item.toString())) {
             urls.add(item.toString());
           }
         }
       }
-
       if (widget.post['images'] is List) {
-        final list = widget.post['images'] as List<dynamic>;
-        for (final item in list) {
+        for (final item in widget.post['images'] as List<dynamic>) {
           if (item != null && item.toString().isNotEmpty && _isValidUrl(item.toString()) && !urls.contains(item.toString())) {
             urls.add(item.toString());
           }
         }
       }
-
       final mainUrl = widget.post['url']?.toString();
       if (mainUrl != null && mainUrl.isNotEmpty && _isValidUrl(mainUrl) && !urls.contains(mainUrl)) {
         urls.insert(0, mainUrl);
       }
-
       final imageUrl = widget.post['imageUrl']?.toString();
       if (imageUrl != null && imageUrl.isNotEmpty && _isValidUrl(imageUrl) && !urls.contains(imageUrl)) {
         urls.insert(0, imageUrl);
       }
-
       if (urls.isEmpty && _isVideoPost()) {
         final thumbnail = _getThumbnailUrl();
-        if (thumbnail != null && thumbnail.isNotEmpty) {
-          urls.add(thumbnail);
-        }
+        if (thumbnail != null && thumbnail.isNotEmpty) urls.add(thumbnail);
       }
     } catch (e) {}
-
-    if (urls.isEmpty) {
-      urls.add(_fallbackImageUrl);
-    }
+    if (urls.isEmpty) urls.add(_fallbackImageUrl);
     return urls;
   }
 
@@ -523,9 +333,7 @@ class _PostItemState extends State<PostItem>
     try {
       final uri = Uri.parse(url);
       return uri.isAbsolute && (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty;
-    } catch (e) {
-      return false;
-    }
+    } catch (e) { return false; }
   }
 
   void _validateImageUrl() {
@@ -533,27 +341,11 @@ class _PostItemState extends State<PostItem>
       _safeSetState(() => _hasImageError = true);
       return;
     }
-
     bool hasValidUrl = false;
     for (final url in _imageUrls) {
-      if (_isValidUrl(url)) {
-        hasValidUrl = true;
-        break;
-      }
+      if (_isValidUrl(url)) { hasValidUrl = true; break; }
     }
-    if (!hasValidUrl) {
-      _safeSetState(() => _hasImageError = true);
-    }
-  }
-
-  void _preloadAllCarouselImages() {
-    if (!mounted) return;
-    for (int i = 0; i < _imageUrls.length; i++) {
-      final url = _imageUrls[i];
-      if (url.isNotEmpty && url != _fallbackImageUrl) {
-        precacheImage(CachedNetworkImageProvider(url), context);
-      }
-    }
+    if (!hasValidUrl) _safeSetState(() => _hasImageError = true);
   }
 
   void _preloadMultipleImages() {
@@ -577,18 +369,15 @@ class _PostItemState extends State<PostItem>
   Future<void> _loadFollowStatus() async {
     final userId = widget.post['userId']?.toString();
     if (userId == null || userId.isEmpty) return;
-
     final currentUserId = _auth.currentUser?.uid;
     if (currentUserId == null || currentUserId == userId) {
       _safeSetState(() => _isFollowing = false);
       return;
     }
-
     try {
       final status = await _followService.checkFollowStatus(userId);
       if (!mounted) return;
       _safeSetState(() => _isFollowing = status);
-
       _followSubscription?.cancel();
       _followSubscription = _followService.getFollowStatusStream(userId).listen((newStatus) {
         if (_isToggling) return;
@@ -601,46 +390,31 @@ class _PostItemState extends State<PostItem>
   Future<void> _toggleFollow() async {
     if (!mounted || !_canExecuteAction('follow')) return;
     if (_isToggling) return;
-
     if (!AuthService.instance.isLoggedIn) {
       await AuthService.instance.requireAuth();
       _actionCompleted('follow');
       return;
     }
-
     final userId = widget.post['userId']?.toString() ?? '';
     final currentUser = _auth.currentUser;
-
     if (currentUser == null) {
-      _showSnackBar('Please login to follow users', Colors.orange);
       _actionCompleted('follow');
       return;
     }
-
     if (userId.isEmpty || userId == currentUser.uid) {
       _actionCompleted('follow');
       return;
     }
-
     _animateFollowButton();
-
     final previousStatus = _isFollowing;
     final newStatus = !previousStatus;
-
     _isToggling = true;
-
-    if (mounted) {
-      setState(() => _isFollowing = newStatus);
-    }
-
+    if (mounted) setState(() => _isFollowing = newStatus);
     try {
       await _followService.toggleFollow(userId);
       await Future.delayed(const Duration(milliseconds: 800));
     } catch (e) {
-      if (mounted) {
-        setState(() => _isFollowing = previousStatus);
-      }
-      _showSnackBar('Failed to ${previousStatus ? 'unfollow' : 'follow'}', Colors.red);
+      if (mounted) setState(() => _isFollowing = previousStatus);
     } finally {
       _isToggling = false;
       _actionCompleted('follow');
@@ -662,18 +436,12 @@ class _PostItemState extends State<PostItem>
       Navigator.push(context, MaterialPageRoute(builder: (context) => const profile.ProfileScreen()));
     } else if (userId.isNotEmpty) {
       Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
-    } else {
-      _showSnackBar('User profile not available', Colors.orange);
     }
   }
 
   String _getUserAvatar(String? url) {
-    if (url == null || url.isEmpty) {
-      return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
-    }
-    if (_avatarCache.containsKey(url)) {
-      return _avatarCache[url]!;
-    }
+    if (url == null || url.isEmpty) return 'https://upload.wikimedia.org/wikipedia/commons/a/ac/Default_pfp.jpg';
+    if (_avatarCache.containsKey(url)) return _avatarCache[url]!;
     if (_isValidUrl(url)) {
       _avatarCache[url] = url;
       return url;
@@ -684,84 +452,40 @@ class _PostItemState extends State<PostItem>
   Future<void> _toggleLike() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('like')) return;
-
     if (!AuthService.instance.isLoggedIn) {
       final result = await AuthService.instance.requireAuth();
-      if (result != true) {
-        _actionCompleted('like');
-        return;
-      }
+      if (result != true) { _actionCompleted('like'); return; }
     }
-
     final postId = widget.post['id']?.toString() ?? '';
-    final currentUser = _auth.currentUser;
-
-    if (currentUser == null) {
-      _showSnackBar('Please login to like posts', Colors.orange);
-      _actionCompleted('like');
-      return;
-    }
-
-    if (postId.isEmpty) {
-      _actionCompleted('like');
-      return;
-    }
-
+    if (postId.isEmpty) { _actionCompleted('like'); return; }
     final wasLiked = _postController.isPostLiked(postId);
-    
     HapticFeedback.lightImpact();
     _likeIconController.forward().then((_) => _likeIconController.reverse());
-
     await _postController.toggleLike(postId);
-    
-    if (!wasLiked) {
-      await _sendLikeNotification(postId, widget.post['userId']?.toString() ?? '');
-    }
-
+    if (!wasLiked) await _sendLikeNotification(postId, widget.post['userId']?.toString() ?? '');
     if (widget.onLikeChanged != null) {
       final isNowLiked = _postController.isPostLiked(postId);
       widget.onLikeChanged!(postId, isNowLiked);
     }
-
     _actionCompleted('like');
   }
 
   Future<void> _toggleSave() async {
     if (_isLongPressInProgress) return;
     if (!mounted || !_canExecuteAction('save')) return;
-
     if (!AuthService.instance.isLoggedIn) {
       final result = await AuthService.instance.requireAuth();
-      if (result != true) {
-        _actionCompleted('save');
-        return;
-      }
+      if (result != true) { _actionCompleted('save'); return; }
     }
-
     final postId = widget.post['id']?.toString() ?? '';
-    final currentUser = _auth.currentUser;
-
-    if (currentUser == null) {
-      _showSnackBar('Please login to save posts', Colors.orange);
-      _actionCompleted('save');
-      return;
-    }
-
-    if (postId.isEmpty) {
-      _actionCompleted('save');
-      return;
-    }
-
+    if (postId.isEmpty) { _actionCompleted('save'); return; }
     HapticFeedback.lightImpact();
     _saveIconController.forward().then((_) => _saveIconController.reverse());
-
     await _postController.toggleSave(postId);
-
     if (widget.onSaveChanged != null) {
       final isNowSaved = _postController.isPostSaved(postId);
       widget.onSaveChanged!(postId, isNowSaved);
     }
-
     _actionCompleted('save');
   }
 
@@ -769,62 +493,43 @@ class _PostItemState extends State<PostItem>
     final currentUser = _auth.currentUser;
     if (currentUser == null) return;
     if (postOwnerId == currentUser.uid) return;
-    
     try {
       final userDoc = await _firestore.collection('users').doc(currentUser.uid).get();
       final userData = userDoc.data() ?? {};
-      final userName = userData['username'] ?? currentUser.displayName ?? 'User';
-      final userAvatar = userData['avatarUrl'] ?? currentUser.photoURL ?? '';
-      
       await _firestore.collection('notifications').add({
         'userId': postOwnerId,
         'type': 'like',
         'senderId': currentUser.uid,
-        'senderName': userName,
-        'senderAvatar': userAvatar,
+        'senderName': userData['username'] ?? currentUser.displayName ?? 'User',
+        'senderAvatar': userData['avatarUrl'] ?? currentUser.photoURL ?? '',
         'postId': postId,
         'title': 'New Like',
         'body': 'liked your post',
         'isRead': false,
         'createdAt': FieldValue.serverTimestamp(),
       });
-      
-      print('✅ Like notification sent to: $postOwnerId');
-    } catch (e) {
-      print('❌ Error sending like notification: $e');
-    }
+    } catch (e) {}
   }
 
   void _showCommentsSheet() {
     if (_isLongPressInProgress) return;
     if (!mounted) return;
-
     if (!AuthService.instance.isLoggedIn) {
       AuthService.instance.requireAuth();
       return;
     }
-
     final postId = widget.post['id']?.toString() ?? '';
-    final postUserId = widget.post['userId']?.toString() ?? '';
-    final postImageUrl = _getCurrentImageUrl();
-
-    if (postId.isEmpty) {
-      _showSnackBar('Cannot load comments', Colors.red);
-      return;
-    }
-
+    if (postId.isEmpty) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => CommentsBottomSheet(
         photoId: postId,
-        postOwnerId: postUserId,
-        postImageUrl: postImageUrl,
+        postOwnerId: widget.post['userId']?.toString() ?? '',
+        postImageUrl: _getCurrentImageUrl(),
       ),
-    ).then((_) {
-      _safeSetState(() {});
-    });
+    ).then((_) => _safeSetState(() {}));
   }
 
   void _showPostOptions() {
@@ -837,9 +542,7 @@ class _PostItemState extends State<PostItem>
         post: widget.post,
         onPostDeleted: () {
           if (mounted) Get.back();
-          if (widget.isFullScreen && mounted) {
-            Get.back();
-          }
+          if (widget.isFullScreen && mounted) Get.back();
           widget.onPostDeleted?.call();
         },
       ),
@@ -851,7 +554,6 @@ class _PostItemState extends State<PostItem>
     final postId = widget.post['id']?.toString() ?? '';
     final isLiked = _postController.isPostLiked(postId);
     if (isLiked || _isLongPressInProgress) return;
-
     HapticFeedback.lightImpact();
     _startLikeAnimation();
     _toggleLike();
@@ -883,107 +585,55 @@ class _PostItemState extends State<PostItem>
     return number.toString();
   }
 
-  void _showSnackBar(String message, Color color) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
   String _getCurrentImageUrl() {
     if (_imageUrls.isEmpty) return _fallbackImageUrl;
     if (_currentCarouselIndex < _imageUrls.length) {
       final url = _imageUrls[_currentCarouselIndex];
       return _isValidUrl(url) ? url : _fallbackImageUrl;
     }
-    final url = _imageUrls.isNotEmpty ? _imageUrls[0] : '';
-    return _isValidUrl(url) ? url : _fallbackImageUrl;
+    return _fallbackImageUrl;
   }
 
   List<PostTag> _getTagsFromPost(Map<String, dynamic> post) {
     final tagsData = post['tags'] as List? ?? [];
-    return tagsData
-        .map((e) => PostTag.fromJson(e as Map<String, dynamic>))
-        .toList();
+    return tagsData.map((e) => PostTag.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Widget _buildVideoPlayerContent() {
     final videoUrl = _getVideoUrl();
-    
     if (videoUrl == null || videoUrl.isEmpty) {
-      return Container(
-        color: Colors.black,
-        child: const Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.error_outline, color: Colors.white70, size: 48),
-              SizedBox(height: 12),
-              Text('Video unavailable', style: TextStyle(color: Colors.white70)),
-            ],
-          ),
-        ),
-      );
+      return Container(color: Colors.black, child: const Center(child: Text('Video unavailable', style: TextStyle(color: Colors.white70))));
     }
-    
-    final BoxFit fit = _getFitModeForIndex(_currentCarouselIndex);
-    print('🎬 [POST-ITEM] fit for video: $fit');
-    
     return VideoPlayerWidget(
       videoUrl: videoUrl,
       showControls: true,
-      isVisible: _wasVisible && _isRouteVisible,
+      isVisible: _isCurrentlyVisible,
       thumbnailUrl: _getThumbnailUrl(),
-      fit: fit,
+      fit: _getFitModeForIndex(_currentCarouselIndex),
     );
   }
 
   Widget _buildTagsOverlay() {
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-        .toList();
-    final hasTags = tagsForThisImage.isNotEmpty;
-
-    if (!hasTags) return const SizedBox.shrink();
-
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_$_currentCarouselIndex')).toList();
+    if (tagsForThisImage.isEmpty) return const SizedBox.shrink();
     return Positioned.fill(
       child: PostTagsOverlay(
         tags: tagsForThisImage,
         isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
         onTagTap: (tag) async {
-          print('🔗 [TAGS] Tag tapped: ${tag.url}');
           widget.onLinkClick?.call();
           final url = Uri.parse(tag.url);
-          if (await canLaunchUrl(url)) {
-            await launchUrl(url, mode: LaunchMode.externalApplication);
-          } else {
-            _showSnackBar('Cannot open link', Colors.red);
-          }
+          if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
         },
-        onTagMoved: (tag, newX, newY) {
-          print('📍 [TAGS] Tag moved: ${tag.id} -> ($newX, $newY)');
-        },
+        onTagMoved: (tag, newX, newY) {},
       ),
     );
   }
 
   Widget _buildFullScreenVideoPost() {
-    return _buildFullScreenVideoPostContent();
-  }
-
-  Widget _buildFullScreenVideoPostContent() {
-    final hasCaption = widget.post['caption'] != null && 
-                      widget.post['caption'].toString().isNotEmpty;
-    
-    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    final double tabBarHeight = 54 + 16 + 16;
-    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
+    final hasCaption = widget.post['caption'] != null && widget.post['caption'].toString().isNotEmpty;
+    final double bottomPadding = MediaQuery.of(context).padding.bottom + (54 + 16 + 16) - 85;
 
     return GestureDetector(
       onLongPress: () {
@@ -994,20 +644,11 @@ class _PostItemState extends State<PostItem>
           _safeSetState(() => _isLongPressInProgress = false);
         });
       },
-      onDoubleTapDown: (TapDownDetails details) {
+      onDoubleTapDown: (details) {
         if (_isLongPressInProgress) return;
-        if (!mounted) return;
         final box = context.findRenderObject() as RenderBox?;
-        if (box != null && box.hasSize) {
-          final localPosition = box.globalToLocal(details.globalPosition);
-          if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
-              localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
-            _safeSetState(() => _tapPosition = localPosition);
-          } else {
-            _safeSetState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
-          }
-        } else {
-          _safeSetState(() => _tapPosition = const Offset(150, 300));
+        if (box != null) {
+          _safeSetState(() => _tapPosition = box.globalToLocal(details.globalPosition));
         }
       },
       onDoubleTap: _handleDoubleTap,
@@ -1020,24 +661,11 @@ class _PostItemState extends State<PostItem>
             _buildVideoPlayerContent(),
             _buildTagsOverlay(),
             Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                bottom: bottomPadding,
-              ),
+              padding: EdgeInsets.only(left: 16, right: 16, bottom: bottomPadding),
               child: Stack(
                 children: [
-                  Positioned(
-                    bottom: hasCaption ? 2 : 5,
-                    left: 0,
-                    right: 60,
-                    child: _buildUserInfoAndCaption(),
-                  ),
-                  Positioned(
-                    bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
-                    right: 0,
-                    child: _buildActionButtons(),
-                  ),
+                  Positioned(bottom: hasCaption ? 2 : 5, left: 0, right: 60, child: _buildUserInfoAndCaption()),
+                  Positioned(bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0), right: 0, child: _buildActionButtons()),
                 ],
               ),
             ),
@@ -1056,14 +684,7 @@ class _PostItemState extends State<PostItem>
                           angle: _heartRotationAnimation.value,
                           child: Opacity(
                             opacity: _heartOpacityAnimation.value,
-                            child: Transform.scale(
-                              scale: _heartScaleAnimation.value,
-                              child: const Icon(
-                                Icons.favorite,
-                                color: Color(0xFFFF2D55),
-                                size: 100,
-                              ),
-                            ),
+                            child: Transform.scale(scale: _heartScaleAnimation.value, child: const Icon(Icons.favorite, color: Color(0xFFFF2D55), size: 100)),
                           ),
                         ),
                       );
@@ -1078,19 +699,10 @@ class _PostItemState extends State<PostItem>
   }
 
   Widget _buildFullScreenPost() {
-    final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
-    
-    final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
-    final hasCaption = freshPost['caption'] != null && 
-                      freshPost['caption'].toString().isNotEmpty;
-    
-    final BoxFit fit = _getFitModeForIndex(_currentCarouselIndex);
-    final bool isFullScreenMode = fit == BoxFit.cover;
-    
-    final double bottomSafeArea = MediaQuery.of(context).padding.bottom;
-    final double tabBarHeight = 54 + 16 + 16;
-    final double bottomPadding = bottomSafeArea + tabBarHeight - 85;
+    final hasCaption = widget.post['caption'] != null && widget.post['caption'].toString().isNotEmpty;
+    final bool isFullScreenMode = _getFitModeForIndex(_currentCarouselIndex) == BoxFit.cover;
+    final double bottomPadding = MediaQuery.of(context).padding.bottom + (54 + 16 + 16) - 85;
 
     return GestureDetector(
       onLongPress: () {
@@ -1101,29 +713,15 @@ class _PostItemState extends State<PostItem>
           _safeSetState(() => _isLongPressInProgress = false);
         });
       },
-      onDoubleTapDown: (TapDownDetails details) {
+      onDoubleTapDown: (details) {
         if (_isLongPressInProgress) return;
-        if (!mounted) return;
         final box = context.findRenderObject() as RenderBox?;
-        if (box != null && box.hasSize) {
-          final localPosition = box.globalToLocal(details.globalPosition);
-          if (localPosition.dx >= 0 && localPosition.dy >= 0 && 
-              localPosition.dx <= box.size.width && localPosition.dy <= box.size.height) {
-            _safeSetState(() => _tapPosition = localPosition);
-          } else {
-            _safeSetState(() => _tapPosition = Offset(box.size.width / 2, box.size.height / 2));
-          }
-        } else {
-          _safeSetState(() => _tapPosition = const Offset(150, 300));
-        }
+        if (box != null) _safeSetState(() => _tapPosition = box.globalToLocal(details.globalPosition));
       },
       onDoubleTap: _handleDoubleTap,
       onTap: () {
-        final allTags = _getTagsFromPost(freshPost);
-        final hasTags = allTags
-            .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-            .isNotEmpty;
-        if (hasTags) {
+        final allTags = _getTagsFromPost(widget.post);
+        if (allTags.where((tag) => tag.id.contains('_$_currentCarouselIndex')).isNotEmpty) {
           _toggleTagsForCarouselIndex(_currentCarouselIndex);
         }
       },
@@ -1133,42 +731,22 @@ class _PostItemState extends State<PostItem>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (_isCarousel && _imageUrls.length > 1)
-              _buildCarousel()
-            else
-              isFullScreenMode
-                  ? _buildFullImage(imageUrl)
-                  : _buildAutoImage(imageUrl),
+            if (_isCarousel && _imageUrls.length > 1) _buildCarousel()
+            else isFullScreenMode ? _buildFullImage(imageUrl) : _buildAutoImage(imageUrl),
             Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
+              bottom: 0, left: 0, right: 0,
               child: IgnorePointer(
                 ignoring: true,
                 child: Container(
                   height: 80,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.bottomCenter,
-                      end: Alignment.topCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.2),
-                        Colors.transparent,
-                      ],
-                    ),
-                  ),
+                  decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black.withOpacity(0.2), Colors.transparent])),
                 ),
               ),
             ),
             if (_isCarousel && _imageUrls.length > 1)
               Positioned(
-                bottom: bottomPadding + 10,
-                left: 0,
-                right: 0,
-                child: IgnorePointer(
-                  ignoring: true,
-                  child: _buildTikTokIndicators(),
-                ),
+                bottom: bottomPadding + 10, left: 0, right: 0,
+                child: IgnorePointer(ignoring: true, child: _buildTikTokIndicators()),
               ),
             if (_showHeartAnimation && _tapPosition != null && !_isLongPressInProgress)
               Positioned(
@@ -1185,14 +763,7 @@ class _PostItemState extends State<PostItem>
                           angle: _heartRotationAnimation.value,
                           child: Opacity(
                             opacity: _heartOpacityAnimation.value,
-                            child: Transform.scale(
-                              scale: _heartScaleAnimation.value,
-                              child: const Icon(
-                                Icons.favorite,
-                                color: Color(0xFFFF2D55),
-                                size: 100,
-                              ),
-                            ),
+                            child: Transform.scale(scale: _heartScaleAnimation.value, child: const Icon(Icons.favorite, color: Color(0xFFFF2D55), size: 100)),
                           ),
                         ),
                       );
@@ -1201,24 +772,11 @@ class _PostItemState extends State<PostItem>
                 ),
               ),
             Padding(
-              padding: EdgeInsets.only(
-                left: 16,
-                right: 16,
-                bottom: bottomPadding,
-              ),
+              padding: EdgeInsets.only(left: 16, right: 16, bottom: bottomPadding),
               child: Stack(
                 children: [
-                  Positioned(
-                    bottom: hasCaption ? 2 : 5,
-                    left: 0,
-                    right: 60,
-                    child: _buildUserInfoAndCaption(),
-                  ),
-                  Positioned(
-                    bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0),
-                    right: 0,
-                    child: _buildActionButtons(),
-                  ),
+                  Positioned(bottom: hasCaption ? 2 : 5, left: 0, right: 60, child: _buildUserInfoAndCaption()),
+                  Positioned(bottom: (hasCaption ? 2 : 5) + (widget.customBottomPadding ?? 0), right: 0, child: _buildActionButtons()),
                 ],
               ),
             ),
@@ -1230,47 +788,31 @@ class _PostItemState extends State<PostItem>
 
   Widget _buildAutoImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-        .toList();
-    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_$_currentCarouselIndex')).toList();
     return Center(
       child: AspectRatio(
         aspectRatio: 9 / 16,
         child: Stack(
           fit: StackFit.expand,
           children: [
-            _hasImageError
-                ? _buildErrorWidget()
-                : CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    fit: BoxFit.contain,
-                    width: double.infinity,
-                    height: double.infinity,
-                    fadeInDuration: Duration.zero,
-                    fadeOutDuration: Duration.zero,
-                    placeholderFadeInDuration: Duration.zero,
-                    placeholder: (context, url) => Container(
-                      color: Colors.black,
-                    ),
-                    errorWidget: (context, url, error) => Container(
-                      color: Colors.black,
-                      child: const Icon(Icons.broken_image, color: Colors.white),
-                    ),
-                  ),
-            if (hasTagsForThisImage)
+            _hasImageError ? _buildErrorWidget() : CachedNetworkImage(
+              imageUrl: imageUrl,
+              fit: BoxFit.contain,
+              width: double.infinity,
+              height: double.infinity,
+              fadeInDuration: Duration.zero,
+              fadeOutDuration: Duration.zero,
+              placeholder: (context, url) => Container(color: Colors.black),
+              errorWidget: (context, url, error) => Container(color: Colors.black, child: const Icon(Icons.broken_image, color: Colors.white)),
+            ),
+            if (tagsForThisImage.isNotEmpty)
               PostTagsOverlay(
                 tags: tagsForThisImage,
                 isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
                 onTagTap: (tag) async {
                   widget.onLinkClick?.call();
                   final url = Uri.parse(tag.url);
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  } else {
-                    _showSnackBar('Cannot open link', Colors.red);
-                  }
+                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
                 },
               ),
           ],
@@ -1281,45 +823,29 @@ class _PostItemState extends State<PostItem>
 
   Widget _buildFullImage(String imageUrl) {
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-        .toList();
-    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_$_currentCarouselIndex')).toList();
     return Positioned.fill(
       child: Stack(
         fit: StackFit.expand,
         children: [
-          _hasImageError
-              ? _buildErrorWidget()
-              : CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  width: double.infinity,
-                  height: double.infinity,
-                  fadeInDuration: Duration.zero,
-                  fadeOutDuration: Duration.zero,
-                  placeholderFadeInDuration: Duration.zero,
-                  placeholder: (context, url) => Container(
-                    color: Colors.black,
-                  ),
-                  errorWidget: (context, url, error) => Container(
-                    color: Colors.black,
-                    child: const Icon(Icons.broken_image, color: Colors.white),
-                  ),
-                ),
-          if (hasTagsForThisImage)
+          _hasImageError ? _buildErrorWidget() : CachedNetworkImage(
+            imageUrl: imageUrl,
+            fit: BoxFit.cover,
+            width: double.infinity,
+            height: double.infinity,
+            fadeInDuration: Duration.zero,
+            fadeOutDuration: Duration.zero,
+            placeholder: (context, url) => Container(color: Colors.black),
+            errorWidget: (context, url, error) => Container(color: Colors.black, child: const Icon(Icons.broken_image, color: Colors.white)),
+          ),
+          if (tagsForThisImage.isNotEmpty)
             PostTagsOverlay(
               tags: tagsForThisImage,
               isVisible: _showTagsForCarouselIndex[_currentCarouselIndex] ?? false,
               onTagTap: (tag) async {
                 widget.onLinkClick?.call();
                 final url = Uri.parse(tag.url);
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url, mode: LaunchMode.externalApplication);
-                } else {
-                  _showSnackBar('Cannot open link', Colors.red);
-                }
+                if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
               },
             ),
         ],
@@ -1328,9 +854,7 @@ class _PostItemState extends State<PostItem>
   }
 
   Widget _buildCarousel() {
-    final freshPost = _postController.getPostFromStorage(widget.post['id']) ?? widget.post;
-    final fitModes = freshPost['fitModes'] as List? ?? [];
-    
+    final fitModes = widget.post['fitModes'] as List? ?? [];
     return PageView.builder(
       controller: _carouselController,
       scrollDirection: Axis.horizontal,
@@ -1341,27 +865,18 @@ class _PostItemState extends State<PostItem>
         if (!mounted) return;
         _safeSetState(() {
           _currentCarouselIndex = index;
-          for (int i = 0; i < _imageUrls.length; i++) {
-            _showTagsForCarouselIndex[i] = false;
-          }
+          for (int i = 0; i < _imageUrls.length; i++) _showTagsForCarouselIndex[i] = false;
         });
         _preloadMultipleImages();
       },
       itemBuilder: (context, index) {
         final url = _imageUrls[index];
         String mode = 'contain';
-        if (index < fitModes.length) {
-          mode = fitModes[index]?.toString() ?? 'contain';
-        } else if (fitModes.isNotEmpty) {
-          mode = fitModes.first?.toString() ?? 'contain';
-        }
-        final isFullScreenMode = mode == 'cover';
-        
+        if (index < fitModes.length) mode = fitModes[index]?.toString() ?? 'contain';
+        else if (fitModes.isNotEmpty) mode = fitModes.first?.toString() ?? 'contain';
         return RepaintBoundary(
           key: ValueKey('carousel_page_$index'),
-          child: isFullScreenMode
-              ? _buildFullCarouselItem(url, index)
-              : _buildAutoCarouselItem(url, index),
+          child: mode == 'cover' ? _buildFullCarouselItem(url, index) : _buildAutoCarouselItem(url, index),
         );
       },
     );
@@ -1369,11 +884,7 @@ class _PostItemState extends State<PostItem>
 
   Widget _buildAutoCarouselItem(String url, int index) {
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_$index'))
-        .toList();
-    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_$index')).toList();
     return Center(
       child: AspectRatio(
         aspectRatio: 9 / 16,
@@ -1383,31 +894,19 @@ class _PostItemState extends State<PostItem>
             CachedNetworkImage(
               imageUrl: url,
               fit: BoxFit.contain,
-              width: double.infinity,
-              height: double.infinity,
               fadeInDuration: Duration.zero,
               fadeOutDuration: Duration.zero,
-              placeholderFadeInDuration: Duration.zero,
-              placeholder: (context, url) => Container(
-                color: Colors.black,
-              ),
-              errorWidget: (context, url, error) => Container(
-                color: Colors.black,
-                child: const Icon(Icons.broken_image, color: Colors.white),
-              ),
+              placeholder: (context, url) => Container(color: Colors.black),
+              errorWidget: (context, url, error) => Container(color: Colors.black, child: const Icon(Icons.broken_image, color: Colors.white)),
             ),
-            if (hasTagsForThisImage)
+            if (tagsForThisImage.isNotEmpty)
               PostTagsOverlay(
                 tags: tagsForThisImage,
                 isVisible: _showTagsForCarouselIndex[index] ?? false,
                 onTagTap: (tag) async {
                   widget.onLinkClick?.call();
                   final url = Uri.parse(tag.url);
-                  if (await canLaunchUrl(url)) {
-                    await launchUrl(url, mode: LaunchMode.externalApplication);
-                  } else {
-                    _showSnackBar('Cannot open link', Colors.red);
-                  }
+                  if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
                 },
               ),
           ],
@@ -1418,11 +917,7 @@ class _PostItemState extends State<PostItem>
 
   Widget _buildFullCarouselItem(String url, int index) {
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_$index'))
-        .toList();
-    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_$index')).toList();
     return Center(
       child: Stack(
         fit: StackFit.expand,
@@ -1430,31 +925,19 @@ class _PostItemState extends State<PostItem>
           CachedNetworkImage(
             imageUrl: url,
             fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
             fadeInDuration: Duration.zero,
             fadeOutDuration: Duration.zero,
-            placeholderFadeInDuration: Duration.zero,
-            placeholder: (context, url) => Container(
-              color: Colors.black,
-            ),
-            errorWidget: (context, url, error) => Container(
-              color: Colors.black,
-              child: const Icon(Icons.broken_image, color: Colors.white),
-            ),
+            placeholder: (context, url) => Container(color: Colors.black),
+            errorWidget: (context, url, error) => Container(color: Colors.black, child: const Icon(Icons.broken_image, color: Colors.white)),
           ),
-          if (hasTagsForThisImage)
+          if (tagsForThisImage.isNotEmpty)
             PostTagsOverlay(
               tags: tagsForThisImage,
               isVisible: _showTagsForCarouselIndex[index] ?? false,
               onTagTap: (tag) async {
                 widget.onLinkClick?.call();
                 final url = Uri.parse(tag.url);
-                if (await canLaunchUrl(url)) {
-                  await launchUrl(url, mode: LaunchMode.externalApplication);
-                } else {
-                  _showSnackBar('Cannot open link', Colors.red);
-                }
+                if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
               },
             ),
         ],
@@ -1465,27 +948,19 @@ class _PostItemState extends State<PostItem>
   Widget _buildTikTokIndicators() {
     final totalImages = _imageUrls.length;
     final currentIndex = _currentCarouselIndex;
-    
     if (totalImages <= 3) {
       return Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: List.generate(totalImages, (index) {
-          final isCurrent = index == currentIndex;
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOut,
-            width: isCurrent ? 8 : 6,
-            height: isCurrent ? 8 : 6,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
-            ),
-          );
-        }),
+        children: List.generate(totalImages, (index) => AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOut,
+          width: index == currentIndex ? 8 : 6,
+          height: index == currentIndex ? 8 : 6,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(shape: BoxShape.circle, color: index == currentIndex ? Colors.white : Colors.white.withOpacity(0.4)),
+        )),
       );
     }
-    
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -1503,26 +978,38 @@ class _PostItemState extends State<PostItem>
       width: isCurrent ? 10 : 6,
       height: isCurrent ? 10 : 6,
       margin: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4),
-      ),
+      decoration: BoxDecoration(shape: BoxShape.circle, color: isCurrent ? Colors.white : Colors.white.withOpacity(0.4)),
     );
   }
 
+  // ============================================================
+  // 🔥 USER INFO + БЫСТРАЯ АВАТАРКА (CachedNetworkImage + ClipOval)
+  // ============================================================
   Widget _buildUserInfoAndCaption() {
     final postId = widget.post['id']?.toString() ?? '';
     
     return Obx(() {
-      final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
+      final freshPost = _postController.posts[postId] ?? widget.post;
       
-      final userName = freshPost['userName'] ?? 'Anonymous';
-      final userAvatar = freshPost['userAvatar'] ?? '';
-      final userId = freshPost['userId'];
-      final caption = freshPost['caption'] ?? '';
-      final createdAt = freshPost['createdAt'];
+      final userName = freshPost['userName'] ?? widget.post['userName'] ?? 'Anonymous';
+      
+      // 🔥 Аватарка: всегда берем САМУЮ СВЕЖУЮ из freshPost (после updateAvatarInCache)
+      final userAvatar = freshPost['userAvatar']?.toString() 
+          ?? widget.post['userAvatar']?.toString() 
+          ?? '';
+      
+      final userId = freshPost['userId'] ?? widget.post['userId'];
+      final caption = freshPost['caption'] ?? widget.post['caption'] ?? '';
+      final createdAt = freshPost['createdAt'] ?? widget.post['createdAt'];
+      
+      // 🔥 Галочка с кэшем
+      final rawBadgeType = freshPost['userBadgeType']?.toString() 
+          ?? widget.post['userBadgeType']?.toString() 
+          ?? '';
+      if (rawBadgeType.isNotEmpty) _cachedUserBadgeType = rawBadgeType;
+      final hasBadge = _cachedUserBadgeType.isNotEmpty || rawBadgeType.isNotEmpty;
 
-      final cachedAvatar = _getUserAvatar(userAvatar?.toString());
+      final cachedAvatar = _getUserAvatar(userAvatar);
 
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1533,19 +1020,30 @@ class _PostItemState extends State<PostItem>
               GestureDetector(
                 onTap: () => _navigateToProfile(userId?.toString() ?? ''),
                 child: Container(
+                  width: 32,
+                  height: 32,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black26,
-                        blurRadius: 6,
-                      ),
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 6)],
                   ),
-                  child: CircleAvatar(
-                    backgroundImage: NetworkImage(cachedAvatar),
-                    radius: 16,
-                    backgroundColor: Colors.grey[800],
+                  child: ClipOval(
+                    child: CachedNetworkImage(
+                      imageUrl: cachedAvatar,
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 96,
+                      memCacheHeight: 96,
+                      fadeInDuration: Duration.zero,
+                      fadeOutDuration: Duration.zero,
+                      placeholder: (_, __) => Container(width: 32, height: 32, color: Colors.grey[800]),
+                      errorWidget: (_, __, ___) => Container(
+                        width: 32,
+                        height: 32,
+                        color: Colors.grey[800],
+                        child: const Icon(Icons.person, size: 20, color: Colors.white54),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1560,21 +1058,9 @@ class _PostItemState extends State<PostItem>
                         child: UserNameWithBadge(
                           name: userName,
                           badgeType: null,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            shadows: [
-                              Shadow(
-                                color: Colors.black38,
-                                blurRadius: 6,
-                              ),
-                            ],
-                          ),
+                          style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold, shadows: [Shadow(color: Colors.black38, blurRadius: 6)]),
                           iconSize: 10,
-                          customBadge: (freshPost['userBadgeType'] ?? '').toString().isNotEmpty
-                              ? const _FeedWhiteBadge()
-                              : null,
+                          customBadge: hasBadge ? const _FeedWhiteBadge() : null,
                         ),
                       ),
                     ),
@@ -1592,24 +1078,14 @@ class _PostItemState extends State<PostItem>
                             decoration: BoxDecoration(
                               color: _isFollowing ? Colors.white.withOpacity(0.2) : Colors.transparent,
                               borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color: _isFollowing ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.5),
-                                width: 1,
-                              ),
+                              border: Border.all(color: _isFollowing ? Colors.white.withOpacity(0.3) : Colors.white.withOpacity(0.5), width: 1),
                             ),
                             child: Center(
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
                                   _isFollowing ? "Following" : "Follow",
-                                  style: TextStyle(
-                                    color: _isFollowing ? Colors.white : Colors.white.withOpacity(0.9),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.clip,
-                                  textAlign: TextAlign.center,
+                                  style: TextStyle(color: _isFollowing ? Colors.white : Colors.white.withOpacity(0.9), fontSize: 12, fontWeight: FontWeight.w600),
                                 ),
                               ),
                             ),
@@ -1621,7 +1097,6 @@ class _PostItemState extends State<PostItem>
               ),
             ],
           ),
-
           if (caption.isNotEmpty) ...[
             const SizedBox(height: 12),
             GestureDetector(
@@ -1631,58 +1106,23 @@ class _PostItemState extends State<PostItem>
                 curve: Curves.easeOutCubic,
                 child: Container(
                   width: MediaQuery.of(context).size.width * 0.7,
-                  constraints: BoxConstraints(
-                    maxHeight: _isExpanded ? 200 : 40,
-                  ),
+                  constraints: BoxConstraints(maxHeight: _isExpanded ? 200 : 40),
                   child: SingleChildScrollView(
-                    physics: _isExpanded 
-                        ? const AlwaysScrollableScrollPhysics()
-                        : const NeverScrollableScrollPhysics(),
-                    child: Text(
-                      caption,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        shadows: [
-                          Shadow(
-                            color: Colors.black38,
-                            blurRadius: 6,
-                          ),
-                        ],
-                      ),
-                    ),
+                    physics: _isExpanded ? const AlwaysScrollableScrollPhysics() : const NeverScrollableScrollPhysics(),
+                    child: Text(caption, style: const TextStyle(color: Colors.white, fontSize: 14, shadows: [Shadow(color: Colors.black38, blurRadius: 6)])),
                   ),
                 ),
               ),
             ),
           ],
-
           const SizedBox(height: 8),
           if (createdAt != null)
             Builder(
               builder: (context) {
                 DateTime postTime;
                 try {
-                  if (createdAt is Timestamp) {
-                    postTime = (createdAt as Timestamp).toDate();
-                  } else if (createdAt is DateTime) {
-                    postTime = createdAt as DateTime;
-                  } else {
-                    postTime = DateTime.now();
-                  }
-                  return Text(
-                    _getTimeAgo(postTime),
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      shadows: [
-                        Shadow(
-                          color: Colors.black38,
-                          blurRadius: 4,
-                        ),
-                      ],
-                    ),
-                  );
+                  postTime = (createdAt is Timestamp) ? (createdAt as Timestamp).toDate() : (createdAt as DateTime?) ?? DateTime.now();
+                  return Text(_getTimeAgo(postTime), style: const TextStyle(color: Colors.white70, fontSize: 12, shadows: [Shadow(color: Colors.black38, blurRadius: 4)]));
                 } catch (e) {
                   return const SizedBox.shrink();
                 }
@@ -1707,68 +1147,28 @@ class _PostItemState extends State<PostItem>
       },
       child: SizedBox(
         width: 42,
-        child: Icon(
-          icon,
-          color: Colors.white,
-          size: iconSize,
-          shadows: const [
-            Shadow(
-              color: Colors.black38,
-              blurRadius: 6,
-            ),
-          ],
-        ),
+        child: Icon(icon, color: Colors.white, size: iconSize, shadows: const [Shadow(color: Colors.black38, blurRadius: 6)]),
       ),
     );
-
-    if (scaleAnimation != null) {
-      button = ScaleTransition(
-        scale: scaleAnimation,
-        child: button,
-      );
-    }
-
+    if (scaleAnimation != null) button = ScaleTransition(scale: scaleAnimation, child: button);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         button,
         const SizedBox(height: 2),
-        Text(
-          _formatNumber(count),
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            shadows: [
-              Shadow(
-                color: Colors.black45,
-                blurRadius: 5,
-              ),
-            ],
-          ),
-        ),
+        Text(_formatNumber(count), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700, shadows: [Shadow(color: Colors.black45, blurRadius: 5)])),
       ],
     );
   }
 
   Widget _buildActionButtons() {
     final postId = widget.post['id']?.toString() ?? '';
-    
     return Obx(() {
-      final freshPost = _postController.getPostFromStorage(postId) ?? widget.post;
-      
+      final freshPost = _postController.posts[postId] ?? widget.post;
       final isLiked = _postController.isPostLiked(postId);
       final isSaved = _postController.isPostSaved(postId);
-      final likesCount = freshPost['likes'] ?? 0;
-      final commentsCount = freshPost['comments'] ?? 0;
-      final savesCount = freshPost['saves'] ?? 0;
-      
       final allTags = _getTagsFromPost(freshPost);
-      final tagsForThisImage = allTags
-          .where((tag) => tag.id.contains('_$_currentCarouselIndex'))
-          .toList();
-      final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
-      final isTagsVisible = _showTagsForCarouselIndex[_currentCarouselIndex] ?? false;
+      final hasTagsForThisImage = allTags.where((tag) => tag.id.contains('_$_currentCarouselIndex')).isNotEmpty;
 
       return SizedBox(
         width: 52,
@@ -1776,29 +1176,11 @@ class _PostItemState extends State<PostItem>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            _buildActionButton(
-              onTap: _toggleLike,
-              icon: isLiked ? Icons.favorite : Icons.favorite_border,
-              count: likesCount,
-              scaleAnimation: _likeIconScale,
-              iconSize: 36,
-            ),
+            _buildActionButton(onTap: _toggleLike, icon: isLiked ? Icons.favorite : Icons.favorite_border, count: (freshPost['likes'] ?? 0) as int, scaleAnimation: _likeIconScale, iconSize: 36),
             const SizedBox(height: 18),
-            _buildActionButton(
-              onTap: _showCommentsSheet,
-              icon: CupertinoIcons.chat_bubble,
-              count: commentsCount,
-              iconSize: 32,
-            ),
+            _buildActionButton(onTap: _showCommentsSheet, icon: CupertinoIcons.chat_bubble, count: (freshPost['comments'] ?? 0) as int, iconSize: 32),
             const SizedBox(height: 18),
-            _buildActionButton(
-              onTap: _toggleSave,
-              icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-              count: savesCount,
-              scaleAnimation: _saveIconScale,
-              iconSize: 32,
-            ),
-            
+            _buildActionButton(onTap: _toggleSave, icon: isSaved ? Icons.bookmark : Icons.bookmark_border, count: (freshPost['saves'] ?? 0) as int, scaleAnimation: _saveIconScale, iconSize: 32),
             if (hasTagsForThisImage) ...[
               const SizedBox(height: 18),
               RepaintBoundary(
@@ -1807,14 +1189,7 @@ class _PostItemState extends State<PostItem>
                     HapticFeedback.mediumImpact();
                     _toggleTagsForCarouselIndex(_currentCarouselIndex);
                   },
-                  child: const SizedBox(
-                    width: 42,
-                    child: Icon(
-                      Icons.auto_awesome,
-                      color: Colors.white,
-                      size: 32,
-                    ),
-                  ),
+                  child: const SizedBox(width: 42, child: Icon(Icons.auto_awesome, color: Colors.white, size: 32)),
                 ),
               ),
             ],
@@ -1833,10 +1208,7 @@ class _PostItemState extends State<PostItem>
           children: [
             Icon(Icons.broken_image, color: Colors.grey[600], size: 60),
             const SizedBox(height: 16),
-            const Text(
-              "Image not available",
-              style: TextStyle(color: Colors.grey, fontSize: 16),
-            ),
+            const Text("Image not available", style: TextStyle(color: Colors.grey, fontSize: 16)),
             const SizedBox(height: 8),
             ElevatedButton(
               onPressed: () {
@@ -1854,21 +1226,13 @@ class _PostItemState extends State<PostItem>
   Widget _buildPreviewPost() {
     final postId = widget.post['id']?.toString() ?? '';
     final imageUrl = _getCurrentImageUrl();
-
-    if (_isVideoPost()) {
-      return _buildVideoPreview();
-    }
+    if (_isVideoPost()) return _buildVideoPreview();
 
     final cacheKey = 'photo_$postId';
-    if (_previewWidgetCache.containsKey(cacheKey)) {
-      return _previewWidgetCache[cacheKey]!;
-    }
+    if (_previewWidgetCache.containsKey(cacheKey)) return _previewWidgetCache[cacheKey]!;
 
     final allTags = _getTagsFromPost(widget.post);
-    final tagsForThisImage = allTags
-        .where((tag) => tag.id.contains('_0'))
-        .toList();
-    final hasTagsForThisImage = tagsForThisImage.isNotEmpty;
+    final tagsForThisImage = allTags.where((tag) => tag.id.contains('_0')).toList();
 
     final cachedWidget = RepaintBoundary(
       key: ValueKey('preview_${postId}_fixed'),
@@ -1888,58 +1252,18 @@ class _PostItemState extends State<PostItem>
                   : CachedNetworkImage(
                       imageUrl: imageUrl,
                       fit: BoxFit.cover,
-                      width: double.infinity,
-                      height: double.infinity,
                       fadeInDuration: Duration.zero,
                       fadeOutDuration: Duration.zero,
-                      placeholderFadeInDuration: Duration.zero,
                       memCacheWidth: 300,
                       memCacheHeight: 300,
-                      placeholder: (context, url) => Container(
-                        color: Colors.grey[300],
-                      ),
-                      errorWidget: (context, url, error) => Container(
-                        color: Colors.grey[300],
-                        child: const Icon(Icons.broken_image, color: Colors.grey),
-                      ),
+                      placeholder: (context, url) => Container(color: Colors.grey[300]),
+                      errorWidget: (context, url, error) => Container(color: Colors.grey[300], child: const Icon(Icons.broken_image, color: Colors.grey)),
                     ),
-              if (hasTagsForThisImage)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.link,
-                          color: Colors.white,
-                          size: 12,
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          '${tagsForThisImage.length}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
             ],
           ),
         ),
       ),
     );
-
     _previewWidgetCache[cacheKey] = cachedWidget;
     return cachedWidget;
   }
@@ -1954,23 +1278,10 @@ class _PostItemState extends State<PostItem>
           CachedNetworkImage(
             imageUrl: imageUrl,
             fit: BoxFit.cover,
-            width: double.infinity,
-            height: double.infinity,
-            placeholder: (context, url) => Container(
-              color: Colors.grey[900],
-            ),
-            errorWidget: (context, url, error) => Container(
-              color: Colors.grey[900],
-              child: const Icon(Icons.broken_image, color: Colors.grey),
-            ),
+            placeholder: (context, url) => Container(color: Colors.grey[900]),
+            errorWidget: (context, url, error) => Container(color: Colors.grey[900], child: const Icon(Icons.broken_image, color: Colors.grey)),
           ),
-          const Center(
-            child: Icon(
-              Icons.play_circle_outline,
-              color: Colors.white,
-              size: 60,
-            ),
-          ),
+          const Center(child: Icon(Icons.play_circle_outline, color: Colors.white, size: 60)),
         ],
       ),
     );
@@ -1979,37 +1290,29 @@ class _PostItemState extends State<PostItem>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    
     if (_isVideoPost()) {
       return RepaintBoundary(
         child: VisibilityDetector(
           key: ValueKey('video_${widget.post['id']}'),
           onVisibilityChanged: _onVisibilityChanged,
-          child: widget.isFullScreen 
-              ? _buildFullScreenVideoPost() 
-              : _buildPreviewPost(),
+          child: widget.isFullScreen ? _buildFullScreenVideoPost() : _buildPreviewPost(),
         ),
       );
     }
-    
     return widget.isFullScreen ? _buildFullScreenPost() : _buildPreviewPost();
   }
 }
 
 // ============================================================
-// 🔥 БЕЛАЯ INSTAGRAM-ГАЛОЧКА (10px) — ЗАЛИВКА + ПРОЗРАЧНЫЙ ВЫРЕЗ
+// 🔥 ГАЛОЧКА
 // ============================================================
 class _FeedWhiteBadge extends StatelessWidget {
   const _FeedWhiteBadge();
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 10,
-      height: 10,
-      child: CustomPaint(
-        painter: _FeedWhiteBadgePainter(),
-      ),
+      width: 14, height: 14,
+      child: CustomPaint(painter: _FeedWhiteBadgePainter()),
     );
   }
 }
@@ -2017,60 +1320,25 @@ class _FeedWhiteBadge extends StatelessWidget {
 class _FeedWhiteBadgePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-    final center = Offset(w / 2, h / 2);
-
-    // ✅ saveLayer нужен для BlendMode.clear — иначе может стереть фон
+    final w = size.width; final h = size.height; final center = Offset(w / 2, h / 2);
     canvas.saveLayer(Offset.zero & size, Paint());
-
-    // 1. БЕЛАЯ 8-лепестковая розетка — ЗАЛИВКА
-    final badgePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
-
+    final badgePaint = Paint()..color = Colors.white..style = PaintingStyle.fill..isAntiAlias = true;
     final path = Path();
-    const int lobes = 8;
-    const int steps = 160;
-    final double baseRadius = w * 0.435;
-    final double waveAmplitude = w * 0.055;
-
+    const int lobes = 8; const int steps = 160;
+    final double baseRadius = w * 0.435; final double waveAmplitude = w * 0.055;
     for (int i = 0; i <= steps; i++) {
       final double theta = (i / steps) * 2 * math.pi;
       final double r = baseRadius + waveAmplitude * math.cos(lobes * theta);
-      final double x = center.dx + r * math.cos(theta);
-      final double y = center.dy + r * math.sin(theta);
-
-      if (i == 0) {
-        path.moveTo(x, y);
-      } else {
-        path.lineTo(x, y);
-      }
+      final double x = center.dx + r * math.cos(theta); final double y = center.dy + r * math.sin(theta);
+      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
     }
-    path.close();
-    canvas.drawPath(path, badgePaint);
-
-    // 2. ГАЛОЧКА ВНУТРИ — ПРОЗРАЧНЫЙ ВЫРЕЗ (стирает пиксели)
+    path.close(); canvas.drawPath(path, badgePaint);
     final checkPaint = Paint()
-      ..color = Colors.white // цвет игнорируется для BlendMode.clear
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = w * 0.12
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round
-      ..blendMode = BlendMode.clear // ← ВЫРЕЗ
-      ..isAntiAlias = true;
-
-    final checkPath = Path()
-      ..moveTo(w * 0.31, h * 0.51)
-      ..lineTo(w * 0.44, h * 0.64)
-      ..lineTo(w * 0.70, h * 0.37);
-
-    canvas.drawPath(checkPath, checkPaint);
-
-    canvas.restore();
+      ..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = w * 0.12
+      ..strokeCap = StrokeCap.round..strokeJoin = StrokeJoin.round..blendMode = BlendMode.clear..isAntiAlias = true;
+    final checkPath = Path()..moveTo(w * 0.31, h * 0.51)..lineTo(w * 0.44, h * 0.64)..lineTo(w * 0.70, h * 0.37);
+    canvas.drawPath(checkPath, checkPaint); canvas.restore();
   }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

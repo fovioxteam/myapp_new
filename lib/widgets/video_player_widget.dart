@@ -35,7 +35,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   @override
   void initState() {
     super.initState();
-    // Инициализируем плеер сразу при создании, чтобы оно было готово к показу
     _initVideo();
   }
 
@@ -43,7 +42,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
   void didUpdateWidget(VideoPlayerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // Если изменился URL — полностью пересоздаем плеер
     if (oldWidget.videoUrl != widget.videoUrl) {
       _disposeAndReset().then((_) {
         _initVideo();
@@ -51,7 +49,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       return;
     }
 
-    // Реакция на изменение видимости в ленте
     if (oldWidget.isVisible != widget.isVisible) {
       _handleVisibilityChange(widget.isVisible);
     }
@@ -79,13 +76,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
     if (_controller == null || !_isInitialized) return;
 
     if (isVisible) {
-      // ⚡ При возврате к видео восстанавливаем проигрывание мгновенно из памяти
+      // ⚡ Пост вернулся на экран — играем, если пользователь не ставил паузу
       if (!_isPausedByUser) {
         _controller!.play();
         if (mounted) setState(() => _isPlaying = true);
       }
     } else {
-      // ⏸️ Не удаляем плеер! Просто ставим на паузу и сбрасываем в начало
+      // ⏸️ Пост ушёл — пауза и сброс в начало. _isPausedByUser НЕ трогаем!
       _controller!.pause();
       _controller!.seekTo(Duration.zero);
       if (mounted) setState(() => _isPlaying = false);
@@ -99,7 +96,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       VideoPlayerController controller;
 
       if (widget.videoUrl.startsWith('http')) {
-        // Проверяем наличие файла в локальном кэше диска
         final fileInfo = await DefaultCacheManager().getFileFromCache(widget.videoUrl);
 
         if (fileInfo != null) {
@@ -115,7 +111,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
             videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
           );
 
-          // Скачиваем файл в фоновом режиме для будущих просмотров
           DefaultCacheManager().downloadFile(widget.videoUrl).catchError((e) {
             print('⚠️ [VIDEO] Background cache download failed: $e');
             return fileInfo!;
@@ -136,7 +131,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       controller.setVolume(1.0);
       controller.setLooping(true);
 
-      // Запускаем только если видео видно в данный момент и не было паузы от пользователя
       if (widget.isVisible && !_isPausedByUser) {
         await controller.play();
         _isPlaying = true;
@@ -168,13 +162,13 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
       _controller!.pause();
       setState(() {
         _isPlaying = false;
-        _isPausedByUser = true;
+        _isPausedByUser = true; // 🔥 Пользователь сам поставил паузу
       });
     } else {
       _controller!.play();
       setState(() {
         _isPlaying = true;
-        _isPausedByUser = false;
+        _isPausedByUser = false; // 🔥 Пользователь снял паузу
       });
     }
   }
@@ -217,7 +211,7 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // 3. Индикатор загрузки
+            // 3. Индикатор загрузки (крутится, пока не инициализировано)
             if (!_isInitialized)
               const Center(
                 child: SpinKitThreeBounce(
@@ -226,8 +220,10 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 ),
               ),
 
-            // 4. Иконка паузы
-            if (!_isPlaying && widget.showControls && _isInitialized)
+            // 4. 🔥 ИКОНКА PLAY — ТОЛЬКО если пользователь сам нажал паузу!
+            // Если видео просто свёрнуто (скролл), _isPausedByUser == false,
+            // значит иконки не будет — только стоп-кадр.
+            if (_isInitialized && _isPausedByUser && widget.showControls)
               Icon(
                 Icons.play_arrow,
                 color: Colors.white.withAlpha(216),

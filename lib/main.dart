@@ -6,6 +6,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:get/get.dart';
+import 'package:get_storage/get_storage.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
@@ -79,6 +80,9 @@ void main() async {
   PaintingBinding.instance.imageCache.maximumSizeBytes = 150 << 20;
   
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // ✅ LOCAL-FIRST CACHE: инициализация GetStorage
+  await GetStorage.init();
   
   await _initializeServices();
   _updateAlgoliaIndex();
@@ -193,7 +197,6 @@ class MyApp extends StatelessWidget {
         page: () => const Scaffold(body: Center(child: Text('404'))),
       ),
       navigatorObservers: [routeObserver],
-      // 🔥 ГЛОБАЛЬНЫЙ letterSpacing ЧЕРЕЗ DefaultTextStyle
       builder: (context, child) {
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
