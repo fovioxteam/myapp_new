@@ -273,20 +273,22 @@ class VideoCompressor {
     required bool isHdr,
     required int targetDimension,
   }) {
+    // setsar=1 жестко фиксирует квадратные пиксели (1:1) после ресайза и поворота,
+    // исключая горизонтальное растягивание кадра на iOS/Android.
     final scale =
         'scale='
         'w=min($targetDimension\\,iw):'
         'h=min($targetDimension\\,ih):'
         'force_original_aspect_ratio=decrease:'
-        'force_divisible_by=2';
+        'force_divisible_by=2,'
+        'setsar=1';
 
     // SDR — просто ресайз и приведение к 8-bit yuv420p.
     if (!isHdr) {
       return '$scale,format=yuv420p';
     }
 
-    // HDR — только через zscale + tonemap.
-    // Без zscale честный tone-mapping сделать нельзя.
+    // HDR — идеальный tone-mapping через zscale + tonemap (если доступны в сборке).
     if (_hasZscale && _hasTonemap) {
       return [
         'zscale=t=linear:npl=100',
@@ -297,7 +299,10 @@ class VideoCompressor {
       ].join(',');
     }
 
-    return null;
+    // Резервный вариант для HDR (если zscale/tonemap отсутствуют):
+    // принудительно переводим 10-bit Dolby Vision/HLG в 8-bit SDR yuv420p,
+    // чтобы ролик не проскочил в исходном HDR и гарантированно открылся на всех устройствах.
+    return '$scale,format=yuv420p';
   }
 
   // ============================================================
