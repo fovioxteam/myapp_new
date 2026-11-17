@@ -181,7 +181,7 @@ class VideoCompressor {
   }
 
   // ============================================================
-  // VIDEO FILTER — сохранение пропорций
+  // VIDEO FILTER
   // ============================================================
 
   static String? _buildVideoFilter({
@@ -190,18 +190,18 @@ class VideoCompressor {
   }) {
     final parts = <String>[];
 
+    // HDR → SDR fallback
     if (isHdr) {
       if (_hasZscale && _hasTonemap) {
         parts.add('zscale=t=linear:npl=100');
         parts.add('tonemap=mobius:desat=0');
         parts.add('zscale=p=bt709:t=bt709:m=bt709');
       } else {
-        debugPrint('⚠️ [FFmpeg] Zscale/Tonemap unavailable');
+        debugPrint('⚠️ [FFmpeg] Zscale/Tonemap unavailable, using basic HDR->SDR fallback');
       }
     }
 
-    // 🔥 Единый scale: вписывает в targetDimension×targetDimension,
-    // сохраняет пропорции, делает размеры чётными для libx264
+    // 🔥 Идеальный единый scale
     parts.add(
       'scale='
       '${targetDimension}:${targetDimension}:'

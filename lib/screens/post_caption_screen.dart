@@ -9,7 +9,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:path/path.dart' as path;
-import 'package:video_transcoder/video_transcoder.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:video_player/video_player.dart';
 
 import '../controllers/post_controller.dart';
 import '../models/post_tag.dart';
@@ -95,13 +96,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
     try {
       final videoFile = widget.selectedFiles.first;
-
-      File? thumb = await VideoTranscoder.generateThumbnail(
-        videoFile,
-        timeMs: 500,
-      );
-
-      thumb ??= await VideoCompressor.generateThumbnail(videoFile);
+      final thumb = await VideoCompressor.generateThumbnail(videoFile);
 
       if (mounted) {
         setState(() {
@@ -167,49 +162,44 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     );
   }
 
-  // ============================================================
-  // 🔥 ЗАГРУЗКА ВИДЕО (native сжатие через VideoTranscoder)
-  // ============================================================
   Future<Map<String, String?>> _processVideo(String userId) async {
     final videoFile = widget.selectedFiles.first;
 
     if (mounted) {
       setState(() {
-        _uploadStatus = 'Converting video...';
+        _uploadStatus = 'Compressing video...';
         _uploadProgress = 0.10;
       });
     }
 
-    // Native сжатие через VideoTranscoder (iOS AVAssetExportSession 720p)
-    // Автоматически делает HDR → SDR + уменьшает размер до ~15-25 MB
     File? compressedVideo;
 
+    // 🔥 ТОЛЬКО VideoCompressor
     try {
-      final result = await VideoTranscoder.transcodeForUpload(
-        videoFile,
-        onProgress: (progress) {
-          if (mounted) {
-            setState(() {
-              _uploadProgress = 0.10 + progress * 0.15;
-            });
-          }
-        },
-      );
-      compressedVideo = File(result.path);
-      debugPrint('✅ [PROCESS] Native transcode done. wasTranscoded=${result.wasTranscoded}');
-    } on MissingPluginException {
-      debugPrint('⚠️ [PROCESS] Native plugin unavailable, using FFmpeg');
       compressedVideo = await VideoCompressor.compressVideo(videoFile);
+      if (compressedVideo == null) {
+        throw Exception('VideoCompressor returned null');
+      }
+      debugPrint('✅ [PROCESS] VideoCompressor: ${compressedVideo.path}');
     } catch (e) {
-      debugPrint('⚠️ [PROCESS] Native transcode failed: $e, using FFmpeg');
-      compressedVideo = await VideoCompressor.compressVideo(videoFile);
+      debugPrint('❌ [PROCESS] VideoCompressor failed: $e');
+      throw Exception('Video compression failed: $e');
     }
 
     if (compressedVideo == null) {
       throw Exception('Video compression failed');
     }
 
-    // Thumbnail
+    // Проверка размера после сжатия
+    try {
+      final ctrl = VideoPlayerController.file(compressedVideo);
+      await ctrl.initialize();
+      debugPrint('🎬 [PROCESS] compressed size: ${ctrl.value.size.width}×${ctrl.value.size.height}, rotation=${ctrl.value.rotationCorrection}');
+      ctrl.dispose();
+    } catch (e) {
+      debugPrint('⚠️ [PROCESS] size check failed: $e');
+    }
+
     File? thumbnail = _cachedThumbnail;
     if (thumbnail == null || !thumbnail.existsSync()) {
       thumbnail = await VideoCompressor.generateThumbnail(compressedVideo);
@@ -249,7 +239,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       }
     }
 
-    // Очистка
     try {
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
@@ -274,9 +263,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
   }
 
-  // ============================================================
-  // ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА ФОТО С ТОЧНЫМ PROGRESS BAR
-  // ============================================================
   Future<List<String>> _uploadPhotos(String userId) async {
     final int total = widget.selectedFiles.length;
     final List<double> individualProgress = List.filled(total, 0.0);
@@ -325,9 +311,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     return results.whereType<String>().toList();
   }
 
-  // ============================================================
-  // ПРЕВЬЮ ВИДЕО
-  // ============================================================
   Widget _buildVideoThumbnail() {
     if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
       return Image.file(
@@ -369,9 +352,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     );
   }
 
-  // ============================================================
-  // ПУБЛИКАЦИЯ
-  // ============================================================
   Future<void> _uploadPost() async {
     if (!mounted || _isUploading) return;
 
@@ -411,6 +391,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         'userId': user.uid,
         'userName': userName,
         'userAvatar': userAvatar,
+        'userBadgeType': userData['badgeType']?.toString() ?? '',
         'fitModes': fitModesToSave,
         'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
         'caption': fullCaption,
@@ -492,7 +473,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       _showSnackBar(_isVideo ? 'Video shared!' : 'Post shared!', Colors.green);
 
     } catch (e) {
-      debugPrint('❌ Error uploading post: $e');
+      debugPrint('❌ [POST] Error uploading post: $e');
       _showErrorDialog('Failed to upload post: $e');
     } finally {
       if (mounted) {
@@ -589,7 +570,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Превью
                       Center(
                         child: SizedBox(
                           width: MediaQuery.of(context).size.width * 0.5,
@@ -624,7 +604,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Инфо о количестве
                       if (widget.selectedFiles.length > 1 && !_isVideo)
                         Center(
                           child: Container(
@@ -640,7 +619,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
 
-                      // Инфо о тегах
                       if (widget.tags.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -668,7 +646,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
                       const SizedBox(height: 24),
 
-                      // ✅ TextField с прозрачным фоном (как было)
                       TextField(
                         controller: _captionController,
                         maxLines: null,
@@ -685,7 +662,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                         cursorColor: Colors.white,
                       ),
 
-                      // Счётчик символов
                       Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 16),
                         child: Row(
@@ -723,7 +699,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
                       const SizedBox(height: 12),
 
-                      // Выбранные хэштеги
                       if (_selectedHashtags.isNotEmpty)
                         Container(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -764,7 +739,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
 
-                      // Предложенные хэштеги
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
