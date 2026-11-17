@@ -38,50 +38,20 @@ class VideoCompressor {
     }
   }
 
-  /// Читает rotate из метаданных. Возвращает 0, 90, 180, 270.
-  static Future<int> getRotation(File file) async {
-    try {
-      final session = await FFprobeKit.getMediaInformation(file.path);
-      final output = ((await session.getOutput()) ?? '').toLowerCase();
-
-      final rotationRegex = RegExp(r'"rotation"\s*:\s*(-?\d+)');
-      final rotateRegex = RegExp(r'"rotate"\s*:\s*"?(-?\d+)"?');
-
-      final match = rotationRegex.firstMatch(output) ?? rotateRegex.firstMatch(output);
-      if (match != null) {
-        final angle = int.tryParse(match.group(1) ?? '0') ?? 0;
-        final normalized = ((angle % 360) + 360) % 360;
-        if (normalized >= 45 && normalized < 135) return 90;
-        if (normalized >= 135 && normalized < 225) return 180;
-        if (normalized >= 225 && normalized < 315) return 270;
-        return 0;
-      }
-      return 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
   static Future<File?> generateThumbnail(File inputFile, {int? timeMs}) async {
     if (!await inputFile.exists()) return null;
     await _checkCapabilities();
     final isHdr = await _isHdrVideo(inputFile);
-    final rotation = await getRotation(inputFile);
 
     final tempDir = await getTemporaryDirectory();
     final outputPath = '${tempDir.path}/thumbnail_${DateTime.now().millisecondsSinceEpoch}.jpg';
     final seekSeconds = ((timeMs ?? 1000) / 1000.0).clamp(0.0, 10.0);
 
-    final filter = _buildVideoFilter(
-      isHdr: isHdr,
-      targetDimension: 720,
-      rotation: rotation,
-    );
+    final filter = _buildVideoFilter(isHdr: isHdr, targetDimension: 720);
     if (filter == null) return null;
 
     final arguments = <String>[
       '-y',
-      '-noautorotate',
       '-ss', seekSeconds.toStringAsFixed(3),
       '-i', inputFile.path,
       '-map', '0:v:0',
@@ -100,8 +70,7 @@ class VideoCompressor {
     }
 
     final outputFile = File(outputPath);
-    if (!await outputFile.exists()) return null;
-    if (await outputFile.length() <= 0) return null;
+    if (!await outputFile.exists() || await outputFile.length() <= 0) return null;
     return outputFile;
   }
 
@@ -110,27 +79,21 @@ class VideoCompressor {
     final originalSize = await inputFile.length();
     await _checkCapabilities();
     final isHdr = await _isHdrVideo(inputFile);
-    final rotation = await getRotation(inputFile);
 
-    // SDR, маленькое и БЕЗ rotation → не сжимаем
-    if (!isHdr && originalSize <= maxOriginalSizeBytes && rotation == 0) {
+    // Маленькие SDR файлы оставляем как есть
+    if (!isHdr && originalSize <= maxOriginalSizeBytes) {
       return inputFile;
     }
 
     final tempDir = await getTemporaryDirectory();
     final outputPath = '${tempDir.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.mp4';
 
-    final filter = _buildVideoFilter(
-      isHdr: isHdr,
-      targetDimension: maxDimension,
-      rotation: rotation,
-    );
+    final filter = _buildVideoFilter(isHdr: isHdr, targetDimension: maxDimension);
     if (filter == null) return null;
 
     final arguments = <String>[
       '-y',
-      '-noautorotate', // FFmpeg не поворачивает автоматически — делаем это через transpose в фильтре
-      '-i', inputFile.path,
+      '-i', inputFile.path, // Автоповорот FFmpeg включен по умолчанию
 
       '-map', '0:v:0',
       '-map', '0:a:0?',
@@ -169,7 +132,7 @@ class VideoCompressor {
     final outputSize = await outputFile.length();
     if (outputSize <= 0) return null;
 
-    if (!isHdr && outputSize >= originalSize && rotation == 0) {
+    if (!isHdr && outputSize >= originalSize) {
       await _deleteQuietly(outputPath);
       return inputFile;
     }
@@ -211,14 +174,11 @@ class VideoCompressor {
       final session = await FFprobeKit.getMediaInformation(file.path);
       final output = ((await session.getOutput()) ?? '').toLowerCase();
 
-      if (output.contains('arib-std-b67')) return true;
-      if (output.contains('smpte2084')) return true;
-
-      final bt2020 = output.contains('bt2020') || output.contains('bt2020nc') || output.contains('bt2020ncl');
-      final tenBit = output.contains('yuv420p10') || output.contains('yuv422p10') || output.contains('yuv444p10') || output.contains('p010');
+      if (output.contains('arib-std-b67') || output.contains('smpte2084')) return true;
+      final bt2020 = output.contains('bt2020');
+      final tenBit = output.contains('yuv420p10') || output.contains('p010');
       if (bt2020 && tenBit) return true;
-
-      if (output.contains('dolby vision') || output.contains('dolby-vision') || output.contains('dvhe.') || output.contains('dvh1.')) {
+      if (output.contains('dolby vision') || output.contains('dvhe.') || output.contains('dvh1.')) {
         return true;
       }
       return false;
@@ -228,26 +188,16 @@ class VideoCompressor {
   }
 
   // ============================================================
-  // VIDEO FILTER
+  // VIDEO FILTER (Умный пропорциональный scale)
   // ============================================================
 
   static String? _buildVideoFilter({
     required bool isHdr,
     required int targetDimension,
-    required int rotation,
   }) {
     final parts = <String>[];
 
-    // Шаг 1: Физический поворот кадра (до scale)
-    if (rotation == 90) {
-      parts.add('transpose=1'); // 90° CW
-    } else if (rotation == 180) {
-      parts.add('transpose=1,transpose=1'); // 180°
-    } else if (rotation == 270) {
-      parts.add('transpose=2'); // 90° CCW
-    }
-
-    // Шаг 2: HDR → SDR тонмаппинг (с надежным fallback)
+    // HDR → SDR fallback
     if (isHdr) {
       if (_hasZscale && _hasTonemap) {
         parts.add('zscale=t=linear:npl=100');
@@ -258,19 +208,15 @@ class VideoCompressor {
       }
     }
 
-    // Шаг 3: Scale (сохранение пропорций)
+    // Умный scale: автоматически подстраивается под ориентацию (пейзаж/портрет)
     parts.add(
       'scale='
-      'w=min($targetDimension\\,iw):'
-      'h=min($targetDimension\\,ih):'
-      'force_original_aspect_ratio=decrease:'
-      'force_divisible_by=2',
+      'w=\'if(gt(iw,ih),min($targetDimension\\,iw),trunc(min($targetDimension\\,ih)*iw/ih/2)*2)\':'
+      'h=\'if(gt(iw,ih),trunc(min($targetDimension\\,iw)*ih/iw/2)*2,min($targetDimension\\,ih))\''
     );
 
-    // Шаг 4: Квадратные пиксели (1:1)
+    // Квадратные пиксели и стандартный 8-битный SDR формат
     parts.add('setsar=1');
-
-    // Шаг 5: Стандартный 8-битный SDR формат на выходе
     parts.add('format=yuv420p');
 
     return parts.join(',');
@@ -284,18 +230,8 @@ class VideoCompressor {
     try {
       final session = await FFprobeKit.getMediaInformation(outputFile.path);
       final output = ((await session.getOutput()) ?? '').toLowerCase();
-
-      final hasBt2020 = output.contains('bt2020') || output.contains('bt2020nc') || output.contains('bt2020ncl');
-      final hasHlg = output.contains('arib-std-b67');
-      final hasPq = output.contains('smpte2084');
-      final hasTenBit = output.contains('yuv420p10') || output.contains('yuv422p10') || output.contains('yuv444p10') || output.contains('p010');
-      final hasBt709 = output.contains('bt709');
-      final hasYuv420 = output.contains('yuv420p') && !output.contains('yuv420p10');
-
-      if (hasHlg || hasPq || hasTenBit) return false;
-      if (hasBt2020) return false;
-      if (!hasBt709) return false;
-      if (!hasYuv420) return false;
+      if (output.contains('bt2020') || output.contains('yuv420p10')) return false;
+      if (!output.contains('bt709') || !output.contains('yuv420p')) return false;
       return true;
     } catch (_) {
       return false;

@@ -167,6 +167,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     );
   }
 
+  // ============================================================
+  // 🔥 ЗАГРУЗКА ВИДЕО (native сжатие через VideoTranscoder)
+  // ============================================================
   Future<Map<String, String?>> _processVideo(String userId) async {
     final videoFile = widget.selectedFiles.first;
 
@@ -177,6 +180,8 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       });
     }
 
+    // Native сжатие через VideoTranscoder (iOS AVAssetExportSession 720p)
+    // Автоматически делает HDR → SDR + уменьшает размер до ~15-25 MB
     File? compressedVideo;
 
     try {
@@ -204,6 +209,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       throw Exception('Video compression failed');
     }
 
+    // Thumbnail
     File? thumbnail = _cachedThumbnail;
     if (thumbnail == null || !thumbnail.existsSync()) {
       thumbnail = await VideoCompressor.generateThumbnail(compressedVideo);
@@ -243,6 +249,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
       }
     }
 
+    // Очистка
     try {
       if (compressedVideo.path != videoFile.path) {
         await compressedVideo.delete();
@@ -267,6 +274,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     }
   }
 
+  // ============================================================
+  // ПАРАЛЛЕЛЬНАЯ ЗАГРУЗКА ФОТО С ТОЧНЫМ PROGRESS BAR
+  // ============================================================
   Future<List<String>> _uploadPhotos(String userId) async {
     final int total = widget.selectedFiles.length;
     final List<double> individualProgress = List.filled(total, 0.0);
@@ -315,6 +325,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     return results.whereType<String>().toList();
   }
 
+  // ============================================================
+  // ПРЕВЬЮ ВИДЕО
+  // ============================================================
   Widget _buildVideoThumbnail() {
     if (_cachedThumbnail != null && _cachedThumbnail!.existsSync()) {
       return Image.file(
@@ -356,6 +369,9 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
     );
   }
 
+  // ============================================================
+  // ПУБЛИКАЦИЯ
+  // ============================================================
   Future<void> _uploadPost() async {
     if (!mounted || _isUploading) return;
 
@@ -395,8 +411,6 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
         'userId': user.uid,
         'userName': userName,
         'userAvatar': userAvatar,
-        // ✅ ПАТЧ: userBadgeType из userData
-        'userBadgeType': userData['badgeType']?.toString() ?? '',
         'fitModes': fitModesToSave,
         'singleFitMode': fitModesToSave.isNotEmpty ? fitModesToSave.first : 'contain',
         'caption': fullCaption,
@@ -575,6 +589,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Превью
                       Center(
                         child: SizedBox(
                           width: MediaQuery.of(context).size.width * 0.5,
@@ -609,6 +624,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                       ),
                       const SizedBox(height: 16),
 
+                      // Инфо о количестве
                       if (widget.selectedFiles.length > 1 && !_isVideo)
                         Center(
                           child: Container(
@@ -624,6 +640,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
 
+                      // Инфо о тегах
                       if (widget.tags.isNotEmpty)
                         Padding(
                           padding: const EdgeInsets.only(top: 8),
@@ -651,6 +668,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
                       const SizedBox(height: 24),
 
+                      // ✅ TextField с прозрачным фоном (как было)
                       TextField(
                         controller: _captionController,
                         maxLines: null,
@@ -667,6 +685,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                         cursorColor: Colors.white,
                       ),
 
+                      // Счётчик символов
                       Padding(
                         padding: const EdgeInsets.only(top: 8, bottom: 16),
                         child: Row(
@@ -704,6 +723,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
 
                       const SizedBox(height: 12),
 
+                      // Выбранные хэштеги
                       if (_selectedHashtags.isNotEmpty)
                         Container(
                           margin: const EdgeInsets.only(bottom: 12),
@@ -744,6 +764,7 @@ class _PostCaptionScreenState extends State<PostCaptionScreen> {
                           ),
                         ),
 
+                      // Предложенные хэштеги
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
