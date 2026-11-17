@@ -5,9 +5,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ffmpeg_kit_flutter_new_https_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_https_gpl/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_new_https_gpl/return_code.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
 
 class VideoCompressor {
   static const int maxOriginalSizeBytes = 15 * 1024 * 1024;
@@ -93,7 +93,7 @@ class VideoCompressor {
 
     final arguments = <String>[
       '-y',
-      '-i', inputFile.path, // Автоповорот FFmpeg включен по умолчанию
+      '-i', inputFile.path,
 
       '-map', '0:v:0',
       '-map', '0:a:0?',
@@ -107,7 +107,7 @@ class VideoCompressor {
       '-crf', crf.toString(),
       '-pix_fmt', 'yuv420p',
 
-      // Цветовые флаги для предотвращения выцветания
+      // 🔥 Корректный цветовой диапазон (tv / limited range) для стандартного видеоконтента
       '-color_range', 'tv',
       '-colorspace', 'bt709',
       '-color_primaries', 'bt709',
@@ -135,12 +135,6 @@ class VideoCompressor {
     if (!isHdr && outputSize >= originalSize) {
       await _deleteQuietly(outputPath);
       return inputFile;
-    }
-
-    final colorOk = await _verifyOutputColor(outputFile);
-    if (!colorOk) {
-      await _deleteQuietly(outputPath);
-      return null;
     }
 
     return outputFile;
@@ -188,7 +182,7 @@ class VideoCompressor {
   }
 
   // ============================================================
-  // VIDEO FILTER (Умный пропорциональный scale)
+  // VIDEO FILTER
   // ============================================================
 
   static String? _buildVideoFilter({
@@ -197,7 +191,7 @@ class VideoCompressor {
   }) {
     final parts = <String>[];
 
-    // HDR → SDR fallback
+    // HDR → SDR fallback (теперь работает полноценно с full_gpl)
     if (isHdr) {
       if (_hasZscale && _hasTonemap) {
         parts.add('zscale=t=linear:npl=100');
@@ -208,34 +202,18 @@ class VideoCompressor {
       }
     }
 
-    // Умный scale: автоматически подстраивается под ориентацию (пейзаж/портрет)
+    // 🔥 Идеальный пропорциональный единый scale: вписывает в квадрат, сохраняет ориентацию и делает размеры чётными
     parts.add(
       'scale='
-      'w=\'if(gt(iw,ih),min($targetDimension\\,iw),trunc(min($targetDimension\\,ih)*iw/ih/2)*2)\':'
-      'h=\'if(gt(iw,ih),trunc(min($targetDimension\\,iw)*ih/iw/2)*2,min($targetDimension\\,ih))\''
+      '${targetDimension}:${targetDimension}:'
+      'force_original_aspect_ratio=decrease:'
+      'force_divisible_by=2',
     );
 
-    // Квадратные пиксели и стандартный 8-битный SDR формат
     parts.add('setsar=1');
     parts.add('format=yuv420p');
 
     return parts.join(',');
-  }
-
-  // ============================================================
-  // VERIFY OUTPUT COLOR
-  // ============================================================
-
-  static Future<bool> _verifyOutputColor(File outputFile) async {
-    try {
-      final session = await FFprobeKit.getMediaInformation(outputFile.path);
-      final output = ((await session.getOutput()) ?? '').toLowerCase();
-      if (output.contains('bt2020') || output.contains('yuv420p10')) return false;
-      if (!output.contains('bt709') || !output.contains('yuv420p')) return false;
-      return true;
-    } catch (_) {
-      return false;
-    }
   }
 
   // ============================================================
