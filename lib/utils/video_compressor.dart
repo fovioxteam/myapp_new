@@ -5,9 +5,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/ffmpeg_kit.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/ffprobe_kit.dart';
-import 'package:ffmpeg_kit_flutter_full_gpl/return_code.dart';
+import 'package:ffmpeg_kit_flutter_new_https_gpl/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_https_gpl/ffprobe_kit.dart';
+import 'package:ffmpeg_kit_flutter_new_https_gpl/return_code.dart';
 
 class VideoCompressor {
   static const int maxOriginalSizeBytes = 15 * 1024 * 1024;
@@ -107,7 +107,6 @@ class VideoCompressor {
       '-crf', crf.toString(),
       '-pix_fmt', 'yuv420p',
 
-      // 🔥 Корректный цветовой диапазон (tv / limited range) для стандартного видеоконтента
       '-color_range', 'tv',
       '-colorspace', 'bt709',
       '-color_primaries', 'bt709',
@@ -182,7 +181,7 @@ class VideoCompressor {
   }
 
   // ============================================================
-  // VIDEO FILTER
+  // VIDEO FILTER — сохранение пропорций
   // ============================================================
 
   static String? _buildVideoFilter({
@@ -191,18 +190,18 @@ class VideoCompressor {
   }) {
     final parts = <String>[];
 
-    // HDR → SDR fallback (теперь работает полноценно с full_gpl)
     if (isHdr) {
       if (_hasZscale && _hasTonemap) {
         parts.add('zscale=t=linear:npl=100');
         parts.add('tonemap=mobius:desat=0');
         parts.add('zscale=p=bt709:t=bt709:m=bt709');
       } else {
-        debugPrint('⚠️ [FFmpeg] Zscale/Tonemap unavailable, using basic HDR->SDR fallback');
+        debugPrint('⚠️ [FFmpeg] Zscale/Tonemap unavailable');
       }
     }
 
-    // 🔥 Идеальный пропорциональный единый scale: вписывает в квадрат, сохраняет ориентацию и делает размеры чётными
+    // 🔥 Единый scale: вписывает в targetDimension×targetDimension,
+    // сохраняет пропорции, делает размеры чётными для libx264
     parts.add(
       'scale='
       '${targetDimension}:${targetDimension}:'
