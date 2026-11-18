@@ -67,13 +67,11 @@ public class HdrToSdrTranscoder {
 
         let duration = CMTimeGetSeconds(asset.duration)
         
-        // Определяем реальные размеры с учетом поворота
         let naturalSize = videoTrack.naturalSize
         let transform = videoTrack.preferredTransform
         let isPortrait = (transform.a == 0 && abs(transform.b) == 1 && abs(transform.c) == 1 && transform.d == 0) ||
                          (naturalSize.height > naturalSize.width && transform.a == 1 && transform.d == 1);
 
-        // ФИЗИЧЕСКИЕ РАЗМЕРЫ: для вертикального видео ширина ВСЕГДА меньше высоты
         let sourceWidth = abs(naturalSize.width)
         let sourceHeight = abs(naturalSize.height)
         
@@ -100,7 +98,6 @@ public class HdrToSdrTranscoder {
             assetReader = try AVAssetReader(asset: asset)
             assetWriter = try AVAssetWriter(outputURL: outputUrl, fileType: .mp4)
 
-            // Настройка Reader (считываем кадры)
             let readerVideoOutputSettings: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
                 kCVPixelBufferCGImageCompatibilityKey as String: true,
@@ -113,7 +110,6 @@ public class HdrToSdrTranscoder {
                 assetReader!.add(videoReaderOutput)
             }
 
-            // Настройка Writer с физическим разрешением и БЕЗ кривого transform (ставим единичную матрицу)
             let videoWriterInputSettings: [String: Any] = [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: targetWidth,
@@ -133,50 +129,12 @@ public class HdrToSdrTranscoder {
 
             let videoWriterInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoWriterInputSettings)
             videoWriterInput.expectsMediaDataInRealTime = false
-            // ЖЕСТКИЙ СБРОС ТРАНСФОРМАЦИИ: пиксели записываются ровно так, как видит пользователь, без поворотов
             videoWriterInput.transform = CGAffineTransform.identity
 
             if assetWriter!.canAdd(videoWriterInput) {
                 assetWriter!.add(videoWriterInput)
             }
 
-            // Настройка композиции для правильного поворота «на лету» при чтении
-            let videoComposition = AVMutableVideoComposition()
-            videoComposition.renderSize = CGSize(width: targetWidth, height: targetHeight)
-            videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
-            
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: .zero, duration: asset.duration)
-            
-            let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: videoTrack)
-            
-            // Вычисляем правильную матрицу трансформации для рендеринга
-            let finalTransform: CGAffineTransform
-            if isPortrait {
-                if transform.a == 0 && transform.b == 1 && transform.c == -1 && transform.d == 0 {
-                    // 90 градусов
-                    let t = CGAffineTransform(translationX: sourceHeight, y: 0)
-                    finalTransform = CGAffineTransform(rotationAngle: CGFloat.pi / 2).concatenating(t)
-                } else if transform.a == 0 && transform.b == -1 && transform.c == 1 && transform.d == 0 {
-                    // 270 градусов
-                    let t = CGAffineTransform(translationX: 0, y: sourceWidth)
-                    finalTransform = CGAffineTransform(rotationAngle: -CGFloat.pi / 2).concatenating(t)
-                } else {
-                    finalTransform = transform
-                }
-            } else {
-                finalTransform = CGAffineTransform.identity
-            }
-            
-            layerInstruction.setTransform(finalTransform, at: .zero)
-            instruction.layerInstructions = [layerInstruction]
-            videoComposition.instructions = [instruction]
-
-            // Опционально подключаем AVAssetReaderVideoCompositionOutput для автоматического применения поворота
-            // Но в данном конвейере проще использовать трансформацию через CoreImage / AVAssetReaderTrackOutput напрямую.
-            // Вместо этого дадим Writer'у скомпилировать сырой поток, откорректировав transform на входе.
-
-            // Аудио трек
             var audioReaderOutput: AVAssetReaderTrackOutput?
             var audioWriterInput: AVAssetWriterInput?
 
@@ -209,14 +167,8 @@ public class HdrToSdrTranscoder {
 
             let group = DispatchGroup()
 
-            // Обработка видеопотока с учетом разворота через CIContext если требуется, 
-            // либо классический перенос сэмплов (если preferredTransform уже учтен в Writer.transform).
-            // Чтобы гарантировать отсутствие горизонтального растягивания, применим адаптер трансформации:
-            
             group.enter()
             let videoQueue = DispatchQueue(label: "com.foviox.video_queue")
-            
-            // Используем адаптер сглаживания кадров
             let ciContext = CIContext()
             
             videoWriterInput.requestMediaDataWhenReady(on: videoQueue) {
@@ -235,20 +187,15 @@ public class HdrToSdrTranscoder {
                             self.progressHandler?(min(max(currentProgress, 0.0), 1.0))
                         }
 
-                        // Если требуется физический поворот пикселей «на лету» через CoreImage:
                         if let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
                             var ciImage = CIImage(cvPixelBuffer: imageBuffer)
-                            
-                            // Применяем поворот матрицы к самому изображению, чтобы пиксели стали вертикальными
                             ciImage = ciImage.transformed(by: videoTrack.preferredTransform)
                             
-                            // Масштабируем до целевого разрешения
                             let extent = ciImage.extent
                             let scaleX = CGFloat(targetWidth) / extent.width
                             let scaleY = CGFloat(targetHeight) / extent.height
                             ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
                             
-                            // Создаем новый PixelBuffer и рендерим в него
                             var transformedPixelBuffer: CVPixelBuffer?
                             let attrs = [
                                 kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue,
@@ -260,22 +207,40 @@ public class HdrToSdrTranscoder {
                             if let pxBuffer = transformedPixelBuffer {
                                 ciContext.render(ciImage, to: pxBuffer)
                                 
-                                // Создаем новый sampleBuffer с исправленными пикселями
                                 var outSampleBuffer: CMSampleBuffer?
-                                var timingInfo = CMSampleTimingInfo(duration: CMSampleBufferGetDuration(sampleBuffer), presentationTimeStamp: time, decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer))
+                                var timingInfo = CMSampleTimingInfo(
+                                    duration: CMSampleBufferGetDuration(sampleBuffer), 
+                                    presentationTimeStamp: time, 
+                                    decodeTimeStamp: CMSampleBufferGetDecodeTimeStamp(sampleBuffer)
+                                )
                                 
-                                var videoInfo = CMVideoFormatDescription.videoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pxBuffer).takeRetainedValue()
+                                var videoInfo: CMFormatDescription?
+                                CMVideoFormatDescriptionCreateForImageBuffer(
+                                    allocator: kCFAllocatorDefault, 
+                                    imageBuffer: pxBuffer, 
+                                    imageBufferOut: &videoInfo
+                                )
                                 
-                                CMSampleBufferCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pxBuffer, dataReady: true, makeDataReadyCallback: nil, refcon: nil, formatDescription: videoInfo, sampleTiming: &timingInfo, sampleBufferOut: &outSampleBuffer)
-                                
-                                if let validSB = outSampleBuffer {
-                                    videoWriterInput.append(validSB)
-                                    continue
+                                if let validDesc = videoInfo {
+                                    CMSampleBufferCreateForImageBuffer(
+                                        allocator: kCFAllocatorDefault, 
+                                        imageBuffer: pxBuffer, 
+                                        dataReady: true, 
+                                        makeDataReadyCallback: nil, 
+                                        refcon: nil, 
+                                        formatDescription: validDesc, 
+                                        sampleTiming: &timingInfo, 
+                                        sampleBufferOut: &outSampleBuffer
+                                    )
+                                    
+                                    if let validSB = outSampleBuffer {
+                                        videoWriterInput.append(validSB)
+                                        continue
+                                    }
                                 }
                             }
                         }
 
-                        // Fallback если рендер не сработал
                         videoWriterInput.append(sampleBuffer)
                     } else {
                         videoWriterInput.markAsFinished()
