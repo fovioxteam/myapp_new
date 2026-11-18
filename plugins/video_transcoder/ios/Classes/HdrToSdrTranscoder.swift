@@ -218,7 +218,7 @@ public class HdrToSdrTranscoder {
                                 CMVideoFormatDescriptionCreateForImageBuffer(
                                     allocator: kCFAllocatorDefault, 
                                     imageBuffer: pxBuffer, 
-                                    imageBufferOut: &videoInfo
+                                    formatDescriptionOut: &videoInfo
                                 )
                                 
                                 if let validDesc = videoInfo {
