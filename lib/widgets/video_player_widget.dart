@@ -198,16 +198,37 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
                 errorBuilder: (_, __, ___) => const SizedBox.shrink(),
               ),
 
-            // 2. Видеоплеер
+            // 2. Видеоплеер с защитой от переворота размеров
             if (_isInitialized && _controller != null)
               Positioned.fill(
-                child: FittedBox(
-                  fit: widget.fit,
-                  child: SizedBox(
-                    width: _controller!.value.size.width,
-                    height: _controller!.value.size.height,
-                    child: VideoPlayer(_controller!),
-                  ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final videoSize = _controller!.value.size;
+                    final videoAspectRatio = _controller!.value.aspectRatio;
+
+                    var width = videoSize.width;
+                    var height = videoSize.height;
+
+                    // Если видео по метаданным альбомное (aspectRatio > 1), 
+                    // но контейнер вертикальный (высота > ширина), меняем размеры местами,
+                    // чтобы исключить горизонтальное сплющивание.
+                    final bool isContainerPortrait = constraints.maxHeight > constraints.maxWidth;
+                    final bool isVideoReportedLandscape = videoAspectRatio > 1;
+
+                    if (isVideoReportedLandscape && isContainerPortrait) {
+                      width = videoSize.height;
+                      height = videoSize.width;
+                    }
+
+                    return FittedBox(
+                      fit: widget.fit,
+                      child: SizedBox(
+                        width: width,
+                        height: height,
+                        child: VideoPlayer(_controller!),
+                      ),
+                    );
+                  },
                 ),
               ),
 
@@ -221,8 +242,6 @@ class _VideoPlayerWidgetState extends State<VideoPlayerWidget> {
               ),
 
             // 4. 🔥 ИКОНКА PLAY — ТОЛЬКО если пользователь сам нажал паузу!
-            // Если видео просто свёрнуто (скролл), _isPausedByUser == false,
-            // значит иконки не будет — только стоп-кадр.
             if (_isInitialized && _isPausedByUser && widget.showControls)
               Icon(
                 Icons.play_arrow,
