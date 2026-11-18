@@ -429,10 +429,10 @@ packages:
     dependency: "direct main"
     description:
       name: ffmpeg_kit_flutter_new_https_gpl
-      sha256: f1644681823c96da372c81ceac612c10a1b983a02c018686dea1fb0d8036c0e7
+      sha256: "75de5396ffe996cd2ac18ea3a4bf299b69c3df880b790d4522810b533c68c820"
       url: "https://pub.dev"
     source: hosted
-    version: "2.7.1"
+    version: "2.6.2"
   ffmpeg_kit_flutter_platform_interface:
     dependency: transitive
     description:

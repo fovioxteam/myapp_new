@@ -2,7 +2,7 @@
 description: A new Flutter project
 publish_to: 'none'
 
-version: 1.1.6+9
+version: 1.1.6+10
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -95,7 +95,7 @@ dependencies:
   path: ^1.9.1
   flutter_native_splash: ^2.4.7
   video_compress: ^3.1.4
-  ffmpeg_kit_flutter_new_https_gpl: ^2.7.1
+  ffmpeg_kit_flutter_new_https_gpl: 2.6.2
   video_transcoder:
     path: plugins/video_transcoder
   get_storage: ^2.1.1

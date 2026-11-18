@@ -67,20 +67,37 @@ public class HdrToSdrTranscoder {
         }
 
         let duration = CMTimeGetSeconds(asset.duration)
-        let naturalSize = videoTrack.naturalSize.applying(videoTrack.preferredTransform)
-        let width = abs(naturalSize.width)
-        let height = abs(naturalSize.height)
+        
+        // ==========================================
+        // ЖЕСТКАЯ ФИКСАЦИЯ ОРИЕНТАЦИИ С УЧЕТОМ ТРАНСФОРМАЦИИ
+        // ==========================================
+        let transformedSize = videoTrack.naturalSize.applying(videoTrack.preferredTransform)
+        let isPortrait = abs(transformedSize.height) > abs(transformedSize.width)
+        
+        let width = abs(transformedSize.width)
+        let height = abs(transformedSize.height)
 
-        // Расчет разрешения: 720p по МЕНЬШЕЙ стороне (для вертикальных видео 720x1280)
         let targetShortSide: CGFloat = 720.0
         let minDim = min(width, height)
         let scale = minDim > targetShortSide ? targetShortSide / minDim : 1.0
 
-        var targetWidth = Int((width * scale) / 2) * 2
-        var targetHeight = Int((height * scale) / 2) * 2
+        let calcWidth = Int((width * scale) / 2) * 2
+        let calcHeight = Int((height * scale) / 2) * 2
 
-        if targetWidth <= 0 { targetWidth = 720 }
-        if targetHeight <= 0 { targetHeight = 1280 }
+        var targetWidth: Int
+        var targetHeight: Int
+
+        if isPortrait {
+            targetWidth = min(calcWidth, calcHeight)
+            targetHeight = max(calcWidth, calcHeight)
+            if targetWidth <= 0 { targetWidth = 720 }
+            if targetHeight <= 0 { targetHeight = 1280 }
+        } else {
+            targetWidth = max(calcWidth, calcHeight)
+            targetHeight = min(calcWidth, calcHeight)
+            if targetWidth <= 0 { targetWidth = 1280 }
+            if targetHeight <= 0 { targetHeight = 720 }
+        }
 
         do {
             assetReader = try AVAssetReader(asset: asset)
