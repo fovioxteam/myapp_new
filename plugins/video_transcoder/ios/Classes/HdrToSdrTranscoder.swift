@@ -49,8 +49,8 @@ public class HdrToSdrTranscoder {
 
         try? FileManager.default.removeItem(at: outputUrl)
 
-        // Используем системный пресет для экспорта (аппаратный Tone Mapping + правильная ориентация)
-        let preset = AVAssetExportSessionPreset1280x720
+        // Исправлено имя пресета под стандартный Swift API
+        let preset = AVAssetExportPreset1280x720
         
         guard let session = AVAssetExportSession(asset: asset, presetName: preset) else {
             DispatchQueue.main.async {
@@ -61,7 +61,7 @@ public class HdrToSdrTranscoder {
 
         self.exportSession = session
         session.outputURL = outputUrl
-        session.outputFileType = .mp4
+        session.outputFileType = AVFileType.mp4 // Явное указание типа файла
         session.shouldOptimizeForNetworkUse = true
 
         // Отслеживание прогресса экспорта
