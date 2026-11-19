@@ -26,7 +26,7 @@ class SearchScreen extends StatefulWidget {
   State<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState extends State<SearchScreen> 
+class _SearchScreenState extends State<SearchScreen>
     with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   
   @override
@@ -66,14 +66,12 @@ class _SearchScreenState extends State<SearchScreen>
   @override
   void initState() {
     super.initState();
-    print('🔍 [SEARCH] SearchScreen initState');
     _tabController = TabController(length: 2, vsync: this);
     _loadSearchHistory();
   }
 
   @override
   void dispose() {
-    print('🔍 [SEARCH] SearchScreen dispose');
     _debounceTimer?.cancel();
     _tabController.dispose();
     _searchController.dispose();
@@ -112,16 +110,6 @@ class _SearchScreenState extends State<SearchScreen>
       if (first.isNotEmpty) return first;
     }
 
-    if (post["post"] is Map<String, dynamic>) {
-      return _getThumbnailUrl(post["post"] as Map<String, dynamic>);
-    }
-    if (post["postData"] is Map<String, dynamic>) {
-      return _getThumbnailUrl(post["postData"] as Map<String, dynamic>);
-    }
-    if (post["item"] is Map<String, dynamic>) {
-      return _getThumbnailUrl(post["item"] as Map<String, dynamic>);
-    }
-
     return '';
   }
 
@@ -131,16 +119,6 @@ class _SearchScreenState extends State<SearchScreen>
     
     final videoUrl = post['videoUrl']?.toString() ?? '';
     if (videoUrl.isNotEmpty) return true;
-    
-    for (var key in post.keys) {
-      final value = post[key];
-      if (value != null && value.toString().isNotEmpty) {
-        final str = value.toString().toLowerCase();
-        if (str.contains('.mp4') || str.contains('.mov') || str.contains('.webm')) {
-          return true;
-        }
-      }
-    }
     
     return false;
   }
@@ -153,48 +131,17 @@ class _SearchScreenState extends State<SearchScreen>
         try {
           tags.add(PostTag.fromJson(tagData));
         } catch (e) {
-          print('Error parsing tag: $e');
+          debugPrint('Error parsing tag: $e');
         }
       }
     }
     return tags;
   }
 
-  void _handleTagTap(PostTag tag) {
-    if (!mounted) return;
-    if (tag.url.contains('firebasestorage.googleapis.com') || 
-        tag.url.contains('storage.googleapis.com')) {
-      print('⚠️ Skipping storage URL');
-      return;
-    }
-    print('🔗 [SEARCH] Opening tag link: ${tag.url}');
-    try {
-      print('🔗 Opening: ${tag.url}');
-    } catch (e) {
-      print('❌ Error opening link: $e');
-    }
-  }
-
-  void _cleanupUserSubscriptions() {
-    final userIds = _users.map((user) => user['id'] as String).toSet();
-    
-    final usersToRemove = _followStatusSubscriptions.keys
-        .where((userId) => !userIds.contains(userId))
-        .toList();
-    
-    for (final userId in usersToRemove) {
-      _followStatusSubscriptions[userId]?.cancel();
-      _followStatusSubscriptions.remove(userId);
-      _realTimeFollowStatus.remove(userId);
-    }
-  }
-
   Future<void> _loadSearchHistory() async {
-    print('🔍 [SEARCH] Loading search history...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final localHistory = prefs.getStringList('search_history') ?? [];
-      print('🔍 [SEARCH] Local history: ${localHistory.length} items');
       
       final user = _auth.currentUser;
       List<String> firebaseHistory = [];
@@ -208,15 +155,14 @@ class _SearchScreenState extends State<SearchScreen>
         if (doc.exists) {
           final data = doc.data() as Map<String, dynamic>;
           firebaseHistory = List<String>.from(data['searchHistory'] ?? []);
-          print('🔍 [SEARCH] Firebase history: ${firebaseHistory.length} items');
         }
       }
       
       final combinedHistory = [...localHistory, ...firebaseHistory];
       final uniqueHistory = combinedHistory.toSet().toList();
       
-      final limitedHistory = uniqueHistory.length > 10 
-          ? uniqueHistory.sublist(0, 10) 
+      final limitedHistory = uniqueHistory.length > 10
+          ? uniqueHistory.sublist(0, 10)
           : uniqueHistory;
       
       setState(() {
@@ -225,21 +171,12 @@ class _SearchScreenState extends State<SearchScreen>
       });
       
       await prefs.setStringList('search_history', limitedHistory);
-      print('🔍 [SEARCH] Search history loaded: ${_searchHistory.length} items');
-      
     } catch (e) {
-      print('❌ [SEARCH] Error loading search history: $e');
-      final prefs = await SharedPreferences.getInstance();
-      final localHistory = prefs.getStringList('search_history') ?? [];
-      setState(() {
-        _searchHistory = localHistory;
-        _isInitialLoading = false;
-      });
+      debugPrint('❌ [SEARCH] Error loading search history: $e');
     }
   }
 
   Future<void> _saveSearchHistory() async {
-    print('🔍 [SEARCH] Saving search history: ${_searchHistory.length} items');
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('search_history', _searchHistory);
@@ -254,9 +191,8 @@ class _SearchScreenState extends State<SearchScreen>
               'lastSearchUpdate': FieldValue.serverTimestamp(),
             });
       }
-      print('✅ [SEARCH] Search history saved');
     } catch (e) {
-      print('❌ [SEARCH] Error saving search history: $e');
+      debugPrint('❌ [SEARCH] Error saving search history: $e');
     }
   }
 
@@ -265,8 +201,6 @@ class _SearchScreenState extends State<SearchScreen>
     
     final sanitizedQuery = query.trim();
     if (sanitizedQuery.length > 100) return;
-    
-    print('🔍 [SEARCH] Adding to history: "$sanitizedQuery"');
     
     setState(() {
       final newHistory = List<String>.from(_searchHistory);
@@ -285,7 +219,6 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   void _removeFromSearchHistory(String query) async {
-    print('🔍 [SEARCH] Removing from history: "$query"');
     setState(() {
       _searchHistory.remove(query);
     });
@@ -293,7 +226,6 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   void _clearSearchHistory() async {
-    print('🔍 [SEARCH] Clearing all search history');
     setState(() {
       _searchHistory = [];
     });
@@ -301,8 +233,6 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   Future<void> _refreshUserNamesInPosts() async {
-    print('🔄 [SEARCH] Refreshing user names from Firestore...');
-    
     for (int i = 0; i < _posts.length; i++) {
       final post = _posts[i];
       final userId = post['userId'] as String?;
@@ -319,7 +249,6 @@ class _SearchScreenState extends State<SearchScreen>
             final freshAvatar = userDoc.data()?['avatarUrl'] as String?;
             
             if (freshName != null && freshName != post['userName']) {
-              print('🔄 [SEARCH] Updating post ${post['id']}: "${post['userName']}" -> "$freshName"');
               if (mounted) {
                 setState(() {
                   _posts[i]['userName'] = freshName;
@@ -331,22 +260,14 @@ class _SearchScreenState extends State<SearchScreen>
             }
           }
         } catch (e) {
-          print('❌ [SEARCH] Error refreshing user name for $userId: $e');
+          debugPrint('❌ [SEARCH] Error refreshing user name for $userId: $e');
         }
       }
     }
-    
-    print('✅ [SEARCH] User names refreshed');
   }
 
   Future<void> _performSearch(String query) async {
-    print('\n🔍 [SEARCH] ========== PERFORM SEARCH ==========');
-    print('🔍 [SEARCH] Query: "$query"');
-    print('🔍 [SEARCH] Query length: ${query.length}');
-    print('🔍 [SEARCH] Current user: ${_auth.currentUser?.uid}');
-    
     if (query.isEmpty) {
-      print('🔍 [SEARCH] Query empty, clearing results');
       setState(() {
         _debouncedSearchQuery = '';
         _showHistory = true;
@@ -376,58 +297,24 @@ class _SearchScreenState extends State<SearchScreen>
     });
 
     try {
-      print('🔍 [SEARCH] Calling Algolia searchUsers and searchPosts...');
-      
-      final stopwatch = Stopwatch()..start();
-      
       final results = await Future.wait([
         AlgoliaService.searchUsers(sanitizedQuery),
         AlgoliaService.searchPosts(sanitizedQuery),
       ]);
       
-      stopwatch.stop();
-      print('🔍 [SEARCH] Algolia search completed in ${stopwatch.elapsedMilliseconds}ms');
-      
       final users = results.isNotEmpty ? results[0] : [];
       final posts = results.length > 1 ? results[1] : [];
-      
-      print('🔍 [SEARCH] Raw Algolia results:');
-      print('   👤 Users found: ${users.length}');
-      print('   📷 Posts found: ${posts.length}');
-      
-      if (users.isNotEmpty) {
-        print('🔍 [SEARCH] First user sample:');
-        print('   - id: ${users.first['id']}');
-        print('   - username: ${users.first['username']}');
-        print('   - avatarUrl: ${users.first['avatarUrl']}');
-      }
-      
-      if (posts.isNotEmpty) {
-        print('🔍 [SEARCH] First post sample:');
-        print('   - id: ${posts.first['id']}');
-        print('   - mediaType: ${posts.first['mediaType']}');
-        print('   - videoUrl: ${posts.first['videoUrl']}');
-        print('   - userName: ${posts.first['userName']}');
-        print('   - userId: ${posts.first['userId']}');
-        print('   - tags: ${posts.first['tags']}');
-        print('   - hashtags: ${posts.first['hashtags']}');
-      }
       
       final currentUserId = _auth.currentUser?.uid;
       
       final filteredUsers = users.where((user) => user['id'] != currentUserId).toList();
       final filteredPosts = posts.where((post) => post['userId'] != currentUserId).toList();
       
-      print('🔍 [SEARCH] After filtering:');
-      print('   👤 Users: ${filteredUsers.length}');
-      print('   📷 Posts: ${filteredPosts.length}');
-      
       final processedPosts = filteredPosts.map((post) {
         final postMap = Map<String, dynamic>.from(post);
         
         if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
           postMap['tags'] = List.from(post['tags']);
-          print('📦 [SEARCH] Post ${post['id']} has ${(post['tags'] as List).length} tags from Algolia');
         } else {
           postMap['tags'] = [];
         }
@@ -443,10 +330,6 @@ class _SearchScreenState extends State<SearchScreen>
       
       await _refreshUserNamesInPosts();
       
-      print('🔍 [SEARCH] State updated:');
-      print('   👤 Users in state: ${_users.length}');
-      print('   📷 Posts in state: ${_posts.length}');
-      
       final postsWithTags = _posts.map((post) {
         final postCopy = Map<String, dynamic>.from(post);
         if (post['tags'] != null && post['tags'] is List) {
@@ -458,13 +341,9 @@ class _SearchScreenState extends State<SearchScreen>
       }).toList();
       
       _postController.addPostsToStorage(postsWithTags);
-      _setupRealTimeListenersForUsers();
-      
-      print('🔍 [SEARCH] ========== SEARCH COMPLETED ==========\n');
       
     } catch (e) {
-      print('❌ [SEARCH] Algolia search error: $e');
-      print('❌ [SEARCH] Stack trace: ${StackTrace.current}');
+      debugPrint('❌ [SEARCH] Algolia search error: $e');
       setState(() {
         _errorMessage = 'Search failed: ${e.toString()}';
         _isSearching = false;
@@ -472,97 +351,7 @@ class _SearchScreenState extends State<SearchScreen>
     }
   }
 
-  void _setupRealTimeListenersForUsers() {
-    print('🔍 [SEARCH] Setting up real-time listeners for ${_users.length} users');
-    _cleanupUserSubscriptions();
-    
-    for (final user in _users) {
-      final userId = user['id'] as String;
-      final currentUserId = _auth.currentUser?.uid;
-      
-      if (currentUserId == null || currentUserId == userId) continue;
-      if (_followStatusSubscriptions.containsKey(userId)) continue;
-      
-      print('🔍 [SEARCH] Adding follow listener for user: $userId');
-      
-      final subscription = _followService
-          .getFollowStatusStream(userId)
-          .listen((newStatus) {
-            if (mounted) {
-              print('🔍 [SEARCH] Follow status changed for $userId: $newStatus');
-              setState(() {
-                _realTimeFollowStatus[userId] = newStatus;
-              });
-            }
-          }, onError: (e) {
-            print('❌ [SEARCH] Error in follow stream for $userId: $e');
-          });
-      
-      _followStatusSubscriptions[userId] = subscription;
-    }
-  }
-
-  bool _getCurrentFollowStatus(String userId, int index) {
-    if (_realTimeFollowStatus.containsKey(userId)) {
-      return _realTimeFollowStatus[userId]!;
-    }
-    
-    if (index < _users.length) {
-      return _users[index]['isFollowing'] ?? false;
-    }
-    
-    return false;
-  }
-
-  Future<void> _refreshSearch() async {
-    print('🔍 [SEARCH] Manual refresh triggered');
-    if (_debouncedSearchQuery.isEmpty) return;
-    await _performSearch(_debouncedSearchQuery);
-  }
-
-  Future<void> _handleFollowTap(String userId, int index) async {
-    print('🔍 [SEARCH] Follow tap: userId=$userId, index=$index');
-    try {
-      final user = _users[index];
-      final currentUserId = _auth.currentUser?.uid;
-      
-      if (currentUserId == null || currentUserId == userId) return;
-      
-      final currentStatus = _getCurrentFollowStatus(userId, index);
-      final newStatus = !currentStatus;
-      
-      print('🔍 [SEARCH] Toggling follow: $currentStatus -> $newStatus');
-      
-      setState(() {
-        _users[index]['isFollowing'] = newStatus;
-        _realTimeFollowStatus[userId] = newStatus;
-        
-        if (newStatus) {
-          _users[index]['followers'] = (_users[index]['followers'] ?? 0) + 1;
-        } else {
-          final newCount = (_users[index]['followers'] ?? 1) - 1;
-          _users[index]['followers'] = newCount < 0 ? 0 : newCount;
-        }
-      });
-      
-      await _followService.toggleFollow(userId);
-      print('✅ [SEARCH] Follow toggled successfully');
-      
-    } catch (e) {
-      print('❌ [SEARCH] Error in follow operation: $e');
-      if (mounted) {
-        final user = _users[index];
-        final currentStatus = user['isFollowing'] ?? false;
-        setState(() {
-          _users[index]['isFollowing'] = !currentStatus;
-          _realTimeFollowStatus[userId] = !currentStatus;
-        });
-      }
-    }
-  }
-
   void _onSearchChanged(String value) {
-    print('🔍 [SEARCH] Search text changed: "$value"');
     setState(() {
       _searchQuery = value;
     });
@@ -570,14 +359,12 @@ class _SearchScreenState extends State<SearchScreen>
     _debounceTimer?.cancel();
     _debounceTimer = Timer(_debounceDuration, () {
       if (mounted) {
-        print('🔍 [SEARCH] Debounce finished, executing search');
         _performSearch(value);
       }
     });
   }
 
   void _clearSearch() {
-    print('🔍 [SEARCH] Clear search button pressed');
     if (!mounted) return;
     
     setState(() {
@@ -645,7 +432,6 @@ class _SearchScreenState extends State<SearchScreen>
   }
 
   Future<void> _openPostDetail(int index) async {
-    print('🔍 [SEARCH] Opening post detail at index: $index');
     final scrollPosition = _scrollController.position.pixels;
     
     final updatedPosts = _posts.map((post) {
@@ -659,25 +445,17 @@ class _SearchScreenState extends State<SearchScreen>
         
         if (post['tags'] != null && post['tags'] is List && (post['tags'] as List).isNotEmpty) {
           merged['tags'] = List.from(post['tags']);
-          print('✅ [SEARCH] Using tags from search: ${(post['tags'] as List).length} tags');
         } else if (cached['tags'] != null && cached['tags'] is List && (cached['tags'] as List).isNotEmpty) {
           merged['tags'] = List.from(cached['tags']);
-          print('✅ [SEARCH] Using cached tags: ${(cached['tags'] as List).length} tags');
         } else {
           merged['tags'] = [];
-          print('⚠️ [SEARCH] No tags found');
         }
         
-        print('📱 [SEARCH] Merged post $postId: tags=${(merged['tags'] as List).length} tags');
         return merged;
       }
       
-      print('📱 [SEARCH] Using search post $postId (no cache)');
       return post;
     }).toList();
-    
-    final testPost = updatedPosts[index];
-    print('🔍 [SEARCH] Final post ${testPost['id']} has ${(testPost['tags'] as List?)?.length ?? 0} tags');
     
     await Navigator.push(
       context,
@@ -698,25 +476,20 @@ class _SearchScreenState extends State<SearchScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
           _scrollController.jumpTo(scrollPosition);
-          print('🔍 [SEARCH] Restored scroll position: $scrollPosition');
         }
       });
     }
   }
 
-  // ============================================================
-  // 🔥 BUILD - С ФИКСОМ КЛАВИАТУРЫ
-  // ============================================================
   @override
   Widget build(BuildContext context) {
     super.build(context);
     
     return Scaffold(
       backgroundColor: Colors.white,
-      resizeToAvoidBottomInset: false, // 🔥 ФИКС - НЕ ПОДНИМАТЬ ПАНЕЛЬ ПРИ КЛАВИАТУРЕ
+      resizeToAvoidBottomInset: false,
       body: Column(
         children: [
-          // Верхняя часть - поисковая строка
           Container(
             padding: EdgeInsets.only(
               top: MediaQuery.of(context).padding.top + 8,
@@ -750,7 +523,6 @@ class _SearchScreenState extends State<SearchScreen>
                 ),
                 onChanged: _onSearchChanged,
                 onSubmitted: (value) {
-                  print('🔍 [SEARCH] Search submitted: "$value"');
                   if (value.trim().isNotEmpty) {
                     _addToSearchHistory(value.trim());
                   }
@@ -759,7 +531,6 @@ class _SearchScreenState extends State<SearchScreen>
             ),
           ),
           
-          // TabBar
           if (_debouncedSearchQuery.isNotEmpty && !_showHistory)
             Container(
               color: Colors.white,
@@ -786,11 +557,10 @@ class _SearchScreenState extends State<SearchScreen>
               ),
             ),
           
-          // Контент
           Expanded(
-            child: _showHistory 
+            child: _showHistory
                 ? _buildHistoryScreen()
-                : _debouncedSearchQuery.isEmpty 
+                : _debouncedSearchQuery.isEmpty
                     ? const SizedBox.shrink()
                     : _buildSearchResults(),
           ),
@@ -876,7 +646,6 @@ class _SearchScreenState extends State<SearchScreen>
                       constraints: const BoxConstraints(),
                     ),
                     onTap: () {
-                      print('🔍 [SEARCH] History item tapped: "$query"');
                       setState(() {
                         _searchQuery = query;
                         _debouncedSearchQuery = query;
@@ -916,19 +685,6 @@ class _SearchScreenState extends State<SearchScreen>
                       fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: () => _searchFocusNode.requestFocus(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.black,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                    ),
-                    child: const Text("Start Searching"),
-                  ),
                 ],
               ),
             ),
@@ -939,7 +695,6 @@ class _SearchScreenState extends State<SearchScreen>
 
   Widget _buildSearchResults() {
     if (_isSearching) {
-      print('🔍 [SEARCH] Showing loading indicator');
       return const Center(
         child: CircularProgressIndicator(
           valueColor: AlwaysStoppedAnimation<Color>(Colors.black),
@@ -948,11 +703,9 @@ class _SearchScreenState extends State<SearchScreen>
     }
 
     if (_errorMessage != null) {
-      print('❌ [SEARCH] Showing error state: $_errorMessage');
       return _buildErrorState();
     }
 
-    print('🔍 [SEARCH] Showing search results: ${_users.length} users, ${_posts.length} posts');
     return TabBarView(
       controller: _tabController,
       children: [
@@ -962,9 +715,11 @@ class _SearchScreenState extends State<SearchScreen>
     );
   }
 
+  // ============================================================
+  // 🔥 USER RESULTS — БЕЗ КНОПКИ FOLLOW, БЕЗ ПЛАШЕК
+  // ============================================================
   Widget _buildUserSearchResults() {
     if (_users.isEmpty) {
-      print('🔍 [SEARCH] No users found, showing empty state');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -980,114 +735,87 @@ class _SearchScreenState extends State<SearchScreen>
               "Try a different search term",
               style: TextStyle(color: Colors.grey[500], fontSize: 14),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _clearSearch,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-              child: const Text("Clear Search"),
-            ),
           ],
         ),
       );
     }
 
-    print('🔍 [SEARCH] Building user list with ${_users.length} users');
-    return CustomScrollView(
+    return ListView.builder(
       physics: const BouncingScrollPhysics(),
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.only(bottom: 80),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                final user = _users[index];
-                final userId = user['id'] as String;
-                final isFollowing = _getCurrentFollowStatus(userId, index);
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      itemCount: _users.length,
+      itemBuilder: (context, index) {
+        final user = _users[index];
+        final userId = user['id'] as String;
+        final avatarUrl = user['avatarUrl']?.toString() ?? '';
+        final username = user['username']?.toString() ?? 'User';
 
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  child: ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    leading: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.grey[100]),
-                      child: user['avatarUrl'].isNotEmpty
-                          ? ClipOval(
-                              child: CachedNetworkImage(
-                                key: ValueKey('avatar_${user['id']}_${user['avatarUrl']}'),
-                                imageUrl: user['avatarUrl'],
-                                fit: BoxFit.cover,
-                                width: 44,
-                                height: 44,
-                                memCacheWidth: 100,
-                                filterQuality: FilterQuality.high,
-                                fadeInDuration: Duration.zero,
-                                fadeOutDuration: Duration.zero,
-                                errorWidget: (context, url, error) => const Icon(Icons.person, color: Colors.grey, size: 20),
-                              ),
-                            )
-                          : const Icon(Icons.person, color: Colors.grey, size: 20),
-                    ),
-                    title: Text(
-                      user['username'],
-                      style: const TextStyle(
-                        color: Colors.black87,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    trailing: SizedBox(
-                      width: 85,
-                      height: 32,
-                      child: ElevatedButton(
-                        onPressed: () => _handleFollowTap(userId, index),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: isFollowing ? Colors.grey[100]! : Colors.black,
-                          foregroundColor: isFollowing ? Colors.black87 : Colors.white,
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          elevation: 0,
-                        ),
-                        child: Text(
-                          isFollowing ? "Following" : "Follow",
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: isFollowing ? Colors.black87 : Colors.white,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ),
-                    onTap: () {
-                      print('🔍 [SEARCH] User tapped: ${user['username']} (${user['id']})');
-                      _addToSearchHistory(user['username']);
-                      _followService.checkFollowStatus(userId);
-                      Navigator.push(context, MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)));
-                    },
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            _addToSearchHistory(username);
+            _followService.checkFollowStatus(userId);
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => UserProfileScreen(userId: userId)),
+            );
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.grey[100],
                   ),
-                );
-              },
-              childCount: _users.length,
+                  child: avatarUrl.isNotEmpty
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            key: ValueKey('avatar_${user['id']}_$avatarUrl'),
+                            imageUrl: avatarUrl,
+                            fit: BoxFit.cover,
+                            width: 48,
+                            height: 48,
+                            memCacheWidth: 120,
+                            filterQuality: FilterQuality.high,
+                            fadeInDuration: Duration.zero,
+                            fadeOutDuration: Duration.zero,
+                            placeholder: (context, url) => Container(color: Colors.grey[200]),
+                            errorWidget: (context, url, error) => const Icon(
+                              Icons.person,
+                              color: Colors.grey,
+                              size: 24,
+                            ),
+                          ),
+                        )
+                      : const Icon(Icons.person, color: Colors.grey, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    username,
+                    style: const TextStyle(
+                      color: Colors.black87,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
   Widget _buildPostsSearchResults() {
     if (_posts.isEmpty) {
-      print('🔍 [SEARCH] No posts found, showing empty state');
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1105,23 +833,10 @@ class _SearchScreenState extends State<SearchScreen>
               "Try a different search term",
               style: TextStyle(color: Colors.grey[500], fontSize: 14),
             ),
-            const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _clearSearch,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.black,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-              child: const Text("Clear Search"),
-            ),
           ],
         ),
       );
     }
-
-    print('🔍 [SEARCH] Building posts grid with ${_posts.length} posts');
 
     return GridView.builder(
       controller: _scrollController,
@@ -1259,7 +974,6 @@ class _SearchScreenState extends State<SearchScreen>
           const SizedBox(height: 20),
           ElevatedButton(
             onPressed: () {
-              print('🔍 [SEARCH] Retry button pressed');
               if (_debouncedSearchQuery.isNotEmpty) {
                 _performSearch(_debouncedSearchQuery);
               }

@@ -1,4 +1,5 @@
-import 'dart:async';
+// lib/screens/follow_list_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -34,18 +35,17 @@ class _FollowListScreenState extends State<FollowListScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   String _searchQuery = '';
-  List<Map<String, dynamic>> _allUsers = [];
-  List<Map<String, dynamic>> _filteredUsers = [];
+  List _allUsers = [];
+  List _filteredUsers = [];
   bool _isLoading = true;
   bool _isRefreshing = false;
 
-  Timer? _debounceTimer;
-  final Duration _debounceDuration = const Duration(milliseconds: 400);
+  static const int _batchSize = 30;
 
-  final Map<String, Map<String, dynamic>> _cache = {};
+  // Глобальный статический кэш профилей в памяти приложения
+  static final Map<String, Map> _globalUserCache = {};
 
   String? _currentUserId;
-
   List<String> _userIds = [];
 
   final ScrollController _scrollController = ScrollController();
@@ -57,28 +57,45 @@ class _FollowListScreenState extends State<FollowListScreen> {
     _loadUsers();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchFocusNode.requestFocus();
+      if (mounted) {
+        _searchFocusNode.requestFocus();
+      }
     });
   }
 
   @override
   void dispose() {
-    _debounceTimer?.cancel();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadUsers() async {
-    setState(() => _isLoading = true);
+  List? _tryBuildFromCache(List<String> ids) {
+    if (ids.isEmpty) return [];
+    final List result = [];
+    for (final id in ids) {
+      final cached = _globalUserCache[id];
+      if (cached == null) return null;
+      result.add(cached);
+    }
+    return result;
+  }
 
+  Future<void> _loadUsers({bool forceRefresh = false}) async {
     try {
       _userIds = widget.showFollowers
-          ? await _followService.getFollowers(widget.userId)
-          : await _followService.getFollowing(widget.userId);
+          ? await _followService.getFollowers(
+              widget.userId,
+              forceRefresh: forceRefresh,
+            )
+          : await _followService.getFollowing(
+              widget.userId,
+              forceRefresh: forceRefresh,
+            );
 
       if (_userIds.isEmpty) {
+        if (!mounted) return;
         setState(() {
           _allUsers = [];
           _filteredUsers = [];
@@ -87,112 +104,154 @@ class _FollowListScreenState extends State<FollowListScreen> {
         return;
       }
 
+      if (!forceRefresh) {
+        final cachedUsers = _tryBuildFromCache(_userIds);
+        if (cachedUsers != null) {
+          if (!mounted) return;
+          setState(() {
+            _allUsers = cachedUsers;
+            _applyFilterToList();
+            _isLoading = false;
+          });
+          return;
+        }
+      }
+
+      if (_allUsers.isEmpty && mounted) {
+        setState(() => _isLoading = true);
+      }
+
       await _loadUsersData(_userIds);
     } catch (e) {
-      print('❌ Error loading users: $e');
+      debugPrint('❌ Error loading users: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _loadUsersData(List<String> ids) async {
-    final List<Map<String, dynamic>> users = [];
+    final List users = [];
+    final List<String> missingIds = [];
 
     for (final id in ids) {
-      try {
-        if (_cache.containsKey(id)) {
-          users.add(_cache[id]!);
-          continue;
-        }
-
-        final doc = await _firestore.collection('users').doc(id).get();
-
-        if (!doc.exists) {
-          print('⚠️ User $id not found, skipping');
-          continue;
-        }
-
-        final data = doc.data()!;
-        final user = {
-          'id': id,
-          'username': data['username'] ?? 'Unknown',
-          'avatarUrl': data['avatarUrl'] ?? '',
-        };
-
-        _cache[id] = user;
-        users.add(user);
-      } catch (e) {
-        print('❌ Error loading user $id: $e');
+      final cached = _globalUserCache[id];
+      if (cached != null) {
+        users.add(cached);
+      } else {
+        missingIds.add(id);
       }
     }
 
+    if (missingIds.isNotEmpty) {
+      final List<Future<void>> chunkFutures = [];
+
+      for (int i = 0; i < missingIds.length; i += _batchSize) {
+        final end = (i + _batchSize < missingIds.length)
+            ? i + _batchSize
+            : missingIds.length;
+        final chunk = missingIds.sublist(i, end);
+
+        chunkFutures.add(() async {
+          try {
+            final querySnapshot = await _firestore
+                .collection('users')
+                .where(FieldPath.documentId, whereIn: chunk)
+                .get();
+
+            for (final doc in querySnapshot.docs) {
+              final id = doc.id;
+              final data = doc.data();
+              final user = {
+                'id': id,
+                'username': data['username'] ?? 'Unknown',
+                'avatarUrl': data['avatarUrl'] ?? '',
+              };
+
+              _globalUserCache[id] = user;
+              users.add(user);
+            }
+          } catch (e) {
+            debugPrint('❌ Error loading users chunk: $e');
+          }
+        }());
+      }
+
+      await Future.wait(chunkFutures);
+    }
+
+    final Map<String, Map> userMap = {
+      for (final u in users) u['id'].toString(): u,
+    };
+
+    final List orderedUsers = [];
+    for (final id in ids) {
+      final user = userMap[id];
+      if (user != null) {
+        orderedUsers.add(user);
+      }
+    }
+
+    if (!mounted) return;
     setState(() {
-      _allUsers = users;
-      _filteredUsers = List.from(users);
+      _allUsers = orderedUsers;
+      _applyFilterToList();
       _isLoading = false;
     });
   }
 
-  void _onSearchChanged(String value) {
-    if (_debounceTimer != null) _debounceTimer!.cancel();
-
-    _searchQuery = value.trim();
-
-    _debounceTimer = Timer(_debounceDuration, () {
-      _filter();
-    });
-  }
-
-  void _filter() {
+  void _applyFilterToList() {
     if (_searchQuery.isEmpty) {
-      setState(() => _filteredUsers = List.from(_allUsers));
+      _filteredUsers = List.from(_allUsers);
       return;
     }
 
     final q = _searchQuery.toLowerCase();
+    _filteredUsers = _allUsers.where((u) {
+      final name = (u['username'] ?? '').toString().toLowerCase();
+      return name.contains(q);
+    }).toList();
+  }
 
+  void _onSearchChanged(String value) {
+    _searchQuery = value.trim();
     setState(() {
-      _filteredUsers = _allUsers.where((u) {
-        final name = (u['username'] ?? '').toString().toLowerCase();
-        return name.contains(q);
-      }).toList();
+      _applyFilterToList();
     });
   }
 
   void _clearSearch() {
     _searchController.clear();
+    _searchQuery = '';
     setState(() {
-      _searchQuery = '';
       _filteredUsers = List.from(_allUsers);
     });
   }
 
   Future<void> _handleFollow(String userId) async {
     if (_currentUserId == null || _currentUserId == userId) return;
-
     await _followService.toggleFollow(userId);
   }
 
   Future<void> _refresh() async {
     if (_isRefreshing) return;
-    
-    setState(() {
-      _isRefreshing = true;
-    });
-    
-    // Очищаем кэш для этого списка
+
+    setState(() => _isRefreshing = true);
+
     for (final id in _userIds) {
-      _cache.remove(id);
+      _globalUserCache.remove(id);
     }
-    
-    await _loadUsers();
-    
-    setState(() {
-      _isRefreshing = false;
-    });
+
+    await _loadUsers(forceRefresh: true);
+
+    if (!mounted) return;
+    setState(() => _isRefreshing = false);
   }
 
   @override
   Widget build(BuildContext context) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cacheSize = (40 * dpr).round().clamp(40, 200);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -229,7 +288,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
           ),
         ),
       ),
-      body: _isLoading
+      body: _isLoading && _allUsers.isEmpty
           ? _buildShimmer()
           : _filteredUsers.isEmpty
               ? Center(
@@ -274,32 +333,33 @@ class _FollowListScreenState extends State<FollowListScreen> {
                     parent: AlwaysScrollableScrollPhysics(),
                   ),
                   slivers: [
-                    // 👇 ТОЛЬКО ЭТОТ ОСТАВЛЕН
                     CupertinoSliverRefreshControl(
                       onRefresh: _refresh,
                     ),
-                    
                     SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (context, index) {
                           final user = _filteredUsers[index];
-                          final id = user['id'];
+                          final id = user['id'].toString();
+                          final avatarUrl = (user['avatarUrl'] ?? '').toString();
                           final isMe = _currentUserId == id;
 
                           return ListTile(
+                            key: ValueKey(id),
                             leading: CircleAvatar(
-                              backgroundImage: user['avatarUrl']
-                                      .toString()
-                                      .isNotEmpty
-                                  ? CachedNetworkImageProvider(
-                                      user['avatarUrl'])
+                              backgroundImage: avatarUrl.isNotEmpty
+                                  ? ResizeImage(
+                                      CachedNetworkImageProvider(avatarUrl),
+                                      width: cacheSize,
+                                      height: cacheSize,
+                                    )
                                   : null,
-                              child: user['avatarUrl'].toString().isEmpty
+                              child: avatarUrl.isEmpty
                                   ? const Icon(Icons.person, color: Colors.grey)
                                   : null,
                             ),
                             title: Text(
-                              user['username'],
+                              (user['username'] ?? 'Unknown').toString(),
                               style: const TextStyle(
                                 fontWeight: FontWeight.w500,
                               ),
@@ -311,7 +371,7 @@ class _FollowListScreenState extends State<FollowListScreen> {
                                         _followService.getCachedFollowStatus(id);
 
                                     return SizedBox(
-                                      width: 85,
+                                      width: 88,
                                       height: 30,
                                       child: ElevatedButton(
                                         onPressed: () => _handleFollow(id),
@@ -322,10 +382,12 @@ class _FollowListScreenState extends State<FollowListScreen> {
                                           foregroundColor: isFollowing
                                               ? Colors.black87
                                               : Colors.white,
-                                          padding: EdgeInsets.zero,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                          ),
                                           shape: RoundedRectangleBorder(
                                             borderRadius:
-                                                BorderRadius.circular(6),
+                                                BorderRadius.circular(999),
                                           ),
                                           elevation: 0,
                                         ),
